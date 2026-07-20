@@ -7,5 +7,9 @@ services:
       - "8000:8000"
     volumes:
       - ./data:/app/data
+      # Optional: if your admin password contains a "$" and you'd rather not
+      # escape it as "$$" in .env, put it in a plain file instead and set
+      # ADMIN_PASSWORD_FILE=/run/secrets/admin_password in .env.
+      # - ./secrets/admin_password.txt:/run/secrets/admin_password:ro
     env_file:
       - .env

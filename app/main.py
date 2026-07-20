@@ -32,7 +32,7 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 app.add_middleware(AdminAuthMiddleware)
 app.add_middleware(
     SessionMiddleware,
-    secret_key=settings.session_secret,
+    secret_key=settings.resolved_session_secret(),
     session_cookie="dm_session",
     max_age=60 * 60 * 12,
     same_site="lax",

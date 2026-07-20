@@ -1,3 +1,4 @@
+import secrets
 from pathlib import Path
 
 from pydantic import field_validator
@@ -30,13 +31,21 @@ class Settings(BaseSettings):
 
     admin_username: str = "admin"
     admin_password: str = "change-me"
+    # Alternative to ADMIN_PASSWORD: path to a file containing just the password.
+    # Docker Compose applies ${VAR} interpolation to env_file values, so a literal
+    # "$" in ADMIN_PASSWORD gets silently mangled (e.g. "p@ss$Kword" -> "p@ss")
+    # unless escaped as "$$". A mounted file's contents aren't parsed by Compose
+    # at all, so this sidesteps that entirely - use it if your password has a $ in it.
+    admin_password_file: str = ""
 
     check_interval_seconds: int = 15
     history_retention_days: int = 7
 
-    session_secret: str = "change-me-too"
+    # Leave unset: auto-generated on first run and persisted to data/session_secret.key.
+    # Only set this yourself if you need the same secret across multiple host instances.
+    session_secret: str = ""
 
-    @field_validator("admin_username", "admin_password", "session_secret", mode="before")
+    @field_validator("admin_username", "admin_password", "admin_password_file", "session_secret", mode="before")
     @classmethod
     def _sanitize(cls, v):
         return _clean_env_value(v) if isinstance(v, str) else v
@@ -45,6 +54,21 @@ class Settings(BaseSettings):
         path = Path("./data")
         path.mkdir(parents=True, exist_ok=True)
         return path
+
+    def resolved_admin_password(self) -> str:
+        if self.admin_password_file:
+            return _clean_env_value(Path(self.admin_password_file).read_text(encoding="utf-8"))
+        return self.admin_password
+
+    def resolved_session_secret(self) -> str:
+        if self.session_secret:
+            return self.session_secret
+        secret_path = self.data_dir() / "session_secret.key"
+        if secret_path.exists():
+            return secret_path.read_text(encoding="utf-8").strip()
+        new_secret = secrets.token_hex(32)
+        secret_path.write_text(new_secret, encoding="utf-8")
+        return new_secret
 
 
 settings = Settings()

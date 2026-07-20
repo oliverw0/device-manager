@@ -12,7 +12,7 @@ def credentials_valid(username: str, password: str) -> bool:
     # secrets.compare_digest works byte-for-byte on whatever the browser sends,
     # so any character the user can type into the login form is handled fine.
     valid_user = secrets.compare_digest(username, settings.admin_username)
-    valid_pass = secrets.compare_digest(password, settings.admin_password)
+    valid_pass = secrets.compare_digest(password, settings.resolved_admin_password())
     return valid_user and valid_pass
 
 
