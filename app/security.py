@@ -1,25 +1,19 @@
 import secrets
 
 from fastapi import Depends, HTTPException, Header, status
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlmodel import Session, select
 
 from .config import settings
 from .database import get_session
 from .models import Device
 
-basic_auth = HTTPBasic()
 
-
-def require_admin(credentials: HTTPBasicCredentials = Depends(basic_auth)) -> None:
-    valid_user = secrets.compare_digest(credentials.username, settings.admin_username)
-    valid_pass = secrets.compare_digest(credentials.password, settings.admin_password)
-    if not (valid_user and valid_pass):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
-            headers={"WWW-Authenticate": "Basic"},
-        )
+def credentials_valid(username: str, password: str) -> bool:
+    # secrets.compare_digest works byte-for-byte on whatever the browser sends,
+    # so any character the user can type into the login form is handled fine.
+    valid_user = secrets.compare_digest(username, settings.admin_username)
+    valid_pass = secrets.compare_digest(password, settings.admin_password)
+    return valid_user and valid_pass
 
 
 def get_device_from_api_key(

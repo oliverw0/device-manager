@@ -142,3 +142,26 @@ button.danger {
   padding: 4px 0;
   border-bottom: 1px solid var(--border);
 }
+
+.login-panel {
+  max-width: 360px;
+  margin: 60px auto;
+}
+
+.stacked-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.stacked-form label {
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+  color: var(--muted);
+  gap: 4px;
+}
+
+.error {
+  color: var(--red);
+}

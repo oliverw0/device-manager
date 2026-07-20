@@ -9,9 +9,8 @@ from sqlmodel import Session, delete, select
 
 from ..database import get_session
 from ..models import AlertEvent, Device, ReportHistory, generate_api_key
-from ..security import require_admin
 
-router = APIRouter(dependencies=[Depends(require_admin)])
+router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 
 
