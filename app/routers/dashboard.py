@@ -14,6 +14,68 @@ router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 
 
+def _fmt_uptime(seconds) -> str:
+    try:
+        total = int(float(seconds))
+    except (TypeError, ValueError):
+        return "—"
+    days, rem = divmod(total, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, _ = divmod(rem, 60)
+    parts = []
+    if days:
+        parts.append(f"{days}d")
+    if hours:
+        parts.append(f"{hours}h")
+    parts.append(f"{minutes}m")
+    return " ".join(parts)
+
+
+def _to_datetime(value):
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _fmt_dt(value) -> str:
+    dt = _to_datetime(value)
+    if dt is None:
+        return "never" if value in (None, "") else str(value)
+    return dt.strftime("%Y-%m-%d %H:%M UTC")
+
+
+def _fmt_reltime(value) -> str:
+    """Accepts either an ISO/datetime timestamp or a raw seconds-ago float."""
+    if isinstance(value, (int, float)):
+        seconds = value
+    else:
+        dt = _to_datetime(value)
+        if dt is None:
+            return "never"
+        seconds = (datetime.utcnow() - dt).total_seconds()
+    seconds = max(0, int(seconds))
+    if seconds < 60:
+        return f"{seconds}s ago"
+    minutes, sec = divmod(seconds, 60)
+    if minutes < 60:
+        return f"{minutes}m ago"
+    hours, minutes = divmod(minutes, 60)
+    if hours < 24:
+        return f"{hours}h {minutes}m ago"
+    days, hours = divmod(hours, 24)
+    return f"{days}d {hours}h ago"
+
+
+templates.env.filters["uptime"] = _fmt_uptime
+templates.env.filters["dt"] = _fmt_dt
+templates.env.filters["reltime"] = _fmt_reltime
+
+
 def serialize_device(device: Device) -> dict:
     report = json.loads(device.last_report_json) if device.last_report_json else None
     seconds_since_seen: Optional[float] = None

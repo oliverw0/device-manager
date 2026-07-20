@@ -1,78 +1,131 @@
 {% extends "base.html" %}
+{% import "_macros.html" as ui %}
 {% block title %}{{ device.name }} - DeviceManager{% endblock %}
 {% block content %}
-<a href="/">&larr; back</a>
+<a href="/" class="back-link">&larr; All devices</a>
+
+{% set sys = device.report.system if device.report else none %}
+{% set ts = device.report.tailscale if device.report else none %}
+{% set ssh = device.report.ssh_auth if device.report else none %}
+{% set containers = device.report.docker_containers if device.report else [] %}
+
 <section class="panel">
-  <h1><span class="dot {{ 'online' if device.is_online else 'offline' }}"></span> {{ device.name }}</h1>
-  <p class="muted">{{ device.notes }}</p>
-  <p>Last seen: {{ device.last_seen_at or 'never' }} &middot; report interval {{ device.report_interval_seconds }}s &middot; offline after {{ device.offline_after_seconds }}s</p>
-
-  <h3>API key</h3>
-  <code class="key-box">{{ api_key }}</code>
-  <form method="post" action="/devices/{{ device.id }}/rotate-key" onsubmit="return confirm('Rotate API key? The client config must be updated to match.');">
-    <button type="submit" class="secondary">Rotate key</button>
-  </form>
-
-  <h3>Client env</h3>
-  <pre class="key-box">HOST_URL=http://&lt;this-host&gt;:8000
-API_KEY={{ api_key }}</pre>
+  <div class="page-head" style="margin-bottom:8px">
+    <h1 style="display:flex;align-items:center;gap:10px">{{ device.name }} {{ ui.status_chip(device.is_online) }}</h1>
+  </div>
+  {% if device.notes %}<p class="muted" style="margin-top:0">{{ device.notes }}</p>{% endif %}
+  <ul class="kv" style="max-width:520px">
+    <li><span class="k">Last seen</span><span class="v" title="{{ device.last_seen_at | dt }}">{{ device.seconds_since_seen | reltime }}</span></li>
+    {% if sys and sys.hostname %}
+    <li><span class="k">Reported hostname</span><span class="v">{{ sys.hostname }}{% if sys.hostname != device.name %} <span class="chip warn" style="margin-left:6px">differs from name</span>{% endif %}</span></li>
+    {% endif %}
+    {% if sys and sys.uptime_seconds is defined %}
+    <li><span class="k">Uptime</span><span class="v">{{ sys.uptime_seconds | uptime }}</span></li>
+    {% endif %}
+    <li><span class="k">Report interval</span><span class="v">{{ device.report_interval_seconds }}s</span></li>
+    <li><span class="k">Marked offline after</span><span class="v">{{ device.offline_after_seconds }}s of silence</span></li>
+  </ul>
 </section>
+
+{% if sys %}
+<section class="panel">
+  <h2>System</h2>
+  <div class="metric-row"><span class="metric-label">CPU</span>{{ ui.meter(sys.cpu_percent) }}</div>
+  <div class="metric-row"><span class="metric-label">Memory</span>{{ ui.meter(sys.mem_percent) }}</div>
+  <div class="metric-row"><span class="metric-label">Disk</span>{{ ui.meter(sys.disk_percent) }}</div>
+</section>
+{% endif %}
 
 <section class="panel">
   <h2>History (last 500 reports)</h2>
-  <canvas id="history-chart" width="800" height="160"></canvas>
+  <canvas id="history-chart" width="1040" height="180" style="max-width:100%"></canvas>
+  <p class="muted" style="font-size:12px;margin:8px 0 0">
+    <span style="color:var(--red)">■</span> CPU &nbsp;
+    <span style="color:var(--accent)">■</span> Memory &nbsp;
+    <span style="color:var(--green)">■</span> Disk
+  </p>
 </section>
 
 <section class="panel grid-2">
   <div>
     <h2>Tailscale</h2>
-    {% if device.report and device.report.tailscale %}
+    {% if ts %}
     <ul class="kv">
-      <li><b>Connected:</b> {{ device.report.tailscale.connected }}</li>
-      <li><b>Backend state:</b> {{ device.report.tailscale.backend_state or '-' }}</li>
-      <li><b>IPs:</b> {{ device.report.tailscale.ips|join(', ') if device.report.tailscale.ips else '-' }}</li>
-      <li><b>Tailnet:</b> {{ device.report.tailscale.tailnet or '-' }}</li>
-    </ul>
-    {% else %}<p class="muted">No data yet.</p>{% endif %}
-
-    <h2>SSH auth</h2>
-    {% if device.report and device.report.ssh_auth %}
-    <ul class="kv">
-      <li><b>Recent accepted:</b> {{ device.report.ssh_auth.recent_accepted_count }}</li>
-      <li><b>Recent failed:</b> {{ device.report.ssh_auth.recent_failed_count }}</li>
-      <li><b>Last accepted:</b> {{ device.report.ssh_auth.last_accepted_user or '-' }} from {{ device.report.ssh_auth.last_accepted_ip or '-' }} at {{ device.report.ssh_auth.last_accepted_at or '-' }}</li>
-      <li><b>Last failed:</b> from {{ device.report.ssh_auth.last_failed_ip or '-' }} at {{ device.report.ssh_auth.last_failed_at or '-' }}</li>
+      <li><span class="k">Status</span><span class="v">{{ ui.tailscale_chip(ts) }}</span></li>
+      <li><span class="k">Backend state</span><span class="v">{{ ts.backend_state or '—' }}</span></li>
+      <li><span class="k">IPs</span><span class="v">{{ ts.ips | join(', ') if ts.ips else '—' }}</span></li>
+      <li><span class="k">Tailnet</span><span class="v">{{ ts.tailnet or '—' }}</span></li>
+      {% if ts.exit_node %}<li><span class="k">Exit node</span><span class="v">{{ ts.exit_node }}</span></li>{% endif %}
     </ul>
     {% else %}<p class="muted">No data yet.</p>{% endif %}
   </div>
 
   <div>
-    <h2>Docker containers</h2>
-    {% if device.report and device.report.docker_containers %}
-    <table class="device-table">
-      <thead><tr><th>Name</th><th>Image</th><th>Status</th></tr></thead>
-      <tbody>
-      {% for c in device.report.docker_containers %}
-        <tr><td>{{ c.name }}</td><td>{{ c.image }}</td><td>{{ c.status }}</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-    {% else %}<p class="muted">No containers reported.</p>{% endif %}
+    <h2>SSH auth</h2>
+    {% if ssh %}
+    <ul class="kv">
+      <li><span class="k">Recent accepted</span><span class="v"><span class="chip neutral">{{ ssh.recent_accepted_count }}</span></span></li>
+      <li><span class="k">Recent failed</span><span class="v"><span class="chip {{ 'bad' if ssh.recent_failed_count else 'neutral' }}">{{ ssh.recent_failed_count }}</span></span></li>
+      <li><span class="k">Last accepted</span><span class="v">{{ ssh.last_accepted_user or '—' }}{% if ssh.last_accepted_ip %} from {{ ssh.last_accepted_ip }}{% endif %}</span></li>
+      <li><span class="k">Last failed from</span><span class="v">{{ ssh.last_failed_ip or '—' }}</span></li>
+    </ul>
+    {% else %}<p class="muted">No data yet.</p>{% endif %}
   </div>
 </section>
 
 <section class="panel">
-  <h2>Recent alerts</h2>
-  <ul class="kv">
-    {% for a in alerts %}
-    <li>[{{ a.created_at }}] <b>{{ a.kind }}</b> - {{ a.message }}</li>
-    {% else %}
-    <li class="muted">No alerts yet.</li>
+  <h2>Docker containers {% if containers %}<span class="chip neutral" style="margin-left:6px">{{ containers | length }}</span>{% endif %}</h2>
+  {% if containers %}
+    {% for c in containers %}
+    <details class="container-item">
+      <summary>
+        <span class="c-name">{{ c.name }}</span>
+        <span class="spacer"></span>
+        {{ ui.container_status(c.status) }}
+      </summary>
+      <div class="c-body">
+        <dl>
+          <dt>Image</dt><dd>{{ c.image }}</dd>
+          <dt>Status</dt><dd>{{ c.status }}</dd>
+          {% if c.started_at %}<dt>Started</dt><dd>{{ c.started_at }}</dd>{% endif %}
+        </dl>
+      </div>
+    </details>
     {% endfor %}
-  </ul>
+  {% else %}<p class="muted">No containers reported.</p>{% endif %}
 </section>
 
 <section class="panel">
+  <h2>Recent alerts</h2>
+  {% for a in alerts %}
+  <div class="alert-item">
+    <span class="alert-time">{{ a.created_at | dt }}</span>
+    <span class="chip {{ 'bad' if a.kind in ['offline','tailscale_down'] else 'ok' if a.kind in ['online','tailscale_up'] else 'neutral' }}">{{ a.kind }}</span>
+    <span class="alert-msg">{{ a.message }}</span>
+  </div>
+  {% else %}
+  <p class="muted">No alerts yet.</p>
+  {% endfor %}
+</section>
+
+<section class="panel">
+  <h2>Client configuration</h2>
+  <h3>API key</h3>
+  <div class="copy-row">
+    <code class="key-box" id="api-key">{{ api_key }}</code>
+    <button type="button" class="secondary" onclick="copyText('{{ api_key }}', this)">Copy</button>
+  </div>
+  <h3>Client .env</h3>
+  <pre class="key-box">HOST_URL=http://&lt;this-host&gt;:8000
+API_KEY={{ api_key }}</pre>
+  <form method="post" action="/devices/{{ device.id }}/rotate-key" onsubmit="return confirm('Rotate API key? The client config must be updated to match or it will be locked out.');" style="margin-top:12px">
+    <button type="submit" class="secondary">Rotate key</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Danger zone</h2>
+  <p class="muted" style="margin-top:0">Removes this device and all of its history and alerts. This cannot be undone.</p>
   <form method="post" action="/devices/{{ device.id }}/delete" onsubmit="return confirm('Delete this device and all its history?');">
     <button type="submit" class="danger">Delete device</button>
   </form>

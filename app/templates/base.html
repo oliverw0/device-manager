@@ -8,9 +8,9 @@
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="/">DeviceManager</a>
+    <a class="brand" href="/"><span class="brand-mark"></span>DeviceManager</a>
     {% if request.session.get("is_admin") %}
-    <form method="post" action="/logout" style="display:inline; float:right;">
+    <form method="post" action="/logout">
       <button type="submit" class="secondary">Log out</button>
     </form>
     {% endif %}

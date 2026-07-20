@@ -1,0 +1,31 @@
+{% macro meter(value) -%}
+{%- if value is none -%}<span class="faint">—</span>
+{%- else -%}
+{%- set p = value|round|int -%}
+<div class="meter" title="{{ p }}%"><div class="meter-fill {{ 'crit' if p>=90 else 'warn' if p>=70 else 'ok' }}" style="width:{{ [p,100]|min }}%"></div><span class="meter-label">{{ p }}%</span></div>
+{%- endif -%}
+{%- endmacro %}
+
+{% macro status_chip(is_online) -%}
+{%- if is_online -%}<span class="chip ok"><span class="chip-dot"></span>Online</span>
+{%- else -%}<span class="chip bad"><span class="chip-dot"></span>Offline</span>{%- endif -%}
+{%- endmacro %}
+
+{% macro tailscale_chip(ts) -%}
+{%- if not ts -%}<span class="faint">—</span>
+{%- elif ts.connected -%}<span class="chip ok">Connected</span>
+{%- else -%}<span class="chip bad">{{ ts.backend_state or 'Down' }}</span>{%- endif -%}
+{%- endmacro %}
+
+{% macro container_status(status) -%}
+{%- set s = (status or '')|lower -%}
+<span class="chip {{ 'ok' if 'running' in s else 'bad' if 'exited' in s or 'dead' in s else 'warn' }}">{{ status or 'unknown' }}</span>
+{%- endmacro %}
+
+{% macro container_summary(list) -%}
+{%- if not list -%}<span class="faint">—</span>
+{%- else -%}
+{%- set running = list|selectattr('status','equalto','running')|list|length -%}
+<span class="chip {{ 'ok' if running==list|length else 'bad' if running==0 else 'warn' }}">{{ running }}/{{ list|length }} up</span>
+{%- endif -%}
+{%- endmacro %}

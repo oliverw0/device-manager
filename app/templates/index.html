@@ -1,49 +1,76 @@
 {% extends "base.html" %}
+{% import "_macros.html" as ui %}
 {% block title %}Devices - DeviceManager{% endblock %}
 {% block content %}
-<section class="panel">
+
+{% set online = devices | selectattr('is_online') | list | length %}
+<div class="page-head">
   <h1>Devices</h1>
-  <table id="device-table" class="device-table">
-    <thead>
-      <tr>
-        <th>Status</th>
-        <th>Name</th>
-        <th>CPU</th>
-        <th>Mem</th>
-        <th>Disk</th>
-        <th>Tailscale</th>
-        <th>Last seen</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for d in devices %}
-      <tr onclick="window.location='/devices/{{ d.id }}'">
-        <td><span class="dot {{ 'online' if d.is_online else 'offline' }}"></span></td>
-        <td>{{ d.name }}</td>
-        <td>{{ '%.0f'|format(d.report.system.cpu_percent) + '%' if d.report else '-' }}</td>
-        <td>{{ '%.0f'|format(d.report.system.mem_percent) + '%' if d.report else '-' }}</td>
-        <td>{{ '%.0f'|format(d.report.system.disk_percent) + '%' if d.report else '-' }}</td>
-        <td>{% if d.report and d.report.tailscale %}{{ 'up' if d.report.tailscale.connected else 'down' }}{% else %}-{% endif %}</td>
-        <td>{{ d.last_seen_at or 'never' }}</td>
-      </tr>
-      {% else %}
-      <tr><td colspan="7">No devices yet. Add one below.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</section>
+  <span class="live"><span class="pulse"></span> Live &middot; auto-refreshing</span>
+</div>
+
+<div class="tiles">
+  <div class="tile"><div class="tile-value" id="tile-total">{{ devices | length }}</div><div class="tile-label">Total devices</div></div>
+  <div class="tile ok"><div class="tile-value" id="tile-online">{{ online }}</div><div class="tile-label">Online</div></div>
+  <div class="tile bad"><div class="tile-value" id="tile-offline">{{ devices | length - online }}</div><div class="tile-label">Offline</div></div>
+  <div class="tile"><div class="tile-value" id="tile-containers">—</div><div class="tile-label">Containers running</div></div>
+</div>
 
 <section class="panel">
-  <h2>Add device</h2>
-  <form method="post" action="/devices" class="form-grid">
-    <label>Name <input type="text" name="name" required /></label>
-    <label>Notes <input type="text" name="notes" /></label>
-    <label>Report interval (s) <input type="number" name="report_interval_seconds" value="60" /></label>
-    <label>Offline after (s) <input type="number" name="offline_after_seconds" value="150" /></label>
-    <button type="submit">Create device</button>
-  </form>
+  <div class="table-wrap">
+    <table id="device-table" class="device-table">
+      <thead>
+        <tr>
+          <th>Status</th>
+          <th>Name</th>
+          <th>CPU</th>
+          <th>Memory</th>
+          <th>Disk</th>
+          <th>Tailscale</th>
+          <th>Containers</th>
+          <th>Last seen</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in devices %}
+        <tr class="clickable" onclick="window.location='/devices/{{ d.id }}'">
+          <td>{{ ui.status_chip(d.is_online) }}</td>
+          <td class="name-cell">
+            <span class="name">{{ d.name }}</span>
+            {% if d.report and d.report.system and d.report.system.hostname and d.report.system.hostname != d.name %}
+            <span class="sub">{{ d.report.system.hostname }}</span>
+            {% endif %}
+          </td>
+          <td>{{ ui.meter(d.report.system.cpu_percent if d.report else none) }}</td>
+          <td>{{ ui.meter(d.report.system.mem_percent if d.report else none) }}</td>
+          <td>{{ ui.meter(d.report.system.disk_percent if d.report else none) }}</td>
+          <td>{{ ui.tailscale_chip(d.report.tailscale if d.report else none) }}</td>
+          <td>{{ ui.container_summary(d.report.docker_containers if d.report else none) }}</td>
+          <td class="muted" title="{{ d.last_seen_at | dt }}">{{ d.seconds_since_seen | reltime }}</td>
+        </tr>
+        {% else %}
+        <tr class="empty-row"><td colspan="8">No devices yet. Add one below to get an API key.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
+
+<details class="add-device">
+  <summary><span class="plus">+</span> Add a device</summary>
+  <div class="add-body">
+    <p class="muted" style="margin-top:0">Create the device here first, then copy the generated API key into that machine's client config.</p>
+    <form method="post" action="/devices" class="form-grid">
+      <label>Name <input type="text" name="name" placeholder="web-vm-01" required /></label>
+      <label>Notes <input type="text" name="notes" placeholder="optional" /></label>
+      <label>Report interval (s) <input type="number" name="report_interval_seconds" value="60" min="5" /></label>
+      <label>Offline after (s) <input type="number" name="offline_after_seconds" value="150" min="10" /></label>
+      <div class="full-width"><button type="submit">Create device</button></div>
+    </form>
+  </div>
+</details>
 {% endblock %}
+
 {% block scripts %}
 <script>startDevicePolling('/devices.json');</script>
 {% endblock %}
