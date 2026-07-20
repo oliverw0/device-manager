@@ -14,7 +14,7 @@
     <h1 style="display:flex;align-items:center;gap:10px">{{ device.name }} {{ ui.status_chip(device.is_online) }}</h1>
   </div>
   {% if device.notes %}<p class="muted" style="margin-top:0">{{ device.notes }}</p>{% endif %}
-  <ul class="kv" style="max-width:520px">
+  <ul class="kv-grid">
     <li><span class="k">Last seen</span><span class="v" title="{{ device.last_seen_at | dt }}">{{ device.seconds_since_seen | reltime }}</span></li>
     {% if sys and sys.hostname %}
     <li><span class="k">Reported hostname</span><span class="v">{{ sys.hostname }}{% if sys.hostname != device.name %} <span class="chip warn" style="margin-left:6px">differs from name</span>{% endif %}</span></li>

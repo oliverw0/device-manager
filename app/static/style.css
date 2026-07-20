@@ -368,9 +368,29 @@ button.danger:hover { filter: brightness(1.08); }
   grid-template-columns: 1fr 1fr;
   gap: 18px;
   align-items: start;
+  margin-bottom: 18px;
 }
 @media (max-width: 860px) { .detail-grid { grid-template-columns: 1fr; } }
 .detail-grid .col > .panel:last-child { margin-bottom: 0; }
+
+/* full-width key/value grid used on the top summary card */
+.kv-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 2px 32px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.kv-grid li {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.kv-grid li .k { color: var(--muted); }
+.kv-grid li .v { text-align: right; font-variant-numeric: tabular-nums; }
 
 /* ---------- click-to-copy values ---------- */
 .copyable {
