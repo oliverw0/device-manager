@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Devices - DeviceManager{% endblock %}
+{% block content %}
+<section class="panel">
+  <h1>Devices</h1>
+  <table id="device-table" class="device-table">
+    <thead>
+      <tr>
+        <th>Status</th>
+        <th>Name</th>
+        <th>CPU</th>
+        <th>Mem</th>
+        <th>Disk</th>
+        <th>Tailscale</th>
+        <th>Last seen</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for d in devices %}
+      <tr onclick="window.location='/devices/{{ d.id }}'">
+        <td><span class="dot {{ 'online' if d.is_online else 'offline' }}"></span></td>
+        <td>{{ d.name }}</td>
+        <td>{{ '%.0f'|format(d.report.system.cpu_percent) + '%' if d.report else '-' }}</td>
+        <td>{{ '%.0f'|format(d.report.system.mem_percent) + '%' if d.report else '-' }}</td>
+        <td>{{ '%.0f'|format(d.report.system.disk_percent) + '%' if d.report else '-' }}</td>
+        <td>{% if d.report and d.report.tailscale %}{{ 'up' if d.report.tailscale.connected else 'down' }}{% else %}-{% endif %}</td>
+        <td>{{ d.last_seen_at or 'never' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7">No devices yet. Add one below.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="panel">
+  <h2>Add device</h2>
+  <form method="post" action="/devices" class="form-grid">
+    <label>Name <input type="text" name="name" required /></label>
+    <label>Notes <input type="text" name="notes" /></label>
+    <label>Report interval (s) <input type="number" name="report_interval_seconds" value="60" /></label>
+    <label>Offline after (s) <input type="number" name="offline_after_seconds" value="150" /></label>
+    <button type="submit">Create device</button>
+  </form>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>startDevicePolling('/devices.json');</script>
+{% endblock %}

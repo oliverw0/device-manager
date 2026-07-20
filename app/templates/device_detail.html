@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}{{ device.name }} - DeviceManager{% endblock %}
+{% block content %}
+<a href="/">&larr; back</a>
+<section class="panel">
+  <h1><span class="dot {{ 'online' if device.is_online else 'offline' }}"></span> {{ device.name }}</h1>
+  <p class="muted">{{ device.notes }}</p>
+  <p>Last seen: {{ device.last_seen_at or 'never' }} &middot; report interval {{ device.report_interval_seconds }}s &middot; offline after {{ device.offline_after_seconds }}s</p>
+
+  <h3>API key</h3>
+  <code class="key-box">{{ api_key }}</code>
+  <form method="post" action="/devices/{{ device.id }}/rotate-key" onsubmit="return confirm('Rotate API key? The client config must be updated to match.');">
+    <button type="submit" class="secondary">Rotate key</button>
+  </form>
+
+  <h3>Client env</h3>
+  <pre class="key-box">HOST_URL=http://&lt;this-host&gt;:8000
+API_KEY={{ api_key }}</pre>
+</section>
+
+<section class="panel">
+  <h2>History (last 500 reports)</h2>
+  <canvas id="history-chart" width="800" height="160"></canvas>
+</section>
+
+<section class="panel grid-2">
+  <div>
+    <h2>Tailscale</h2>
+    {% if device.report and device.report.tailscale %}
+    <ul class="kv">
+      <li><b>Connected:</b> {{ device.report.tailscale.connected }}</li>
+      <li><b>Backend state:</b> {{ device.report.tailscale.backend_state or '-' }}</li>
+      <li><b>IPs:</b> {{ device.report.tailscale.ips|join(', ') if device.report.tailscale.ips else '-' }}</li>
+      <li><b>Tailnet:</b> {{ device.report.tailscale.tailnet or '-' }}</li>
+    </ul>
+    {% else %}<p class="muted">No data yet.</p>{% endif %}
+
+    <h2>SSH auth</h2>
+    {% if device.report and device.report.ssh_auth %}
+    <ul class="kv">
+      <li><b>Recent accepted:</b> {{ device.report.ssh_auth.recent_accepted_count }}</li>
+      <li><b>Recent failed:</b> {{ device.report.ssh_auth.recent_failed_count }}</li>
+      <li><b>Last accepted:</b> {{ device.report.ssh_auth.last_accepted_user or '-' }} from {{ device.report.ssh_auth.last_accepted_ip or '-' }} at {{ device.report.ssh_auth.last_accepted_at or '-' }}</li>
+      <li><b>Last failed:</b> from {{ device.report.ssh_auth.last_failed_ip or '-' }} at {{ device.report.ssh_auth.last_failed_at or '-' }}</li>
+    </ul>
+    {% else %}<p class="muted">No data yet.</p>{% endif %}
+  </div>
+
+  <div>
+    <h2>Docker containers</h2>
+    {% if device.report and device.report.docker_containers %}
+    <table class="device-table">
+      <thead><tr><th>Name</th><th>Image</th><th>Status</th></tr></thead>
+      <tbody>
+      {% for c in device.report.docker_containers %}
+        <tr><td>{{ c.name }}</td><td>{{ c.image }}</td><td>{{ c.status }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<p class="muted">No containers reported.</p>{% endif %}
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Recent alerts</h2>
+  <ul class="kv">
+    {% for a in alerts %}
+    <li>[{{ a.created_at }}] <b>{{ a.kind }}</b> - {{ a.message }}</li>
+    {% else %}
+    <li class="muted">No alerts yet.</li>
+    {% endfor %}
+  </ul>
+</section>
+
+<section class="panel">
+  <form method="post" action="/devices/{{ device.id }}/delete" onsubmit="return confirm('Delete this device and all its history?');">
+    <button type="submit" class="danger">Delete device</button>
+  </form>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>loadHistoryChart('/devices/{{ device.id }}/history.json', 'history-chart');</script>
+{% endblock %}

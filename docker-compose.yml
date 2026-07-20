@@ -1,0 +1,11 @@
+services:
+  host:
+    build: .
+    container_name: devicemanager-host
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    env_file:
+      - .env
