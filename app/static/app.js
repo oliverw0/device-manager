@@ -106,14 +106,43 @@ function startDevicePolling(url, intervalMs = 5000) {
   setInterval(poll, intervalMs);
 }
 
-/* ---------- copy button ---------- */
-function copyText(text, btn) {
-  navigator.clipboard.writeText(text).then(() => {
-    if (!btn) return;
-    const original = btn.textContent;
-    btn.textContent = "Copied";
-    setTimeout(() => { btn.textContent = original; }, 1200);
-  }).catch(() => {});
+/* ---------- copy to clipboard ---------- */
+// navigator.clipboard only exists in a secure context (https or localhost).
+// This tool is usually served over plain http on a LAN IP, where it's
+// undefined — so fall back to a hidden textarea + execCommand.
+function fallbackCopy(text) {
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.top = "-1000px";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch (e) {
+    return false;
+  }
+}
+
+function copyToClipboard(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    return navigator.clipboard.writeText(text).then(() => true).catch(() => fallbackCopy(text));
+  }
+  return Promise.resolve(fallbackCopy(text));
+}
+
+// Flashes a "Copied" tooltip on the element without destroying its content,
+// so it works for both buttons and inline copyable values.
+function copyText(text, el) {
+  copyToClipboard(text).then((ok) => {
+    if (!el || !ok) return;
+    el.classList.add("copied");
+    setTimeout(() => el.classList.remove("copied"), 1200);
+  });
 }
 
 /* ---------- history chart ---------- */

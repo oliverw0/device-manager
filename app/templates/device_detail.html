@@ -27,101 +27,119 @@
   </ul>
 </section>
 
-{% if sys %}
-<section class="panel">
-  <h2>System</h2>
-  <div class="metric-row"><span class="metric-label">CPU</span>{{ ui.meter(sys.cpu_percent) }}</div>
-  <div class="metric-row"><span class="metric-label">Memory</span>{{ ui.meter(sys.mem_percent) }}</div>
-  <div class="metric-row"><span class="metric-label">Disk</span>{{ ui.meter(sys.disk_percent) }}</div>
-</section>
-{% endif %}
+<div class="detail-grid">
+  <!-- LEFT: everything else -->
+  <div class="col">
+    {% if sys %}
+    <section class="panel">
+      <h2>System</h2>
+      <div class="metric-row"><span class="metric-label">CPU</span>{{ ui.meter(sys.cpu_percent) }}</div>
+      <div class="metric-row"><span class="metric-label">Memory</span>{{ ui.meter(sys.mem_percent) }}</div>
+      <div class="metric-row"><span class="metric-label">Disk</span>{{ ui.meter(sys.disk_percent) }}</div>
+    </section>
+    {% endif %}
 
-<section class="panel">
-  <h2>History (last 500 reports)</h2>
-  <canvas id="history-chart" width="1040" height="180" style="max-width:100%"></canvas>
-  <p class="muted" style="font-size:12px;margin:8px 0 0">
-    <span style="color:var(--red)">■</span> CPU &nbsp;
-    <span style="color:var(--accent)">■</span> Memory &nbsp;
-    <span style="color:var(--green)">■</span> Disk
-  </p>
-</section>
+    <section class="panel">
+      <h2>History (last 500 reports)</h2>
+      <canvas id="history-chart" width="1040" height="180" style="max-width:100%"></canvas>
+      <p class="muted" style="font-size:12px;margin:8px 0 0">
+        <span style="color:var(--red)">■</span> CPU &nbsp;
+        <span style="color:var(--accent)">■</span> Memory &nbsp;
+        <span style="color:var(--green)">■</span> Disk
+      </p>
+    </section>
 
-<section class="panel grid-2">
-  <div>
-    <h2>Tailscale</h2>
-    {% if ts %}
-    <ul class="kv">
-      <li><span class="k">Status</span><span class="v">{{ ui.tailscale_chip(ts) }}</span></li>
-      <li><span class="k">Backend state</span><span class="v">{{ ts.backend_state or '—' }}</span></li>
-      <li><span class="k">IPs</span><span class="v">{{ ts.ips | join(', ') if ts.ips else '—' }}</span></li>
-      <li><span class="k">Tailnet</span><span class="v">{{ ts.tailnet or '—' }}</span></li>
-      {% if ts.exit_node %}<li><span class="k">Exit node</span><span class="v">{{ ts.exit_node }}</span></li>{% endif %}
-    </ul>
-    {% else %}<p class="muted">No data yet.</p>{% endif %}
-  </div>
+    <section class="panel">
+      <h2>Tailscale</h2>
+      {% if ts %}
+      <ul class="kv">
+        <li><span class="k">Status</span><span class="v">{{ ui.tailscale_chip(ts) }}</span></li>
+        <li><span class="k">Backend state</span><span class="v">{{ ts.backend_state or '—' }}</span></li>
+        {% if ts.dns_name %}
+        <li><span class="k">MagicDNS name</span><span class="v"><span class="copyable" onclick="copyText('{{ ts.dns_name }}', this)" title="Click to copy">{{ ts.dns_name }}</span></span></li>
+        {% endif %}
+        <li>
+          <span class="k">IPs</span>
+          <span class="v">
+            {% if ts.ips %}
+              {% for ip in ts.ips %}
+              <span class="copyable" onclick="copyText('{{ ip }}', this)" title="Click to copy">{{ ip }}</span>{% if not loop.last %} {% endif %}
+              {% endfor %}
+            {% else %}—{% endif %}
+          </span>
+        </li>
+        <li><span class="k">Tailnet</span><span class="v">{{ ts.tailnet or '—' }}</span></li>
+        {% if ts.exit_node %}<li><span class="k">Exit node</span><span class="v">{{ ts.exit_node }}</span></li>{% endif %}
+      </ul>
+      {% else %}<p class="muted">No data yet.</p>{% endif %}
+    </section>
 
-  <div>
-    <h2>SSH auth</h2>
-    {% if ssh %}
-    <ul class="kv">
-      <li><span class="k">Recent accepted</span><span class="v"><span class="chip neutral">{{ ssh.recent_accepted_count }}</span></span></li>
-      <li><span class="k">Recent failed</span><span class="v"><span class="chip {{ 'bad' if ssh.recent_failed_count else 'neutral' }}">{{ ssh.recent_failed_count }}</span></span></li>
-      <li><span class="k">Last accepted</span><span class="v">{{ ssh.last_accepted_user or '—' }}{% if ssh.last_accepted_ip %} from {{ ssh.last_accepted_ip }}{% endif %}</span></li>
-      <li><span class="k">Last failed from</span><span class="v">{{ ssh.last_failed_ip or '—' }}</span></li>
-    </ul>
-    {% else %}<p class="muted">No data yet.</p>{% endif %}
-  </div>
-</section>
+    <section class="panel">
+      <h2>SSH auth</h2>
+      {% if ssh %}
+      <ul class="kv">
+        <li><span class="k">Recent accepted</span><span class="v"><span class="chip neutral">{{ ssh.recent_accepted_count }}</span></span></li>
+        <li><span class="k">Recent failed</span><span class="v"><span class="chip {{ 'bad' if ssh.recent_failed_count else 'neutral' }}">{{ ssh.recent_failed_count }}</span></span></li>
+        <li><span class="k">Last accepted</span><span class="v">{{ ssh.last_accepted_user or '—' }}{% if ssh.last_accepted_ip %} from {{ ssh.last_accepted_ip }}{% endif %}</span></li>
+        <li><span class="k">Last failed from</span><span class="v">{{ ssh.last_failed_ip or '—' }}</span></li>
+      </ul>
+      {% else %}<p class="muted">No data yet.</p>{% endif %}
+    </section>
 
-<section class="panel">
-  <h2>Docker containers {% if containers %}<span class="chip neutral" style="margin-left:6px">{{ containers | length }}</span>{% endif %}</h2>
-  {% if containers %}
-    {% for c in containers %}
-    <details class="container-item">
-      <summary>
-        <span class="c-name">{{ c.name }}</span>
-        <span class="spacer"></span>
-        {{ ui.container_status(c.status) }}
-      </summary>
-      <div class="c-body">
-        <dl>
-          <dt>Image</dt><dd>{{ c.image }}</dd>
-          <dt>Status</dt><dd>{{ c.status }}</dd>
-          {% if c.started_at %}<dt>Started</dt><dd>{{ c.started_at }}</dd>{% endif %}
-        </dl>
+    <section class="panel">
+      <h2>Recent alerts</h2>
+      {% for a in alerts %}
+      <div class="alert-item">
+        <span class="alert-time">{{ a.created_at | dt }}</span>
+        <span class="chip {{ 'bad' if a.kind in ['offline','tailscale_down'] else 'ok' if a.kind in ['online','tailscale_up'] else 'neutral' }}">{{ a.kind }}</span>
+        <span class="alert-msg">{{ a.message }}</span>
       </div>
-    </details>
-    {% endfor %}
-  {% else %}<p class="muted">No containers reported.</p>{% endif %}
-</section>
-
-<section class="panel">
-  <h2>Recent alerts</h2>
-  {% for a in alerts %}
-  <div class="alert-item">
-    <span class="alert-time">{{ a.created_at | dt }}</span>
-    <span class="chip {{ 'bad' if a.kind in ['offline','tailscale_down'] else 'ok' if a.kind in ['online','tailscale_up'] else 'neutral' }}">{{ a.kind }}</span>
-    <span class="alert-msg">{{ a.message }}</span>
+      {% else %}
+      <p class="muted">No alerts yet.</p>
+      {% endfor %}
+    </section>
   </div>
-  {% else %}
-  <p class="muted">No alerts yet.</p>
-  {% endfor %}
-</section>
 
-<section class="panel">
-  <h2>Client configuration</h2>
-  <h3>API key</h3>
-  <div class="copy-row">
-    <code class="key-box" id="api-key">{{ api_key }}</code>
-    <button type="button" class="secondary" onclick="copyText('{{ api_key }}', this)">Copy</button>
-  </div>
-  <h3>Client .env</h3>
-  <pre class="key-box">HOST_URL=http://&lt;this-host&gt;:8000
+  <!-- RIGHT: containers down to client configuration -->
+  <div class="col">
+    <section class="panel">
+      <h2>Docker containers {% if containers %}<span class="chip neutral" style="margin-left:6px">{{ containers | length }}</span>{% endif %}</h2>
+      {% if containers %}
+        {% for c in containers %}
+        <details class="container-item">
+          <summary>
+            <span class="c-name">{{ c.name }}</span>
+            <span class="spacer"></span>
+            {{ ui.container_status(c.status) }}
+          </summary>
+          <div class="c-body">
+            <dl>
+              <dt>Image</dt><dd>{{ c.image }}</dd>
+              <dt>Status</dt><dd>{{ c.status }}</dd>
+              {% if c.started_at %}<dt>Started</dt><dd>{{ c.started_at }}</dd>{% endif %}
+            </dl>
+          </div>
+        </details>
+        {% endfor %}
+      {% else %}<p class="muted">No containers reported.</p>{% endif %}
+    </section>
+
+    <section class="panel">
+      <h2>Client configuration</h2>
+      <h3>API key</h3>
+      <div class="copy-row">
+        <code class="key-box" id="api-key">{{ api_key }}</code>
+        <button type="button" class="secondary copy-btn" onclick="copyText('{{ api_key }}', this)">Copy</button>
+      </div>
+      <h3>Client .env</h3>
+      <pre class="key-box">HOST_URL=http://&lt;this-host&gt;:8000
 API_KEY={{ api_key }}</pre>
-  <form method="post" action="/devices/{{ device.id }}/rotate-key" onsubmit="return confirm('Rotate API key? The client config must be updated to match or it will be locked out.');" style="margin-top:12px">
-    <button type="submit" class="secondary">Rotate key</button>
-  </form>
-</section>
+      <form method="post" action="/devices/{{ device.id }}/rotate-key" onsubmit="return confirm('Rotate API key? The client config must be updated to match or it will be locked out.');" style="margin-top:12px">
+        <button type="submit" class="secondary">Rotate key</button>
+      </form>
+    </section>
+  </div>
+</div>
 
 <section class="panel">
   <h2>Danger zone</h2>

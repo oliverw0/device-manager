@@ -15,6 +15,7 @@ class TailscaleInfo(BaseModel):
     connected: bool = False
     backend_state: Optional[str] = None
     ips: List[str] = []
+    dns_name: Optional[str] = None  # MagicDNS name, e.g. plex-server.tailnet-name.ts.net
     tailnet: Optional[str] = None
     exit_node: Optional[str] = None
 

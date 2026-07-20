@@ -12,6 +12,14 @@ from ..security import get_device_from_api_key
 router = APIRouter(prefix="/api/v1", tags=["client"])
 
 
+@router.get("/healthz")
+def healthz():
+    # Unauthenticated liveness/connectivity check. The /api/v1 prefix is exempt
+    # from the admin login middleware, so clients can probe reachability without
+    # a valid API key.
+    return {"status": "ok"}
+
+
 @router.post("/report")
 def submit_report(
     report: ClientReport,

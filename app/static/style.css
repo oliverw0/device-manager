@@ -361,3 +361,50 @@ button.danger:hover { filter: brightness(1.08); }
 .alert-item .alert-msg { color: var(--text); }
 
 .back-link { display: inline-block; margin-bottom: 12px; color: var(--muted); font-size: 13px; }
+
+/* ---------- two-column detail layout ---------- */
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  align-items: start;
+}
+@media (max-width: 860px) { .detail-grid { grid-template-columns: 1fr; } }
+.detail-grid .col > .panel:last-child { margin-bottom: 0; }
+
+/* ---------- click-to-copy values ---------- */
+.copyable {
+  display: inline-block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  padding: 1px 7px;
+  border-radius: 5px;
+  background: var(--panel-2);
+  border: 1px solid var(--border-subtle);
+  cursor: pointer;
+  position: relative;
+  transition: border-color 0.1s, background 0.1s;
+}
+.copyable:hover { border-color: var(--accent); background: rgba(91,140,255,0.10); }
+.copyable::before { content: "⧉"; margin-right: 5px; color: var(--faint); font-size: 11px; }
+
+/* "Copied" flash for any element carrying .copied (buttons and copyable chips) */
+.copy-btn { position: relative; }
+.copied::after {
+  content: "Copied";
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 6px;
+  background: var(--green);
+  color: #05210f;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: Inter, -apple-system, sans-serif;
+  padding: 2px 7px;
+  border-radius: 5px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 5;
+}
