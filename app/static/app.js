@@ -146,7 +146,16 @@ function copyText(text, el) {
 }
 
 /* ---------- history chart ---------- */
-function drawSparkline(canvas, series, colors) {
+var CHART_SERIES = [
+  { key: "cpu_percent", label: "CPU", color: "#ef5350" },
+  { key: "mem_percent", label: "Memory", color: "#5b8cff" },
+  { key: "disk_percent", label: "Disk", color: "#35c66b" },
+];
+
+function chartX(i, count, w) { return count < 2 ? 4 : (i / (count - 1)) * (w - 8) + 4; }
+function chartY(v, h) { return h - 4 - (v / 100) * (h - 8); }
+
+function drawChart(canvas, rows, hoverIndex) {
   const ctx = canvas.getContext("2d");
   const w = canvas.width, h = canvas.height;
   ctx.clearRect(0, 0, w, h);
@@ -162,30 +171,183 @@ function drawSparkline(canvas, series, colors) {
     ctx.stroke();
   }
 
-  const maxY = 100;
-  series.forEach((points, i) => {
-    if (points.length < 2) return;
+  if (rows.length < 2) return;
+
+  CHART_SERIES.forEach((s) => {
     ctx.beginPath();
-    ctx.strokeStyle = colors[i];
+    ctx.strokeStyle = s.color;
     ctx.lineWidth = 1.8;
-    points.forEach((v, idx) => {
-      const x = (idx / (points.length - 1)) * (w - 8) + 4;
-      const y = h - 4 - (v / maxY) * (h - 8);
-      if (idx === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    rows.forEach((r, i) => {
+      const x = chartX(i, rows.length, w);
+      const y = chartY(r[s.key], h);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     });
     ctx.stroke();
   });
+
+  // hover guide line + highlight dots
+  if (hoverIndex != null && rows[hoverIndex]) {
+    const x = chartX(hoverIndex, rows.length, w);
+    ctx.strokeStyle = "rgba(255,255,255,0.25)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, h);
+    ctx.stroke();
+    CHART_SERIES.forEach((s) => {
+      const y = chartY(rows[hoverIndex][s.key], h);
+      ctx.beginPath();
+      ctx.fillStyle = s.color;
+      ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#0d0f13";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    });
+  }
 }
 
 function loadHistoryChart(url, canvasId) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
+  const wrap = canvas.parentElement;
+  wrap.style.position = wrap.style.position || "relative";
+
+  const tip = document.createElement("div");
+  tip.className = "chart-tip";
+  tip.style.display = "none";
+  wrap.appendChild(tip);
+
+  const state = { rows: [], hoverIndex: null };
+  const draw = () => drawChart(canvas, state.rows, state.hoverIndex);
+
+  function indexFromEvent(e) {
+    const rect = canvas.getBoundingClientRect();
+    // The canvas renders at a fixed internal width but is displayed scaled
+    // (max-width:100%), so map the pointer using the displayed rect width.
+    const ratio = (e.clientX - rect.left) / rect.width;
+    const idx = Math.round(ratio * (state.rows.length - 1));
+    return Math.max(0, Math.min(state.rows.length - 1, idx));
+  }
+
+  function showTip(e, idx) {
+    const row = state.rows[idx];
+    if (!row) return;
+    const when = parseUtc(row.timestamp);
+    const rowsHtml = CHART_SERIES.map((s) =>
+      `<div class="tip-row"><span class="tip-dot" style="background:${s.color}"></span>${s.label}<b>${Math.round(row[s.key])}%</b></div>`
+    ).join("");
+    tip.innerHTML = `<div class="tip-time">${when ? when.toLocaleString() : ""}</div>${rowsHtml}`;
+    tip.style.display = "block";
+
+    const wrapRect = wrap.getBoundingClientRect();
+    let left = e.clientX - wrapRect.left + 14;
+    if (left + tip.offsetWidth > wrap.clientWidth) {
+      left = e.clientX - wrapRect.left - tip.offsetWidth - 14;
+    }
+    let top = e.clientY - wrapRect.top + 14;
+    tip.style.left = Math.max(0, left) + "px";
+    tip.style.top = top + "px";
+  }
+
+  canvas.addEventListener("mousemove", (e) => {
+    if (state.rows.length < 2) return;
+    state.hoverIndex = indexFromEvent(e);
+    draw();
+    showTip(e, state.hoverIndex);
+  });
+  canvas.addEventListener("mouseleave", () => {
+    state.hoverIndex = null;
+    tip.style.display = "none";
+    draw();
+  });
+
   const render = () => fetch(url).then((r) => r.json()).then((rows) => {
-    const cpu = rows.map((r) => r.cpu_percent);
-    const mem = rows.map((r) => r.mem_percent);
-    const disk = rows.map((r) => r.disk_percent);
-    drawSparkline(canvas, [cpu, mem, disk], ["#ef5350", "#5b8cff", "#35c66b"]);
+    state.rows = rows;
+    draw();
   }).catch(() => {});
   render();
   setInterval(render, 10000);
+}
+
+/* ---------- per-container background sparklines ---------- */
+var CONTAINER_SPARK_COLORS = { cpu: "239,83,80", mem: "91,140,255" };
+
+function drawContainerSpark(canvas, values, metric) {
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  if (values.length < 2) return;
+
+  const rgb = CONTAINER_SPARK_COLORS[metric] || CONTAINER_SPARK_COLORS.cpu;
+  const xAt = (i) => (i / (values.length - 1)) * w;
+  const yAt = (v) => h - (Math.max(0, Math.min(100, v)) / 100) * (h - 3) - 1;
+
+  // filled area
+  ctx.beginPath();
+  ctx.moveTo(0, h);
+  values.forEach((v, i) => ctx.lineTo(xAt(i), yAt(v)));
+  ctx.lineTo(w, h);
+  ctx.closePath();
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, `rgba(${rgb},0.38)`);
+  grad.addColorStop(1, `rgba(${rgb},0.03)`);
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // line
+  ctx.beginPath();
+  values.forEach((v, i) => (i === 0 ? ctx.moveTo(xAt(i), yAt(v)) : ctx.lineTo(xAt(i), yAt(v))));
+  ctx.strokeStyle = `rgba(${rgb},0.6)`;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+}
+
+function loadContainerSparks(url) {
+  const panel = document.getElementById("containers-panel");
+  if (!panel) return;
+  const toggle = document.getElementById("spark-toggle");
+  const state = { data: {}, metric: "cpu" };
+
+  function drawAll() {
+    panel.querySelectorAll(".container-item").forEach((item) => {
+      const name = item.getAttribute("data-name");
+      const canvas = item.querySelector(".container-spark");
+      const summary = item.querySelector("summary");
+      if (!canvas || !summary) return;
+      const w = summary.clientWidth, h = summary.clientHeight;
+      if (w === 0 || h === 0) return;
+      if (canvas.width !== w) canvas.width = w;
+      if (canvas.height !== h) canvas.height = h;
+      const series = (state.data[name] || [])
+        .map((p) => (state.metric === "cpu" ? p.cpu_percent : p.mem_percent))
+        .filter((v) => v != null);
+      drawContainerSpark(canvas, series, state.metric);
+
+      // update the inline current-usage figure to match the selected metric
+      const usage = item.querySelector(".c-usage");
+      if (usage) {
+        const val = usage.getAttribute(state.metric === "cpu" ? "data-cpu" : "data-mem");
+        usage.textContent = val === "" || val === null ? "" : Math.round(parseFloat(val)) + "%";
+      }
+    });
+  }
+
+  if (toggle) {
+    toggle.addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-metric]");
+      if (!btn) return;
+      state.metric = btn.getAttribute("data-metric");
+      toggle.querySelectorAll("button").forEach((b) => b.classList.toggle("active", b === btn));
+      drawAll();
+    });
+  }
+
+  const render = () => fetch(url).then((r) => r.json()).then((data) => {
+    state.data = data;
+    drawAll();
+  }).catch(() => {});
+  render();
+  setInterval(render, 15000);
+  window.addEventListener("resize", drawAll);
 }

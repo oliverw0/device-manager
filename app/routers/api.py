@@ -5,7 +5,7 @@ from sqlmodel import Session
 
 from .. import notifier
 from ..database import get_session
-from ..models import AlertEvent, Device, ReportHistory
+from ..models import AlertEvent, ContainerHistory, Device, ReportHistory
 from ..schemas import ClientReport
 from ..security import get_device_from_api_key
 
@@ -67,6 +67,19 @@ def submit_report(
             disk_percent=report.system.disk_percent,
         )
     )
+
+    for container in report.docker_containers:
+        if container.cpu_percent is None and container.mem_percent is None:
+            continue
+        session.add(
+            ContainerHistory(
+                device_id=device.id,
+                container_name=container.name,
+                cpu_percent=container.cpu_percent or 0.0,
+                mem_percent=container.mem_percent or 0.0,
+            )
+        )
+
     session.commit()
 
     return {"status": "ok"}

@@ -39,6 +39,16 @@ class ReportHistory(SQLModel, table=True):
     disk_percent: float = 0.0
 
 
+class ContainerHistory(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    device_id: int = Field(foreign_key="device.id", index=True)
+    container_name: str = Field(index=True)
+    timestamp: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+    cpu_percent: float = 0.0
+    mem_percent: float = 0.0
+
+
 class AlertEvent(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     device_id: int = Field(foreign_key="device.id", index=True)

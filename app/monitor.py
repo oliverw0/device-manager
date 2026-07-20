@@ -7,7 +7,7 @@ from sqlmodel import Session, delete, select
 from . import notifier
 from .config import settings
 from .database import engine
-from .models import AlertEvent, Device, ReportHistory
+from .models import AlertEvent, ContainerHistory, Device, ReportHistory
 
 logger = logging.getLogger("devicemanager.monitor")
 
@@ -38,6 +38,7 @@ def check_offline_devices(session: Session) -> None:
 def prune_history(session: Session) -> None:
     cutoff = datetime.utcnow() - timedelta(days=settings.history_retention_days)
     session.exec(delete(ReportHistory).where(ReportHistory.timestamp < cutoff))
+    session.exec(delete(ContainerHistory).where(ContainerHistory.timestamp < cutoff))
     session.commit()
 
 

@@ -8,7 +8,7 @@ from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, delete, select
 
 from ..database import get_session
-from ..models import AlertEvent, Device, ReportHistory, generate_api_key
+from ..models import AlertEvent, ContainerHistory, Device, ReportHistory, generate_api_key
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -155,6 +155,35 @@ def device_history(device_id: int, session: Session = Depends(get_session)):
         }
         for r in rows
     ]
+
+
+@router.get("/devices/{device_id}/containers/history.json")
+def container_history(device_id: int, session: Session = Depends(get_session)):
+    # Most-recent rows first, grouped per container, capped to keep the
+    # background sparklines light. We over-fetch then trim per container.
+    points_per_container = 60
+    rows = session.exec(
+        select(ContainerHistory)
+        .where(ContainerHistory.device_id == device_id)
+        .order_by(ContainerHistory.timestamp.desc())
+        .limit(2000)
+    ).all()
+
+    grouped: dict[str, list] = {}
+    for r in rows:
+        series = grouped.setdefault(r.container_name, [])
+        if len(series) >= points_per_container:
+            continue
+        series.append(
+            {
+                "timestamp": r.timestamp.isoformat(),
+                "cpu_percent": r.cpu_percent,
+                "mem_percent": r.mem_percent,
+            }
+        )
+
+    # rows came newest-first; reverse each series to chronological order
+    return {name: list(reversed(series)) for name, series in grouped.items()}
 
 
 @router.post("/devices/{device_id}/rotate-key")

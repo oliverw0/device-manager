@@ -35,6 +35,8 @@ class DockerContainerInfo(BaseModel):
     image: str
     status: str
     started_at: Optional[str] = None
+    cpu_percent: Optional[float] = None
+    mem_percent: Optional[float] = None
 
 
 class ClientReport(BaseModel):

@@ -41,7 +41,9 @@
 
     <section class="panel">
       <h2>History (last 500 reports)</h2>
-      <canvas id="history-chart" width="1040" height="180" style="max-width:100%"></canvas>
+      <div class="chart-wrap">
+        <canvas id="history-chart" width="1040" height="180" style="max-width:100%"></canvas>
+      </div>
       <p class="muted" style="font-size:12px;margin:8px 0 0">
         <span style="color:var(--red)">■</span> CPU &nbsp;
         <span style="color:var(--accent)">■</span> Memory &nbsp;
@@ -102,13 +104,27 @@
 
   <!-- RIGHT: containers down to client configuration -->
   <div class="col">
-    <section class="panel">
-      <h2>Docker containers {% if containers %}<span class="chip neutral" style="margin-left:6px">{{ containers | length }}</span>{% endif %}</h2>
+    <section class="panel" id="containers-panel">
+      <div class="panel-head">
+        <h2 style="margin:0">Docker containers {% if containers %}<span class="chip neutral">{{ containers | length }}</span>{% endif %}</h2>
+        {% if containers %}
+        <div class="spark-toggle" id="spark-toggle" title="Background graph metric">
+          <button type="button" class="active" data-metric="cpu">CPU</button>
+          <button type="button" data-metric="mem">Mem</button>
+        </div>
+        {% endif %}
+      </div>
       {% if containers %}
         {% for c in containers %}
-        <details class="container-item">
+        {% set ccpu = c.get('cpu_percent') %}
+        {% set cmem = c.get('mem_percent') %}
+        <details class="container-item" data-name="{{ c.name }}">
           <summary>
+            <canvas class="container-spark"></canvas>
             <span class="c-name">{{ c.name }}</span>
+            {% if ccpu is not none or cmem is not none %}
+            <span class="c-usage" data-cpu="{{ ccpu if ccpu is not none else '' }}" data-mem="{{ cmem if cmem is not none else '' }}">{{ '%.0f'|format(ccpu) ~ '%' if ccpu is not none else '' }}</span>
+            {% endif %}
             <span class="spacer"></span>
             {{ ui.container_status(c.status) }}
           </summary>
@@ -116,6 +132,8 @@
             <dl>
               <dt>Image</dt><dd>{{ c.image }}</dd>
               <dt>Status</dt><dd>{{ c.status }}</dd>
+              {% if ccpu is not none %}<dt>CPU</dt><dd>{{ '%.1f'|format(ccpu) }}%</dd>{% endif %}
+              {% if cmem is not none %}<dt>Memory</dt><dd>{{ '%.1f'|format(cmem) }}%</dd>{% endif %}
               {% if c.started_at %}<dt>Started</dt><dd>{{ c.started_at }}</dd>{% endif %}
             </dl>
           </div>
@@ -150,5 +168,8 @@ API_KEY={{ api_key }}</pre>
 </section>
 {% endblock %}
 {% block scripts %}
-<script>loadHistoryChart('/devices/{{ device.id }}/history.json', 'history-chart');</script>
+<script>
+  loadHistoryChart('/devices/{{ device.id }}/history.json', 'history-chart');
+  loadContainerSparks('/devices/{{ device.id }}/containers/history.json');
+</script>
 {% endblock %}
