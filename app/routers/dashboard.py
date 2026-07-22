@@ -91,6 +91,7 @@ def serialize_device(device: Device) -> dict:
         "seconds_since_seen": seconds_since_seen,
         "report_interval_seconds": device.report_interval_seconds,
         "offline_after_seconds": device.offline_after_seconds,
+        "ssh_enabled": device.ssh_enabled,
         "report": report,
     }
 
@@ -184,6 +185,52 @@ def container_history(device_id: int, session: Session = Depends(get_session)):
 
     # rows came newest-first; reverse each series to chronological order
     return {name: list(reversed(series)) for name, series in grouped.items()}
+
+
+def derive_ssh_host(device: Device) -> Optional[str]:
+    """Where to SSH: explicit override, else the reported MagicDNS name / first
+    Tailscale IP from the last report."""
+    if device.ssh_host:
+        return device.ssh_host
+    if not device.last_report_json:
+        return None
+    ts = (json.loads(device.last_report_json) or {}).get("tailscale") or {}
+    if ts.get("dns_name"):
+        return ts["dns_name"]
+    ips = ts.get("ips") or []
+    return ips[0] if ips else None
+
+
+@router.get("/devices/{device_id}/ssh-users.json")
+def ssh_users(device_id: int, session: Session = Depends(get_session)):
+    device = session.get(Device, device_id)
+    if device is None:
+        return {"ssh_enabled": False, "users": [], "host": None}
+    report = json.loads(device.last_report_json) if device.last_report_json else {}
+    return {
+        "ssh_enabled": device.ssh_enabled,
+        "users": (report or {}).get("ssh_users", []),
+        "host": derive_ssh_host(device),
+        "port": device.ssh_port,
+    }
+
+
+@router.post("/devices/{device_id}/ssh")
+def update_ssh(
+    device_id: int,
+    ssh_enabled: bool = Form(False),
+    ssh_host: str = Form(""),
+    ssh_port: int = Form(22),
+    session: Session = Depends(get_session),
+):
+    device = session.get(Device, device_id)
+    if device:
+        device.ssh_enabled = ssh_enabled
+        device.ssh_host = ssh_host.strip() or None
+        device.ssh_port = ssh_port or 22
+        session.add(device)
+        session.commit()
+    return RedirectResponse(url=f"/devices/{device_id}", status_code=303)
 
 
 @router.post("/devices/{device_id}/rotate-key")

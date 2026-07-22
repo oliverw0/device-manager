@@ -42,7 +42,9 @@ h3 { font-size: 13px; margin: 18px 0 6px; font-weight: 600; color: var(--muted);
 .topbar {
   position: sticky;
   top: 0;
-  z-index: 10;
+  z-index: 60;
+  height: 53px;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -496,3 +498,81 @@ button.danger:hover { filter: brightness(1.08); }
   pointer-events: none;
   z-index: 5;
 }
+
+/* ---------- SSH terminal icon in dashboard rows ---------- */
+.last-seen-cell { white-space: nowrap; }
+.last-seen-cell span { vertical-align: middle; }
+.term-btn {
+  margin-left: 8px;
+  padding: 2px 7px;
+  font-size: 13px;
+  line-height: 1;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 6px;
+  vertical-align: middle;
+}
+.term-btn:hover { color: var(--text); border-color: var(--accent); background: rgba(91,140,255,0.10); }
+
+/* ---------- split terminal pane ---------- */
+body.term-open .container { width: 50%; max-width: none; margin: 0; }
+
+.terminal-pane {
+  position: fixed;
+  top: 53px;
+  right: 0;
+  bottom: 0;
+  width: 50%;
+  z-index: 55;
+  display: flex;
+  flex-direction: column;
+  background: #0b0d11;
+  border-left: 1px solid var(--border);
+}
+.terminal-pane[hidden] { display: none; }
+
+.term-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--panel);
+}
+.term-title { font-weight: 600; font-size: 13px; }
+.term-user {
+  background: #0b0d11;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 13px;
+  max-width: 160px;
+}
+.term-head .spacer { flex: 1; }
+.term-head button { padding: 5px 12px; font-size: 13px; }
+
+.term-body { flex: 1; min-height: 0; padding: 6px 8px; overflow: hidden; }
+.term-body .xterm { height: 100%; }
+
+.term-status {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  border-top: 1px solid var(--border-subtle);
+  background: var(--panel);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 860px) {
+  body.term-open .container { display: none; }
+  .terminal-pane { width: 100%; }
+}
+
+/* ---------- SSH access panel (device detail) ---------- */
+.ssh-form { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+.ssh-form label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--muted); }
+.ssh-form .checkbox-row { flex-direction: row; align-items: center; gap: 8px; color: var(--text); font-size: 14px; }

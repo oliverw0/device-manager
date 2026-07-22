@@ -46,7 +46,10 @@
           <td>{{ ui.meter(d.report.system.disk_percent if d.report else none) }}</td>
           <td>{{ ui.tailscale_chip(d.report.tailscale if d.report else none) }}</td>
           <td>{{ ui.container_summary(d.report.docker_containers if d.report else none) }}</td>
-          <td class="muted" title="{{ d.last_seen_at | dt }}">{{ d.seconds_since_seen | reltime }}</td>
+          <td class="last-seen-cell muted" title="{{ d.last_seen_at | dt }}">
+            <span>{{ d.seconds_since_seen | reltime }}</span>
+            {% if d.ssh_enabled %}<button class="term-btn" title="Open SSH terminal" data-term-id="{{ d.id }}" data-term-name="{{ d.name }}" onclick="event.stopPropagation(); openTerminalFromBtn(this)">⌨</button>{% endif %}
+          </td>
         </tr>
         {% else %}
         <tr class="empty-row"><td colspan="8">No devices yet. Add one below to get an API key.</td></tr>

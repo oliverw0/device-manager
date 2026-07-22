@@ -53,7 +53,9 @@
 
     <section class="panel">
       <h2>Tailscale</h2>
-      {% if ts %}
+      {% if ts and ts.backend_state == 'not_installed' %}
+      <p class="muted">No Tailscale client on this device.</p>
+      {% elif ts %}
       <ul class="kv">
         <li><span class="k">Status</span><span class="v">{{ ui.tailscale_chip(ts) }}</span></li>
         <li><span class="k">Backend state</span><span class="v">{{ ts.backend_state or '—' }}</span></li>
@@ -140,6 +142,28 @@
         </details>
         {% endfor %}
       {% else %}<p class="muted">No containers reported.</p>{% endif %}
+    </section>
+
+    <section class="panel">
+      <h2>SSH terminal</h2>
+      <form method="post" action="/devices/{{ device.id }}/ssh" class="ssh-form">
+        <label class="checkbox-row">
+          <input type="checkbox" name="ssh_enabled" value="true" style="width:auto" {{ 'checked' if device.ssh_enabled else '' }} />
+          Enable in-browser SSH
+        </label>
+        <label>Address override <input type="text" name="ssh_host" value="{{ device.ssh_host or '' }}" placeholder="auto (Tailscale)" /></label>
+        <label>Port <input type="number" name="ssh_port" value="{{ device.ssh_port }}" style="width:90px" /></label>
+        <button type="submit" class="secondary">Save</button>
+      </form>
+      <p class="muted" style="font-size:12px;margin:10px 0 0">
+        Leave the address blank to use the reported Tailscale IP / MagicDNS name.
+        Run the client installer's SSH step so this host's key is authorized on the machine.
+      </p>
+      {% if device.ssh_enabled %}
+      <button type="button" class="secondary" style="margin-top:10px"
+              data-term-id="{{ device.id }}" data-term-name="{{ device.name }}"
+              onclick="openTerminalFromBtn(this)">⌨ Open terminal</button>
+      {% endif %}
     </section>
 
     <section class="panel">

@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{% block title %}DeviceManager{% endblock %}</title>
+  <link rel="stylesheet" href="/static/vendor/xterm.css" />
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
@@ -18,6 +19,21 @@
   <main class="container">
     {% block content %}{% endblock %}
   </main>
+
+  <aside id="terminal-pane" class="terminal-pane" hidden>
+    <div class="term-head">
+      <span class="term-title" id="term-title">Terminal</span>
+      <select id="term-user" class="term-user" title="Login user"></select>
+      <button type="button" id="term-connect" class="secondary" disabled>Connect</button>
+      <span class="spacer"></span>
+      <button type="button" id="term-close" class="secondary" title="Close terminal">✕</button>
+    </div>
+    <div id="term-body" class="term-body"></div>
+    <div id="term-status" class="term-status"></div>
+  </aside>
+
+  <script src="/static/vendor/xterm.js"></script>
+  <script src="/static/vendor/xterm-addon-fit.js"></script>
   <script src="/static/app.js"></script>
   {% block scripts %}{% endblock %}
 </body>

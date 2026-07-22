@@ -13,6 +13,7 @@
 
 {% macro tailscale_chip(ts) -%}
 {%- if not ts -%}<span class="faint">—</span>
+{%- elif ts.backend_state == 'not_installed' -%}<span class="chip neutral">No Tailscale client</span>
 {%- elif ts.connected -%}<span class="chip ok">Connected</span>
 {%- else -%}<span class="chip bad">{{ ts.backend_state or 'Down' }}</span>{%- endif -%}
 {%- endmacro %}

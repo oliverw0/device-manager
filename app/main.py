@@ -6,11 +6,11 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import monitor
+from . import monitor, ssh_keys
 from .auth_middleware import AdminAuthMiddleware
 from .config import settings
 from .database import init_db
-from .routers import api, auth, dashboard
+from .routers import api, auth, dashboard, terminal
 
 logging.basicConfig(level=logging.INFO)
 
@@ -18,6 +18,7 @@ logging.basicConfig(level=logging.INFO)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    ssh_keys.ensure_host_keypair()
     task = asyncio.create_task(monitor.run_forever())
     yield
     task.cancel()
@@ -41,3 +42,4 @@ app.add_middleware(
 app.include_router(api.router)
 app.include_router(auth.router)
 app.include_router(dashboard.router)
+app.include_router(terminal.router)

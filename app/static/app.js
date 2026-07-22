@@ -47,6 +47,7 @@ function statusChip(isOnline) {
 
 function tailscaleChip(ts) {
   if (!ts) return '<span class="faint">—</span>';
+  if (ts.backend_state === "not_installed") return '<span class="chip neutral">No Tailscale client</span>';
   if (ts.connected) return '<span class="chip ok">Connected</span>';
   return `<span class="chip bad">${escapeHtml(ts.backend_state || "Down")}</span>`;
 }
@@ -78,7 +79,10 @@ function renderDeviceRows(devices) {
         <td>${meter(sys ? sys.disk_percent : null)}</td>
         <td>${tailscaleChip(d.report ? d.report.tailscale : null)}</td>
         <td>${containerSummary(d.report ? d.report.docker_containers : null)}</td>
-        <td class="muted" title="${escapeHtml(fmtAbsolute(d.last_seen_at))}">${fmtRelative(d.seconds_since_seen)}</td>
+        <td class="last-seen-cell muted" title="${escapeHtml(fmtAbsolute(d.last_seen_at))}">
+          <span>${fmtRelative(d.seconds_since_seen)}</span>
+          ${d.ssh_enabled ? `<button class="term-btn" title="Open SSH terminal" data-term-id="${d.id}" data-term-name="${escapeHtml(d.name)}" onclick="event.stopPropagation(); openTerminalFromBtn(this)">⌨</button>` : ""}
+        </td>
       </tr>`;
     }).join("");
   }
@@ -351,3 +355,104 @@ function loadContainerSparks(url) {
   setInterval(render, 15000);
   window.addEventListener("resize", drawAll);
 }
+
+/* ---------- in-browser SSH terminal ---------- */
+var TERM = null, TERM_FIT = null, TERM_WS = null, TERM_DEVICE = null;
+
+function termStatus(text) {
+  const el = document.getElementById("term-status");
+  if (el) el.textContent = text;
+}
+
+function openTerminalFromBtn(btn) {
+  openTerminal(btn.dataset.termId, btn.dataset.termName);
+}
+
+function openTerminalPane() {
+  document.body.classList.add("term-open");
+  const pane = document.getElementById("terminal-pane");
+  if (pane) pane.hidden = false;
+}
+
+function closeTerminal() {
+  if (TERM_WS) { try { TERM_WS.close(); } catch (e) {} TERM_WS = null; }
+  if (TERM) { try { TERM.dispose(); } catch (e) {} TERM = null; }
+  const body = document.getElementById("term-body");
+  if (body) body.innerHTML = "";
+  document.body.classList.remove("term-open");
+  const pane = document.getElementById("terminal-pane");
+  if (pane) pane.hidden = true;
+}
+
+function openTerminal(deviceId, deviceName) {
+  if (typeof Terminal === "undefined") { alert("Terminal library failed to load."); return; }
+  TERM_DEVICE = deviceId;
+  const title = document.getElementById("term-title");
+  if (title) title.textContent = "SSH · " + deviceName;
+  const userSel = document.getElementById("term-user");
+  const connectBtn = document.getElementById("term-connect");
+  userSel.innerHTML = "";
+  connectBtn.disabled = true;
+  openTerminalPane();
+  termStatus("Loading users…");
+
+  fetch(`/devices/${deviceId}/ssh-users.json`).then((r) => r.json()).then((info) => {
+    if (!info.ssh_enabled) { termStatus("SSH is disabled for this device — enable it on the device page."); return; }
+    if (!info.users || !info.users.length) { termStatus("No login users reported yet (waiting for a client report)."); return; }
+    info.users.forEach((u) => {
+      const opt = document.createElement("option");
+      opt.value = u; opt.textContent = u;
+      userSel.appendChild(opt);
+    });
+    if (!info.host) { termStatus("No SSH address available for this device."); return; }
+    termStatus("Ready — target " + info.host + ":" + (info.port || 22));
+    connectBtn.disabled = false;
+  }).catch(() => termStatus("Failed to load users."));
+}
+
+function connectTerminal() {
+  if (!TERM_DEVICE) return;
+  const user = document.getElementById("term-user").value;
+  if (!user) return;
+  const body = document.getElementById("term-body");
+  body.innerHTML = "";
+
+  TERM = new Terminal({ cursorBlink: true, fontSize: 13, fontFamily: "ui-monospace, Menlo, Consolas, monospace", theme: { background: "#0b0d11" } });
+  TERM_FIT = new FitAddon.FitAddon();
+  TERM.loadAddon(TERM_FIT);
+  TERM.open(body);
+  try { TERM_FIT.fit(); } catch (e) {}
+
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  const ws = new WebSocket(`${proto}://${location.host}/devices/${TERM_DEVICE}/terminal?user=${encodeURIComponent(user)}`);
+  ws.binaryType = "arraybuffer";
+  TERM_WS = ws;
+  termStatus("Connecting…");
+
+  const sendResize = () => {
+    if (ws.readyState !== 1) return;
+    try { TERM_FIT.fit(); } catch (e) {}
+    ws.send(JSON.stringify({ type: "resize", cols: TERM.cols, rows: TERM.rows }));
+  };
+
+  ws.onopen = () => {
+    termStatus("Connected as " + user);
+    sendResize();
+    TERM.onData((d) => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: "input", data: d })); });
+    TERM.focus();
+  };
+  ws.onmessage = (ev) => {
+    if (typeof ev.data === "string") TERM.write(ev.data);
+    else TERM.write(new Uint8Array(ev.data));
+  };
+  ws.onclose = () => termStatus("Disconnected.");
+  ws.onerror = () => termStatus("Connection error.");
+  window.addEventListener("resize", sendResize);
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  const connectBtn = document.getElementById("term-connect");
+  const closeBtn = document.getElementById("term-close");
+  if (connectBtn) connectBtn.addEventListener("click", connectTerminal);
+  if (closeBtn) closeBtn.addEventListener("click", closeTerminal);
+});

@@ -44,6 +44,7 @@ class ClientReport(BaseModel):
     tailscale: Optional[TailscaleInfo] = None
     ssh_auth: Optional[SshAuthInfo] = None
     docker_containers: List[DockerContainerInfo] = []
+    ssh_users: List[str] = []
     agent_version: str = "1.0.0"
 
 

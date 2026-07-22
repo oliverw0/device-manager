@@ -1,9 +1,10 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import PlainTextResponse
 from sqlmodel import Session
 
-from .. import notifier
+from .. import notifier, ssh_keys
 from ..database import get_session
 from ..models import AlertEvent, ContainerHistory, Device, ReportHistory
 from ..schemas import ClientReport
@@ -18,6 +19,13 @@ def healthz():
     # from the admin login middleware, so clients can probe reachability without
     # a valid API key.
     return {"status": "ok"}
+
+
+@router.get("/ssh-pubkey", response_class=PlainTextResponse)
+def ssh_pubkey():
+    # Public keys are not secret; the client install script fetches this to add
+    # the host's key to a chosen user's authorized_keys on the target machine.
+    return ssh_keys.public_key_text()
 
 
 @router.post("/report")
