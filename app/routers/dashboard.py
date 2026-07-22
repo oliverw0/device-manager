@@ -10,8 +10,11 @@ from sqlmodel import Session, delete, select
 from ..database import get_session
 from ..models import AlertEvent, ContainerHistory, Device, ReportHistory, generate_api_key
 
+from ..assets import STATIC_VERSION
+
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
+templates.env.globals["static_version"] = STATIC_VERSION
 
 
 def _fmt_uptime(seconds) -> str:
@@ -188,17 +191,19 @@ def container_history(device_id: int, session: Session = Depends(get_session)):
 
 
 def derive_ssh_host(device: Device) -> Optional[str]:
-    """Where to SSH: explicit override, else the reported MagicDNS name / first
-    Tailscale IP from the last report."""
+    """Where to SSH, in order of preference: explicit override, reported MagicDNS
+    name, first Tailscale IP, then the address the last report came from (which
+    the host provably has a path to even when Tailscale isn't reported)."""
     if device.ssh_host:
         return device.ssh_host
-    if not device.last_report_json:
-        return None
-    ts = (json.loads(device.last_report_json) or {}).get("tailscale") or {}
-    if ts.get("dns_name"):
-        return ts["dns_name"]
-    ips = ts.get("ips") or []
-    return ips[0] if ips else None
+    if device.last_report_json:
+        ts = (json.loads(device.last_report_json) or {}).get("tailscale") or {}
+        if ts.get("dns_name"):
+            return ts["dns_name"]
+        ips = ts.get("ips") or []
+        if ips:
+            return ips[0]
+    return device.last_report_ip
 
 
 @router.get("/devices/{device_id}/ssh-users.json")

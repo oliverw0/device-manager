@@ -2,10 +2,12 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from ..assets import STATIC_VERSION
 from ..security import credentials_valid
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
+templates.env.globals["static_version"] = STATIC_VERSION
 
 
 def _safe_next(path: str) -> str:

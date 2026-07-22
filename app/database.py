@@ -18,6 +18,7 @@ _COLUMN_MIGRATIONS = {
         "ssh_enabled": "ALTER TABLE device ADD COLUMN ssh_enabled BOOLEAN NOT NULL DEFAULT 0",
         "ssh_host": "ALTER TABLE device ADD COLUMN ssh_host VARCHAR",
         "ssh_port": "ALTER TABLE device ADD COLUMN ssh_port INTEGER NOT NULL DEFAULT 22",
+        "last_report_ip": "ALTER TABLE device ADD COLUMN last_report_ip VARCHAR",
     },
 }
 

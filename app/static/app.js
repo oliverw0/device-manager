@@ -4,6 +4,8 @@ function escapeHtml(str) {
   }[c]));
 }
 
+var TERMINAL_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>';
+
 /* ---------- time helpers ---------- */
 // Server timestamps are UTC ISO strings without a timezone suffix; append "Z"
 // so the browser doesn't misinterpret them as local time.
@@ -81,7 +83,7 @@ function renderDeviceRows(devices) {
         <td>${containerSummary(d.report ? d.report.docker_containers : null)}</td>
         <td class="last-seen-cell muted" title="${escapeHtml(fmtAbsolute(d.last_seen_at))}">
           <span>${fmtRelative(d.seconds_since_seen)}</span>
-          ${d.ssh_enabled ? `<button class="term-btn" title="Open SSH terminal" data-term-id="${d.id}" data-term-name="${escapeHtml(d.name)}" onclick="event.stopPropagation(); openTerminalFromBtn(this)">⌨</button>` : ""}
+          ${d.ssh_enabled ? `<button class="term-btn" title="Open SSH terminal" data-term-id="${d.id}" data-term-name="${escapeHtml(d.name)}" onclick="event.stopPropagation(); openTerminalFromBtn(this)">${TERMINAL_ICON}</button>` : ""}
         </td>
       </tr>`;
     }).join("");
@@ -450,9 +452,30 @@ function connectTerminal() {
   window.addEventListener("resize", sendResize);
 }
 
+function initSshToggle() {
+  const toggle = document.getElementById("ssh-toggle");
+  if (!toggle) return;
+  toggle.addEventListener("change", () => {
+    const id = toggle.dataset.deviceId;
+    const enabled = toggle.checked;
+    toggle.disabled = true;
+    fetch(`/devices/${id}/ssh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: "ssh_enabled=" + (enabled ? "true" : "false"),
+    }).then((r) => {
+      toggle.disabled = false;
+      if (!r.ok) { toggle.checked = !enabled; return; }
+      const wrap = document.getElementById("ssh-open-wrap");
+      if (wrap) wrap.style.display = enabled ? "" : "none";
+    }).catch(() => { toggle.disabled = false; toggle.checked = !enabled; });
+  });
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   const connectBtn = document.getElementById("term-connect");
   const closeBtn = document.getElementById("term-close");
   if (connectBtn) connectBtn.addEventListener("click", connectTerminal);
   if (closeBtn) closeBtn.addEventListener("click", closeTerminal);
+  initSshToggle();
 });

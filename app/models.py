@@ -28,6 +28,9 @@ class Device(SQLModel, table=True):
     # denormalized snapshot of the most recent report, for quick dashboard rendering
     last_report_json: Optional[str] = None
 
+    # source address of the most recent report (fallback SSH target)
+    last_report_ip: Optional[str] = None
+
     # in-browser SSH terminal: off by default; host/port override the address
     # otherwise derived from the device's reported Tailscale IP / MagicDNS name.
     ssh_enabled: bool = False

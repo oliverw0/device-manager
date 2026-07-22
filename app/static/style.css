@@ -573,6 +573,37 @@ body.term-open .container { width: 50%; max-width: none; margin: 0; }
 }
 
 /* ---------- SSH access panel (device detail) ---------- */
-.ssh-form { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
-.ssh-form label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--muted); }
-.ssh-form .checkbox-row { flex-direction: row; align-items: center; gap: 8px; color: var(--text); font-size: 14px; }
+.switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.switch { position: relative; display: inline-block; width: 42px; height: 24px; flex: none; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.switch .slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  transition: background 0.15s, border-color 0.15s;
+}
+.switch .slider::before {
+  content: "";
+  position: absolute;
+  height: 18px;
+  width: 18px;
+  left: 2px;
+  top: 2px;
+  background: var(--muted);
+  border-radius: 50%;
+  transition: transform 0.15s, background 0.15s;
+}
+.switch input:checked + .slider { background: rgba(53,198,107,0.25); border-color: var(--green); }
+.switch input:checked + .slider::before { transform: translateX(18px); background: var(--green); }
+.switch input:disabled + .slider { opacity: 0.5; cursor: default; }
+
+/* align the svg glyph inside terminal buttons */
+.term-btn svg, .secondary svg { vertical-align: -2px; }

@@ -146,24 +146,22 @@
 
     <section class="panel">
       <h2>SSH terminal</h2>
-      <form method="post" action="/devices/{{ device.id }}/ssh" class="ssh-form">
-        <label class="checkbox-row">
-          <input type="checkbox" name="ssh_enabled" value="true" style="width:auto" {{ 'checked' if device.ssh_enabled else '' }} />
-          Enable in-browser SSH
+      <div class="switch-row">
+        <span>Enable in-browser SSH</span>
+        <label class="switch">
+          <input type="checkbox" id="ssh-toggle" data-device-id="{{ device.id }}" {{ 'checked' if device.ssh_enabled else '' }} />
+          <span class="slider"></span>
         </label>
-        <label>Address override <input type="text" name="ssh_host" value="{{ device.ssh_host or '' }}" placeholder="auto (Tailscale)" /></label>
-        <label>Port <input type="number" name="ssh_port" value="{{ device.ssh_port }}" style="width:90px" /></label>
-        <button type="submit" class="secondary">Save</button>
-      </form>
-      <p class="muted" style="font-size:12px;margin:10px 0 0">
-        Leave the address blank to use the reported Tailscale IP / MagicDNS name.
-        Run the client installer's SSH step so this host's key is authorized on the machine.
+      </div>
+      <p class="muted" style="font-size:12px;margin:12px 0 0">
+        Connects over the device's Tailscale address. Run the client installer's
+        SSH step so this host's key is authorized on the machine.
       </p>
-      {% if device.ssh_enabled %}
-      <button type="button" class="secondary" style="margin-top:10px"
-              data-term-id="{{ device.id }}" data-term-name="{{ device.name }}"
-              onclick="openTerminalFromBtn(this)">⌨ Open terminal</button>
-      {% endif %}
+      <div id="ssh-open-wrap" style="margin-top:14px;{{ '' if device.ssh_enabled else 'display:none' }}">
+        <button type="button" class="secondary"
+                data-term-id="{{ device.id }}" data-term-name="{{ device.name }}"
+                onclick="openTerminalFromBtn(this)">Open terminal</button>
+      </div>
     </section>
 
     <section class="panel">
