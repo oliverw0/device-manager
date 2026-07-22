@@ -9,7 +9,7 @@ from sqlmodel import Session
 from .. import ssh_keys
 from ..database import engine
 from ..models import Device
-from .dashboard import derive_ssh_host
+from .dashboard import ssh_candidates
 
 logger = logging.getLogger("devicemanager.terminal")
 
@@ -44,14 +44,14 @@ async def terminal(websocket: WebSocket, device_id: int, user: str = ""):
             await _send(websocket, "SSH is not enabled for this device.")
             await websocket.close()
             return
-        target = derive_ssh_host(device)
+        candidates = ssh_candidates(device)
         port = device.ssh_port
         report = json.loads(device.last_report_json) if device.last_report_json else {}
         allowed_users = set((report or {}).get("ssh_users", []))
         device_name = device.name
 
-    if not target:
-        await _send(websocket, "No SSH address for this device (no Tailscale IP reported and no override set).")
+    if not candidates:
+        await _send(websocket, "No SSH address for this device (no Tailscale IP or local IP reported, and no override set).")
         await websocket.close()
         return
 
@@ -66,20 +66,37 @@ async def terminal(websocket: WebSocket, device_id: int, user: str = ""):
         await websocket.close()
         return
 
-    logger.info("terminal session opening: device=%s user=%s target=%s:%s", device_name, user, target, port)
+    # Try each candidate (Tailscale first, then local addresses). A network
+    # failure moves on to the next; an auth failure stops immediately since the
+    # key/user won't differ by address.
+    conn = None
+    auth_failed = False
+    for addr in candidates:
+        logger.info("terminal connect attempt: device=%s user=%s target=%s:%s", device_name, user, addr, port)
+        try:
+            conn = await asyncssh.connect(
+                addr,
+                port=port,
+                username=user,
+                client_keys=[ssh_keys.private_key_path()],
+                known_hosts=None,  # trusted Tailscale network; TOFU hardening is a follow-up
+                connect_timeout=8,
+            )
+            await _send(websocket, f"Connected to {addr}.")
+            break
+        except asyncssh.PermissionDenied as exc:
+            await _send(websocket, f"Authentication failed on {addr}: {exc}")
+            auth_failed = True
+            break
+        except (OSError, asyncssh.Error) as exc:
+            await _send(websocket, f"Could not reach {addr}: {exc} — trying next…")
+            continue
 
-    try:
-        conn = await asyncssh.connect(
-            target,
-            port=port,
-            username=user,
-            client_keys=[ssh_keys.private_key_path()],
-            known_hosts=None,  # trusted Tailscale network; TOFU hardening is a follow-up
-            connect_timeout=10,
-        )
-    except (OSError, asyncssh.Error) as exc:
-        await _send(websocket, f"Connection failed: {exc}")
-        await _send(websocket, "Check the device is reachable, sshd is running, and the host key was provisioned (install.sh).")
+    if conn is None:
+        if auth_failed:
+            await _send(websocket, "The host's key isn't authorized for this user. Run provision-ssh.sh on the target.")
+        else:
+            await _send(websocket, "All addresses failed. Check the device is reachable and sshd is running.")
         await websocket.close()
         return
 

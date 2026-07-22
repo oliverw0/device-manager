@@ -9,6 +9,7 @@ class SystemInfo(BaseModel):
     mem_percent: float
     disk_percent: float
     uptime_seconds: float
+    local_ip: Optional[str] = None
 
 
 class TailscaleInfo(BaseModel):

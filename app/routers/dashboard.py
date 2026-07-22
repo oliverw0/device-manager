@@ -190,20 +190,42 @@ def container_history(device_id: int, session: Session = Depends(get_session)):
     return {name: list(reversed(series)) for name, series in grouped.items()}
 
 
-def derive_ssh_host(device: Device) -> Optional[str]:
-    """Where to SSH, in order of preference: explicit override, reported MagicDNS
-    name, first Tailscale IP, then the address the last report came from (which
-    the host provably has a path to even when Tailscale isn't reported)."""
+def ssh_candidates(device: Device) -> list[str]:
+    """Ordered SSH targets to try: Tailscale first, then local addresses.
+    The terminal attempts each until one connects.
+      1. explicit override (if set) — used alone
+      2. Tailscale IPs (100.x…), then the MagicDNS name
+      3. the device's reported LAN IP
+      4. the address its last report came from
+    """
     if device.ssh_host:
-        return device.ssh_host
-    if device.last_report_json:
-        ts = (json.loads(device.last_report_json) or {}).get("tailscale") or {}
-        if ts.get("dns_name"):
-            return ts["dns_name"]
-        ips = ts.get("ips") or []
-        if ips:
-            return ips[0]
-    return device.last_report_ip
+        return [device.ssh_host]
+
+    out: list[str] = []
+    report = json.loads(device.last_report_json) if device.last_report_json else {}
+    report = report or {}
+    ts = report.get("tailscale") or {}
+    out.extend(ts.get("ips") or [])
+    if ts.get("dns_name"):
+        out.append(ts["dns_name"])
+    system = report.get("system") or {}
+    if system.get("local_ip"):
+        out.append(system["local_ip"])
+    if device.last_report_ip:
+        out.append(device.last_report_ip)
+
+    seen = set()
+    ordered = []
+    for addr in out:
+        if addr and addr not in seen:
+            seen.add(addr)
+            ordered.append(addr)
+    return ordered
+
+
+def derive_ssh_host(device: Device) -> Optional[str]:
+    candidates = ssh_candidates(device)
+    return candidates[0] if candidates else None
 
 
 @router.get("/devices/{device_id}/ssh-users.json")

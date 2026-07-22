@@ -472,10 +472,19 @@ function initSshToggle() {
   });
 }
 
+function initSshProvisionCmd() {
+  const el = document.getElementById("ssh-provision-cmd");
+  if (!el) return;
+  el.textContent =
+    "mkdir -p ~/.ssh && curl -fsS " + location.origin +
+    "/api/v1/ssh-pubkey >> ~/.ssh/authorized_keys && chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys";
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   const connectBtn = document.getElementById("term-connect");
   const closeBtn = document.getElementById("term-close");
   if (connectBtn) connectBtn.addEventListener("click", connectTerminal);
   if (closeBtn) closeBtn.addEventListener("click", closeTerminal);
   initSshToggle();
+  initSshProvisionCmd();
 });

@@ -154,14 +154,27 @@
         </label>
       </div>
       <p class="muted" style="font-size:12px;margin:12px 0 0">
-        Connects over the device's Tailscale address. Run the client installer's
-        SSH step so this host's key is authorized on the machine.
+        Connects over the device's Tailscale address (or the IP it last reported from).
+        The machine must authorize this host's key first — see below.
       </p>
       <div id="ssh-open-wrap" style="margin-top:14px;{{ '' if device.ssh_enabled else 'display:none' }}">
         <button type="button" class="secondary"
                 data-term-id="{{ device.id }}" data-term-name="{{ device.name }}"
                 onclick="openTerminalFromBtn(this)">Open terminal</button>
       </div>
+
+      <details style="margin-top:14px">
+        <summary class="muted" style="cursor:pointer;font-size:13px">How to authorize a machine</summary>
+        <p class="muted" style="font-size:12px;margin:8px 0">
+          Run on the target, logged in as the user you'll connect as (the installer's
+          SSH step does this automatically for native installs; Docker clients need it manually):
+        </p>
+        <div class="copy-row">
+          <code class="key-box" id="ssh-provision-cmd">loading…</code>
+          <button type="button" class="secondary copy-btn"
+                  onclick="copyText(document.getElementById('ssh-provision-cmd').textContent, this)">Copy</button>
+        </div>
+      </details>
     </section>
 
     <section class="panel">
