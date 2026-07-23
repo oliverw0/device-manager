@@ -381,3 +381,17 @@ body.term-open .container { width: 50%; max-width: none; margin: 0; }
 .spark-toggle button:hover { background: var(--panel-2); color: var(--text); box-shadow: none; }
 .spark-toggle button.active { background: rgba(55,224,106,0.16); color: var(--green); }
 .spark-toggle button.active:hover { background: rgba(55,224,106,0.24); }
+
+/* ---------- mobile: prevent horizontal overflow on device detail ---------- */
+body { overflow-x: hidden; }
+#history-chart { max-width: 100%; }
+.copy-row { flex-wrap: wrap; }
+.copy-row .key-box { min-width: 0; }
+.kv li, .kv-grid li { min-width: 0; }
+.kv li .v, .kv-grid li .v { min-width: 0; overflow-wrap: anywhere; }
+.key-box, pre.key-box { max-width: 100%; overflow-x: auto; }
+@media (max-width: 640px) {
+  .container { padding: 14px; }
+  .kv-grid { grid-template-columns: 1fr; }
+  .page-head h1 { font-size: 17px; }
+}
