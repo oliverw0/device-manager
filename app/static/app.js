@@ -18,7 +18,7 @@ function parseUtc(iso) {
 
 function fmtAbsolute(iso) {
   const d = parseUtc(iso);
-  return d ? d.toLocaleString() : "never";
+  return d ? d.toLocaleString("en-AU", { timeZone: "Australia/Sydney" }) : "never";
 }
 
 function fmtRelative(seconds) {
@@ -245,7 +245,8 @@ function loadHistoryChart(url, canvasId) {
     const rowsHtml = CHART_SERIES.map((s) =>
       `<div class="tip-row"><span class="tip-dot" style="background:${s.color}"></span>${s.label}<b>${Math.round(row[s.key])}%</b></div>`
     ).join("");
-    tip.innerHTML = `<div class="tip-time">${when ? when.toLocaleString() : ""}</div>${rowsHtml}`;
+    const whenStr = when ? when.toLocaleString("en-AU", { timeZone: "Australia/Sydney" }) : "";
+    tip.innerHTML = `<div class="tip-time">${whenStr}</div>${rowsHtml}`;
     tip.style.display = "block";
 
     const wrapRect = wrap.getBoundingClientRect();

@@ -1,6 +1,9 @@
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
+
+AEST = ZoneInfo("Australia/Sydney")  # handles AEST/AEDT automatically
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -49,7 +52,9 @@ def _fmt_dt(value) -> str:
     dt = _to_datetime(value)
     if dt is None:
         return "never" if value in (None, "") else str(value)
-    return dt.strftime("%Y-%m-%d %H:%M UTC")
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)  # stored timestamps are UTC
+    return dt.astimezone(AEST).strftime("%Y-%m-%d %H:%M %Z")
 
 
 def _fmt_reltime(value) -> str:
@@ -148,8 +153,12 @@ def device_detail(request: Request, device_id: int, session: Session = Depends(g
 @router.get("/devices/{device_id}/history.json")
 def device_history(device_id: int, session: Session = Depends(get_session)):
     rows = session.exec(
-        select(ReportHistory).where(ReportHistory.device_id == device_id).order_by(ReportHistory.timestamp).limit(500)
+        select(ReportHistory)
+        .where(ReportHistory.device_id == device_id)
+        .order_by(ReportHistory.timestamp.desc())
+        .limit(500)
     ).all()
+    rows = list(reversed(rows))  # newest 500, back in chronological order
     return [
         {
             "timestamp": r.timestamp.isoformat(),
