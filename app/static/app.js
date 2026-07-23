@@ -153,9 +153,9 @@ function copyText(text, el) {
 
 /* ---------- history chart ---------- */
 var CHART_SERIES = [
-  { key: "cpu_percent", label: "CPU", color: "#ef5350" },
-  { key: "mem_percent", label: "Memory", color: "#5b8cff" },
-  { key: "disk_percent", label: "Disk", color: "#35c66b" },
+  { key: "cpu_percent", label: "CPU", color: "#ff5230" },
+  { key: "mem_percent", label: "Memory", color: "#37e06a" },
+  { key: "disk_percent", label: "Disk", color: "#ffb038" },
 ];
 
 function chartX(i, count, w) { return count < 2 ? 4 : (i / (count - 1)) * (w - 8) + 4; }
@@ -277,7 +277,7 @@ function loadHistoryChart(url, canvasId) {
 }
 
 /* ---------- per-container background sparklines ---------- */
-var CONTAINER_SPARK_COLORS = { cpu: "239,83,80", mem: "91,140,255" };
+var CONTAINER_SPARK_COLORS = { cpu: "255,82,48", mem: "55,224,106" };
 
 function drawContainerSpark(canvas, values, metric) {
   const ctx = canvas.getContext("2d");
