@@ -67,7 +67,7 @@ function renderDeviceRows(devices) {
   if (!tbody) return;
 
   if (devices.length === 0) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="8">No devices yet. Add one below to get an API key.</td></tr>';
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="9">No devices yet. Add one below to get an API key.</td></tr>';
   } else {
     tbody.innerHTML = devices.map((d) => {
       const sys = d.report && d.report.system;
@@ -83,6 +83,8 @@ function renderDeviceRows(devices) {
         <td>${containerSummary(d.report ? d.report.docker_containers : null)}</td>
         <td class="last-seen-cell muted" title="${escapeHtml(fmtAbsolute(d.last_seen_at))}">
           <span>${fmtRelative(d.seconds_since_seen)}</span>
+        </td>
+        <td class="term-cell">
           ${d.ssh_enabled ? `<button class="term-btn" title="Open SSH terminal" data-term-id="${d.id}" data-term-name="${escapeHtml(d.name)}" onclick="event.stopPropagation(); openTerminalFromBtn(this)">${TERMINAL_ICON}</button>` : ""}
         </td>
       </tr>`;

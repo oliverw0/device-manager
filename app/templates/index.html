@@ -29,6 +29,7 @@
           <th>Tailscale</th>
           <th>Containers</th>
           <th>Last seen</th>
+          <th>SSH</th>
         </tr>
       </thead>
       <tbody>
@@ -48,11 +49,13 @@
           <td>{{ ui.container_summary(d.report.docker_containers if d.report else none) }}</td>
           <td class="last-seen-cell muted" title="{{ d.last_seen_at | dt }}">
             <span>{{ d.seconds_since_seen | reltime }}</span>
+          </td>
+          <td class="term-cell">
             {% if d.ssh_enabled %}<button class="term-btn" title="Open SSH terminal" data-term-id="{{ d.id }}" data-term-name="{{ d.name }}" onclick="event.stopPropagation(); openTerminalFromBtn(this)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg></button>{% endif %}
           </td>
         </tr>
         {% else %}
-        <tr class="empty-row"><td colspan="8">No devices yet. Add one below to get an API key.</td></tr>
+        <tr class="empty-row"><td colspan="9">No devices yet. Add one below to get an API key.</td></tr>
         {% endfor %}
       </tbody>
     </table>
