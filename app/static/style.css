@@ -302,7 +302,7 @@ button.danger:hover { background: rgba(255,82,48,0.24); box-shadow: var(--glow-r
 .back-link { display: inline-block; margin-bottom: 12px; color: var(--muted); font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.09em; }
 
 /* ---------- two-column detail layout ---------- */
-.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; margin-bottom: 16px; }
+.detail-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; margin-bottom: 16px; }
 @media (max-width: 860px) { .detail-grid { grid-template-columns: 1fr; } }
 .detail-grid .col > .panel:last-child { margin-bottom: 0; }
 
