@@ -30,3 +30,36 @@
 <span class="chip {{ 'ok' if running==list|length else 'bad' if running==0 else 'warn' }}">{{ running }}/{{ list|length }} up</span>
 {%- endif -%}
 {%- endmacro %}
+
+{% macro container_card(c, device) -%}
+{%- set ccpu = c.get('cpu_percent') -%}
+{%- set cmem = c.get('mem_percent') -%}
+<details class="container-item" data-name="{{ c.name }}">
+  <summary>
+    <canvas class="container-spark"></canvas>
+    <span class="c-name">{{ c.name }}</span>
+    {% if ccpu is not none or cmem is not none %}
+    <span class="c-usage" data-cpu="{{ ccpu if ccpu is not none else '' }}" data-mem="{{ cmem if cmem is not none else '' }}">{{ '%.0f'|format(ccpu) ~ '%' if ccpu is not none else '' }}</span>
+    {% endif %}
+    <span class="spacer"></span>
+    {{ container_status(c.status) }}
+    {% if device.ssh_enabled %}
+    <span class="c-actions" onclick="event.stopPropagation()">
+      <button class="term-btn" title="Logs" onclick="containerLogs({{ device.id }}, '{{ c.name }}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="7" x2="19" y2="7"/><line x1="5" y1="12" x2="19" y2="12"/><line x1="5" y1="17" x2="13" y2="17"/></svg></button>
+      <button class="term-btn" title="Start" onclick="containerAction({{ device.id }}, '{{ c.name }}', 'start', this)"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><polygon points="6 4 20 12 6 20"/></svg></button>
+      <button class="term-btn" title="Stop" onclick="containerAction({{ device.id }}, '{{ c.name }}', 'stop', this)"><svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="1"/></svg></button>
+      <button class="term-btn" title="Restart" onclick="containerAction({{ device.id }}, '{{ c.name }}', 'restart', this)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 3 21 9 15 9"/><path d="M20.5 14a8.5 8.5 0 1 1-2-8.9L21 9"/></svg></button>
+    </span>
+    {% endif %}
+  </summary>
+  <div class="c-body">
+    <dl>
+      <dt>Image</dt><dd>{{ c.image }}</dd>
+      <dt>Status</dt><dd>{{ c.status }}</dd>
+      {% if ccpu is not none %}<dt>CPU</dt><dd>{{ '%.1f'|format(ccpu) }}%</dd>{% endif %}
+      {% if cmem is not none %}<dt>Memory</dt><dd>{{ '%.1f'|format(cmem) }}%</dd>{% endif %}
+      {% if c.started_at %}<dt>Started</dt><dd>{{ c.started_at }}</dd>{% endif %}
+    </dl>
+  </div>
+</details>
+{%- endmacro %}

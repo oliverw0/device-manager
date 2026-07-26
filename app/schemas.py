@@ -36,6 +36,7 @@ class DockerContainerInfo(BaseModel):
     image: str
     status: str
     started_at: Optional[str] = None
+    stack: Optional[str] = None  # docker compose project name
     cpu_percent: Optional[float] = None
     mem_percent: Optional[float] = None
 

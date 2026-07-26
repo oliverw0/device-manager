@@ -405,3 +405,12 @@ body { overflow-x: hidden; }
 .c-actions { display: inline-flex; gap: 4px; margin-left: 8px; }
 .c-actions .term-btn { width: 26px; height: 26px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
 .c-actions .term-btn svg { display: block; }
+
+/* ---------- stack (compose project) card ---------- */
+.stack-item { border: 1px solid var(--border-strong); border-radius: var(--radius); margin-bottom: 8px; background: var(--panel-2); }
+.stack-item > summary { display: flex; align-items: center; gap: 10px; padding: 10px 12px; cursor: pointer; list-style: none; user-select: none; }
+.stack-item > summary::-webkit-details-marker { display: none; }
+.stack-item > summary::before { content: "▸"; color: var(--faint); font-size: 11px; transition: transform 0.12s; }
+.stack-item[open] > summary::before { transform: rotate(90deg); }
+.stack-body { padding: 4px 10px 10px; }
+.stack-body .container-item { margin-bottom: 6px; }

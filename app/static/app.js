@@ -547,6 +547,17 @@ function containerLogs(deviceId, name) {
   LOGS_TIMER = setInterval(load, 2000);  // ponytail: poll --tail 200; swap for docker logs -f WS if live streaming needed
 }
 
+function stackAction(deviceId, names, action, btn) {
+  if (btn) btn.disabled = true;
+  Promise.all(names.map((n) =>
+    fetch(`/devices/${deviceId}/container/${encodeURIComponent(n)}/${action}`, { method: "POST" })
+      .then((r) => r.json()).catch(() => ({ ok: false }))
+  )).then((results) => {
+    const failed = results.filter((r) => !r.ok).length;
+    if (failed) alert(`${action}: ${failed}/${names.length} container(s) failed`);
+  }).finally(() => { if (btn) btn.disabled = false; });
+}
+
 function closeLogs() {
   clearInterval(LOGS_TIMER);
   LOGS_TIMER = null;
