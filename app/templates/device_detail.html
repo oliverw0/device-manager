@@ -129,6 +129,14 @@
             {% endif %}
             <span class="spacer"></span>
             {{ ui.container_status(c.status) }}
+            {% if device.ssh_enabled %}
+            <span class="c-actions" onclick="event.stopPropagation()">
+              <button class="term-btn" title="Logs" onclick="containerLogs({{ device.id }}, '{{ c.name }}')">≡</button>
+              <button class="term-btn" title="Start" onclick="containerAction({{ device.id }}, '{{ c.name }}', 'start', this)">▶</button>
+              <button class="term-btn" title="Stop" onclick="containerAction({{ device.id }}, '{{ c.name }}', 'stop', this)">■</button>
+              <button class="term-btn" title="Restart" onclick="containerAction({{ device.id }}, '{{ c.name }}', 'restart', this)">⟳</button>
+            </span>
+            {% endif %}
           </summary>
           <div class="c-body">
             <dl>

@@ -395,3 +395,11 @@ body { overflow-x: hidden; }
   .kv-grid { grid-template-columns: 1fr; }
   .page-head h1 { font-size: 17px; }
 }
+
+/* ---------- container action icons + logs dialog ---------- */
+.c-actions { display: inline-flex; gap: 4px; margin-left: 8px; }
+.c-actions .term-btn { padding: 2px 6px; font-family: var(--font-mono); font-size: 12px; }
+.logs-dialog { background: var(--panel); color: var(--text); border: 1px solid var(--border-strong); border-radius: var(--radius); width: min(900px, 92vw); max-height: 80vh; padding: 0; }
+.logs-dialog::backdrop { background: rgba(0,0,0,0.6); }
+.logs-dialog .logs-head { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--border); font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em; font-size: 12px; }
+.logs-dialog pre { margin: 0; padding: 14px; overflow: auto; max-height: 70vh; font-family: var(--font-mono); font-size: 12px; color: var(--green); white-space: pre-wrap; word-break: break-all; }

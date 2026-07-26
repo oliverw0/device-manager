@@ -32,6 +32,11 @@
     <div id="term-status" class="term-status"></div>
   </aside>
 
+  <dialog id="logs-dialog" class="logs-dialog">
+    <div class="logs-head"><span>Container logs</span><button type="button" class="secondary" onclick="document.getElementById('logs-dialog').close()">✕</button></div>
+    <pre></pre>
+  </dialog>
+
   <script src="/static/vendor/xterm.js"></script>
   <script src="/static/vendor/xterm-addon-fit.js"></script>
   <script src="/static/app.js?v={{ static_version }}"></script>

@@ -4,6 +4,7 @@ import logging
 
 import asyncssh
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlmodel import Session
 
 from .. import ssh_keys
@@ -14,6 +15,63 @@ from .dashboard import ssh_candidates
 logger = logging.getLogger("devicemanager.terminal")
 
 router = APIRouter()
+
+CONTAINER_ACTIONS = {"start", "stop", "restart"}
+
+
+def _known_container(last_report_json, name) -> bool:
+    """Whitelist the name against the last report so it can't inject into the
+    remote shell command (docker names are a safe charset, but the URL isn't)."""
+    report = json.loads(last_report_json) if last_report_json else {}
+    return name in {c.get("name") for c in (report.get("docker_containers") or [])}
+
+
+async def _ssh_run(device: Device, user: str, cmd: str):
+    """Run one command over SSH, trying each candidate address. Returns (exit, output)."""
+    key = ssh_keys.private_key_path()
+    err = "no address"
+    for addr in ssh_candidates(device):
+        try:
+            async with asyncssh.connect(
+                addr, port=device.ssh_port, username=user,
+                client_keys=[key], known_hosts=None, connect_timeout=8,
+            ) as conn:
+                r = await conn.run(cmd, check=False, timeout=25)
+                return r.exit_status, (r.stdout or "") + (r.stderr or "")
+        except (OSError, asyncssh.Error) as exc:
+            err = str(exc)
+            continue
+    return None, f"could not reach device ({err})"
+
+
+def _load_device(device_id: int, name: str):
+    with Session(engine) as s:
+        d = s.get(Device, device_id)
+    if not d or not d.ssh_enabled:
+        return None, "SSH is not enabled for this device"
+    if not _known_container(d.last_report_json, name):
+        return None, "unknown container"
+    return d, None
+
+
+@router.post("/devices/{device_id}/container/{name}/{action}")
+async def container_action(device_id: int, name: str, action: str, user: str = "root"):
+    if action not in CONTAINER_ACTIONS:
+        return JSONResponse({"ok": False, "output": "bad action"}, status_code=400)
+    device, err = _load_device(device_id, name)
+    if device is None:
+        return JSONResponse({"ok": False, "output": err}, status_code=400)
+    code, out = await _ssh_run(device, user, f"docker {action} {name}")
+    return JSONResponse({"ok": code == 0, "output": out.strip()})
+
+
+@router.get("/devices/{device_id}/container/{name}/logs", response_class=PlainTextResponse)
+async def container_logs(device_id: int, name: str, user: str = "root"):
+    device, err = _load_device(device_id, name)
+    if device is None:
+        return PlainTextResponse(err, status_code=400)
+    code, out = await _ssh_run(device, user, f"docker logs --tail 200 {name} 2>&1")
+    return PlainTextResponse(out or "(no output)")
 
 
 async def _send(ws: WebSocket, message: str) -> None:
@@ -149,3 +207,11 @@ async def terminal(websocket: WebSocket, device_id: int, user: str = ""):
         except Exception:
             pass
         logger.info("terminal session closed: device=%s user=%s", device_name, user)
+
+
+if __name__ == "__main__":  # ponytail: injection-guard self-check
+    j = '{"docker_containers":[{"name":"plex"}]}'
+    assert _known_container(j, "plex")
+    assert not _known_container(j, "evil; rm -rf /")
+    assert not _known_container(None, "plex")
+    print("ok")

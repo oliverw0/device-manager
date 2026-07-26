@@ -491,3 +491,24 @@ document.addEventListener("DOMContentLoaded", () => {
   initSshToggle();
   initSshProvisionCmd();
 });
+
+/* ---------- docker container controls (via SSH) ---------- */
+function containerAction(deviceId, name, action, btn) {
+  if (btn) btn.disabled = true;
+  fetch(`/devices/${deviceId}/container/${encodeURIComponent(name)}/${action}`, { method: "POST" })
+    .then((r) => r.json())
+    .then((res) => { if (!res.ok) alert(`${action} failed: ${(res.output || "").slice(0, 400)}`); })
+    .catch(() => alert(`${action} failed`))
+    .finally(() => { if (btn) btn.disabled = false; });
+}
+
+function containerLogs(deviceId, name) {
+  const dlg = document.getElementById("logs-dialog");
+  const pre = dlg.querySelector("pre");
+  pre.textContent = "loading…";
+  dlg.showModal();
+  fetch(`/devices/${deviceId}/container/${encodeURIComponent(name)}/logs`)
+    .then((r) => r.text())
+    .then((t) => { pre.textContent = t; })
+    .catch(() => { pre.textContent = "failed to fetch logs"; });
+}
