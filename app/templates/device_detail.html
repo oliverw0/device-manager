@@ -131,10 +131,10 @@
             {{ ui.container_status(c.status) }}
             {% if device.ssh_enabled %}
             <span class="c-actions" onclick="event.stopPropagation()">
-              <button class="term-btn" title="Logs" onclick="containerLogs({{ device.id }}, '{{ c.name }}')">≡</button>
-              <button class="term-btn" title="Start" onclick="containerAction({{ device.id }}, '{{ c.name }}', 'start', this)">▶</button>
-              <button class="term-btn" title="Stop" onclick="containerAction({{ device.id }}, '{{ c.name }}', 'stop', this)">■</button>
-              <button class="term-btn" title="Restart" onclick="containerAction({{ device.id }}, '{{ c.name }}', 'restart', this)">⟳</button>
+              <button class="term-btn" title="Logs" onclick="containerLogs({{ device.id }}, '{{ c.name }}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="7" x2="19" y2="7"/><line x1="5" y1="12" x2="19" y2="12"/><line x1="5" y1="17" x2="13" y2="17"/></svg></button>
+              <button class="term-btn" title="Start" onclick="containerAction({{ device.id }}, '{{ c.name }}', 'start', this)"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><polygon points="6 4 20 12 6 20"/></svg></button>
+              <button class="term-btn" title="Stop" onclick="containerAction({{ device.id }}, '{{ c.name }}', 'stop', this)"><svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="1"/></svg></button>
+              <button class="term-btn" title="Restart" onclick="containerAction({{ device.id }}, '{{ c.name }}', 'restart', this)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 3 21 9 15 9"/><path d="M20.5 14a8.5 8.5 0 1 1-2-8.9L21 9"/></svg></button>
             </span>
             {% endif %}
           </summary>

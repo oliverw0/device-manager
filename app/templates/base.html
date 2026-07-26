@@ -21,21 +21,26 @@
   </main>
 
   <aside id="terminal-pane" class="terminal-pane" hidden>
-    <div class="term-head">
-      <span class="term-title" id="term-title">Terminal</span>
-      <select id="term-user" class="term-user" title="Login user"></select>
-      <button type="button" id="term-connect" class="secondary" disabled>Connect</button>
-      <span class="spacer"></span>
-      <button type="button" id="term-close" class="secondary" title="Close terminal">✕</button>
-    </div>
-    <div id="term-body" class="term-body"></div>
-    <div id="term-status" class="term-status"></div>
+    <section id="term-section" class="pane-section" hidden>
+      <div class="term-head">
+        <span class="term-title" id="term-title">Terminal</span>
+        <select id="term-user" class="term-user" title="Login user"></select>
+        <button type="button" id="term-connect" class="secondary" disabled>Connect</button>
+        <span class="spacer"></span>
+        <button type="button" id="term-close" class="secondary" title="Close terminal">✕</button>
+      </div>
+      <div id="term-body" class="term-body"></div>
+      <div id="term-status" class="term-status"></div>
+    </section>
+    <section id="logs-section" class="pane-section" hidden>
+      <div class="term-head">
+        <span class="term-title" id="logs-title">Logs</span>
+        <span class="spacer"></span>
+        <button type="button" id="logs-close" class="secondary" title="Close logs">✕</button>
+      </div>
+      <pre id="logs-body" class="logs-body"></pre>
+    </section>
   </aside>
-
-  <dialog id="logs-dialog" class="logs-dialog">
-    <div class="logs-head"><span>Container logs</span><button type="button" class="secondary" onclick="document.getElementById('logs-dialog').close()">✕</button></div>
-    <pre></pre>
-  </dialog>
 
   <script src="/static/vendor/xterm.js"></script>
   <script src="/static/vendor/xterm-addon-fit.js"></script>

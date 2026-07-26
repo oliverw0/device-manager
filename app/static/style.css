@@ -362,6 +362,11 @@ body.term-open .container { width: 50%; max-width: none; margin: 0; }
 .term-body { flex: 1; min-height: 0; padding: 6px 8px; overflow: hidden; }
 .term-body .xterm { height: 100%; }
 .term-status { padding: 6px 10px; font-family: var(--font-mono); font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); background: var(--panel); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* pane splits 50/50 vertically when both terminal + logs sections are shown */
+.pane-section { flex: 1; min-height: 0; display: flex; flex-direction: column; border-top: 1px solid var(--border-strong); }
+.pane-section:first-child { border-top: none; }
+.pane-section[hidden] { display: none; }
+.logs-body { flex: 1; min-height: 0; margin: 0; padding: 10px 12px; overflow: auto; background: #0c0e11; font-family: var(--font-mono); font-size: 12px; color: var(--green); white-space: pre-wrap; word-break: break-all; }
 @media (max-width: 860px) { body.term-open .container { display: none; } .terminal-pane { width: 100%; } }
 
 /* ---------- SSH toggle switch ---------- */
@@ -396,10 +401,7 @@ body { overflow-x: hidden; }
   .page-head h1 { font-size: 17px; }
 }
 
-/* ---------- container action icons + logs dialog ---------- */
+/* container action icons */
 .c-actions { display: inline-flex; gap: 4px; margin-left: 8px; }
-.c-actions .term-btn { padding: 2px 6px; font-family: var(--font-mono); font-size: 12px; }
-.logs-dialog { background: var(--panel); color: var(--text); border: 1px solid var(--border-strong); border-radius: var(--radius); width: min(900px, 92vw); max-height: 80vh; padding: 0; }
-.logs-dialog::backdrop { background: rgba(0,0,0,0.6); }
-.logs-dialog .logs-head { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--border); font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em; font-size: 12px; }
-.logs-dialog pre { margin: 0; padding: 14px; overflow: auto; max-height: 70vh; font-family: var(--font-mono); font-size: 12px; color: var(--green); white-space: pre-wrap; word-break: break-all; }
+.c-actions .term-btn { width: 26px; height: 26px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+.c-actions .term-btn svg { display: block; }

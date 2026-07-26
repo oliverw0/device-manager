@@ -373,10 +373,32 @@ function openTerminalFromBtn(btn) {
   openTerminal(btn.dataset.termId, btn.dataset.termName);
 }
 
-function openTerminalPane() {
+function showSection(id) {
+  document.getElementById(id).hidden = false;
   document.body.classList.add("term-open");
-  const pane = document.getElementById("terminal-pane");
-  if (pane) pane.hidden = false;
+  document.getElementById("terminal-pane").hidden = false;
+  refitTerminal();
+}
+
+function hideSection(id) {
+  document.getElementById(id).hidden = true;
+  const bothHidden = document.getElementById("term-section").hidden && document.getElementById("logs-section").hidden;
+  if (bothHidden) {
+    document.body.classList.remove("term-open");
+    document.getElementById("terminal-pane").hidden = true;
+  }
+  refitTerminal();
+}
+
+// Re-fit the xterm after the pane layout changes (logs opening halves its height).
+function refitTerminal() {
+  if (!TERM || !TERM_FIT) return;
+  setTimeout(() => {
+    try {
+      TERM_FIT.fit();
+      if (TERM_WS && TERM_WS.readyState === 1) TERM_WS.send(JSON.stringify({ type: "resize", cols: TERM.cols, rows: TERM.rows }));
+    } catch (e) {}
+  }, 60);
 }
 
 function closeTerminal() {
@@ -384,9 +406,7 @@ function closeTerminal() {
   if (TERM) { try { TERM.dispose(); } catch (e) {} TERM = null; }
   const body = document.getElementById("term-body");
   if (body) body.innerHTML = "";
-  document.body.classList.remove("term-open");
-  const pane = document.getElementById("terminal-pane");
-  if (pane) pane.hidden = true;
+  hideSection("term-section");
 }
 
 function openTerminal(deviceId, deviceName) {
@@ -398,7 +418,7 @@ function openTerminal(deviceId, deviceName) {
   const connectBtn = document.getElementById("term-connect");
   userSel.innerHTML = "";
   connectBtn.disabled = true;
-  openTerminalPane();
+  showSection("term-section");
   termStatus("Loading users…");
 
   fetch(`/devices/${deviceId}/ssh-users.json`).then((r) => r.json()).then((info) => {
@@ -488,27 +508,47 @@ document.addEventListener("DOMContentLoaded", () => {
   const closeBtn = document.getElementById("term-close");
   if (connectBtn) connectBtn.addEventListener("click", connectTerminal);
   if (closeBtn) closeBtn.addEventListener("click", closeTerminal);
+  const logsClose = document.getElementById("logs-close");
+  if (logsClose) logsClose.addEventListener("click", closeLogs);
   initSshToggle();
   initSshProvisionCmd();
 });
 
 /* ---------- docker container controls (via SSH) ---------- */
+var LOGS_TIMER = null;
+
 function containerAction(deviceId, name, action, btn) {
   if (btn) btn.disabled = true;
   fetch(`/devices/${deviceId}/container/${encodeURIComponent(name)}/${action}`, { method: "POST" })
     .then((r) => r.json())
     .then((res) => { if (!res.ok) alert(`${action} failed: ${(res.output || "").slice(0, 400)}`); })
-    .catch(() => alert(`${action} failed`))
-    .finally(() => { if (btn) btn.disabled = false; });
+    .catch(() => {})
+    .finally(() => {
+      if (btn) btn.disabled = false;
+      containerLogs(deviceId, name);  // show what happened in the logs pane
+    });
 }
 
 function containerLogs(deviceId, name) {
-  const dlg = document.getElementById("logs-dialog");
-  const pre = dlg.querySelector("pre");
-  pre.textContent = "loading…";
-  dlg.showModal();
-  fetch(`/devices/${deviceId}/container/${encodeURIComponent(name)}/logs`)
+  const pre = document.getElementById("logs-body");
+  document.getElementById("logs-title").textContent = "Logs · " + name;
+  showSection("logs-section");
+  const load = () => fetch(`/devices/${deviceId}/container/${encodeURIComponent(name)}/logs`)
     .then((r) => r.text())
-    .then((t) => { pre.textContent = t; })
+    .then((t) => {
+      const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 24;
+      pre.textContent = t;
+      if (atBottom) pre.scrollTop = pre.scrollHeight;  // follow tail unless scrolled up
+    })
     .catch(() => { pre.textContent = "failed to fetch logs"; });
+  pre.textContent = "loading…";
+  load();
+  clearInterval(LOGS_TIMER);
+  LOGS_TIMER = setInterval(load, 2000);  // ponytail: poll --tail 200; swap for docker logs -f WS if live streaming needed
+}
+
+function closeLogs() {
+  clearInterval(LOGS_TIMER);
+  LOGS_TIMER = null;
+  hideSection("logs-section");
 }
