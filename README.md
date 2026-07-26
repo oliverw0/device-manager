@@ -1,4 +1,8 @@
+
+
 # DeviceManager — Host
+
+<img width="1123" height="724" alt="image" src="https://github.com/user-attachments/assets/ea5efc90-c0aa-4108-8c8d-cdbd9bbff7cd" />
 
 Self-hosted monitoring dashboard and notifier for a small fleet of machines,
 VMs, LXCs and containers. Clients push periodic reports; the host stores them,
