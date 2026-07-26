@@ -119,6 +119,7 @@
       {% if containers %}
         {% for stack in containers | map(attribute='stack') | select | unique | list %}
         {% set members = containers | selectattr('stack', 'equalto', stack) | list %}
+        {% if members | length == 1 %}{{ ui.container_card(members[0], device) }}{% else %}
         <details class="stack-item">
           <summary>
             <span class="chip info">STACK</span>
@@ -137,6 +138,7 @@
             {% for c in members %}{{ ui.container_card(c, device) }}{% endfor %}
           </div>
         </details>
+        {% endif %}
         {% endfor %}
         {% for c in containers if not c.get('stack') %}{{ ui.container_card(c, device) }}{% endfor %}
       {% else %}<p class="muted">No containers reported.</p>{% endif %}
