@@ -495,6 +495,18 @@ function initSshToggle() {
   });
 }
 
+function initInstallCmd() {
+  const cmd = document.getElementById("install-cmd");
+  const env = document.getElementById("env-snippet");
+  if (!cmd && !env) return;
+  const key = (cmd || env).dataset.key;
+  const host = location.origin;
+  if (cmd) cmd.textContent =
+    "git clone https://github.com/oliverw0/device-manager-client && cd device-manager-client\n" +
+    `sudo HOST_URL=${host} API_KEY=${key} ./install.sh`;
+  if (env) env.textContent = `HOST_URL=${host}\nAPI_KEY=${key}`;
+}
+
 function initSshProvisionCmd() {
   const el = document.getElementById("ssh-provision-cmd");
   if (!el) return;
@@ -512,6 +524,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (logsClose) logsClose.addEventListener("click", closeLogs);
   initSshToggle();
   initSshProvisionCmd();
+  initInstallCmd();
 });
 
 /* ---------- docker container controls (via SSH) ---------- */

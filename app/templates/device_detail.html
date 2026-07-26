@@ -184,9 +184,18 @@
         <code class="key-box" id="api-key">{{ api_key }}</code>
         <button type="button" class="secondary copy-btn" onclick="copyText('{{ api_key }}', this)">Copy</button>
       </div>
-      <h3>Client .env</h3>
-      <pre class="key-box">HOST_URL=http://&lt;this-host&gt;:8000
-API_KEY={{ api_key }}</pre>
+      <h3>Install on the device</h3>
+      <p class="muted" style="font-size:12px;margin:0 0 6px">
+        Get the client repo onto the machine, then run the installer — it writes <code>.env</code>,
+        auto-enables the Tailscale mount if present, and starts the client. (Docker required;
+        for a box without Docker use <code>install-native.sh</code>.)
+      </p>
+      <div class="copy-row">
+        <pre class="key-box" id="install-cmd" data-key="{{ api_key }}">loading…</pre>
+        <button type="button" class="secondary copy-btn" onclick="copyText(document.getElementById('install-cmd').textContent, this)">Copy</button>
+      </div>
+      <h3>Or set .env manually</h3>
+      <pre class="key-box" id="env-snippet" data-key="{{ api_key }}">loading…</pre>
       <form method="post" action="/devices/{{ device.id }}/rotate-key" onsubmit="return confirm('Rotate API key? The client config must be updated to match or it will be locked out.');" style="margin-top:12px">
         <button type="submit" class="secondary">Rotate key</button>
       </form>
