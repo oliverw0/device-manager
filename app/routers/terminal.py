@@ -1,9 +1,10 @@
 import asyncio
 import json
 import logging
+import os
 
 import asyncssh
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, File, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlmodel import Session
 
@@ -72,6 +73,43 @@ async def container_logs(device_id: int, name: str, user: str = "root"):
         return PlainTextResponse(err, status_code=400)
     code, out = await _ssh_run(device, user, f"docker logs --tail 200 {name} 2>&1")
     return PlainTextResponse(out or "(no output)")
+
+
+async def _ssh_upload(device: Device, user: str, filename: str, data: bytes):
+    """SFTP a blob into the user's home dir, trying each candidate address."""
+    key = ssh_keys.private_key_path()
+    err = "no address"
+    for addr in ssh_candidates(device):
+        try:
+            async with asyncssh.connect(
+                addr, port=device.ssh_port, username=user,
+                client_keys=[key], known_hosts=None, connect_timeout=8,
+            ) as conn:
+                async with conn.start_sftp_client() as sftp:
+                    async with sftp.open(filename, "wb") as f:
+                        await f.write(data)
+                return True, filename
+        except (OSError, asyncssh.Error) as exc:
+            err = str(exc)
+            continue
+    return False, f"could not upload ({err})"
+
+
+@router.post("/devices/{device_id}/upload")
+async def upload(device_id: int, user: str = "", file: UploadFile = File(...)):
+    with Session(engine) as s:
+        device = s.get(Device, device_id)
+        if device is None or not device.ssh_enabled:
+            return JSONResponse({"ok": False, "output": "SSH is not enabled"}, status_code=400)
+        report = json.loads(device.last_report_json) if device.last_report_json else {}
+        allowed = set((report or {}).get("ssh_users", []))
+    if not user or (allowed and user not in allowed):
+        return JSONResponse({"ok": False, "output": f"user '{user}' is not available"}, status_code=400)
+    # basename only: land in home dir, no traversal surprises (admin has a shell anyway).
+    name = os.path.basename(file.filename or "") or "upload.bin"
+    data = await file.read()  # ponytail: whole file in memory; stream if huge configs show up
+    ok, out = await _ssh_upload(device, user, name, data)
+    return JSONResponse({"ok": ok, "output": out})
 
 
 async def _send(ws: WebSocket, message: str) -> None:

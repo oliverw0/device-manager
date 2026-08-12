@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{% block title %}DeviceManager{% endblock %}</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/static/vendor/xterm.css" />
   <link rel="stylesheet" href="/static/style.css?v={{ static_version }}" />
 </head>
@@ -27,6 +28,8 @@
         <select id="term-user" class="term-user" title="Login user"></select>
         <button type="button" id="term-connect" class="secondary" disabled>Connect</button>
         <span class="spacer"></span>
+        <input type="file" id="term-file" hidden>
+        <button type="button" id="term-upload" class="secondary" title="Upload a file to the selected user's home dir">↑ Upload</button>
         <button type="button" id="term-close" class="secondary" title="Close terminal">✕</button>
       </div>
       <div id="term-body" class="term-body"></div>
