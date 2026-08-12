@@ -1,10 +1,16 @@
-{% macro meter(value) -%}
+{% macro meter(value, title='') -%}
 {%- if value is none -%}<span class="faint">—</span>
 {%- else -%}
 {%- set p = value|round|int -%}
-<div class="meter" title="{{ p }}%"><div class="meter-fill {{ 'crit' if p>=90 else 'warn' if p>=70 else 'ok' }}" style="width:{{ [p,100]|min }}%"></div><span class="meter-label">{{ p }}%</span></div>
+<div class="meter" title="{{ (title|trim) or (p ~ '%') }}"><div class="meter-fill {{ 'crit' if p>=90 else 'warn' if p>=70 else 'ok' }}" style="width:{{ [p,100]|min }}%"></div><span class="meter-label">{{ p }}%</span></div>
 {%- endif -%}
 {%- endmacro %}
+
+{# Tooltip builders: return "used / total" when the client reported bytes, else "" (meter falls back to %). #}
+{% macro _gib(n) -%}{{ '%.1f'|format((n or 0) / 1073741824) }} GiB{%- endmacro %}
+{% macro mem_title(sys) -%}{%- if sys and sys.mem_total_bytes -%}{{ _gib(sys.mem_used_bytes) }} / {{ _gib(sys.mem_total_bytes) }}{%- endif -%}{%- endmacro %}
+{% macro disk_title(sys) -%}{%- if sys and sys.disk_total_bytes -%}{{ _gib(sys.disk_used_bytes) }} / {{ _gib(sys.disk_total_bytes) }}{%- endif -%}{%- endmacro %}
+{% macro cpu_title(sys) -%}{%- if sys and sys.cpu_cores -%}{{ sys.cpu_percent|round|int }}% of {{ sys.cpu_cores }} cores{%- endif -%}{%- endmacro %}
 
 {% macro status_chip(is_online) -%}
 {%- if is_online -%}<span class="chip ok"><span class="chip-dot"></span>Online</span>

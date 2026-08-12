@@ -492,8 +492,8 @@ function initTermUpload() {
     fetch(`/devices/${TERM_DEVICE}/upload?user=${encodeURIComponent(user)}`, { method: "POST", body: fd })
       .then((r) => r.json())
       .then((res) => {
-        termStatus(res.ok ? `Uploaded ~/${res.output}` : `Upload failed: ${res.output}`);
-        if (res.ok && TERM) TERM.write(`\r\n\x1b[32m↑ uploaded ~/${res.output}\x1b[0m\r\n`);
+        termStatus(res.ok ? `Uploaded ${file.name} to ${res.output}` : `Upload failed: ${res.output}`);
+        if (res.ok && TERM) TERM.write(`\r\n\x1b[32m↑ uploaded ${file.name} to ${res.output}\x1b[0m\r\n`);
       })
       .catch(() => termStatus("Upload failed."));
   });

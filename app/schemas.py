@@ -6,8 +6,13 @@ from pydantic import BaseModel
 class SystemInfo(BaseModel):
     hostname: str
     cpu_percent: float
+    cpu_cores: Optional[int] = None
     mem_percent: float
+    mem_used_bytes: Optional[int] = None
+    mem_total_bytes: Optional[int] = None
     disk_percent: float
+    disk_used_bytes: Optional[int] = None
+    disk_total_bytes: Optional[int] = None
     uptime_seconds: float
     local_ip: Optional[str] = None
 

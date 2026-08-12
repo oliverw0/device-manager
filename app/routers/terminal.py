@@ -88,7 +88,10 @@ async def _ssh_upload(device: Device, user: str, filename: str, data: bytes):
                 async with conn.start_sftp_client() as sftp:
                     async with sftp.open(filename, "wb") as f:
                         await f.write(data)
-                return True, filename
+                    abspath = await sftp.realpath(filename)  # resolve ~ to a full path
+                    if isinstance(abspath, bytes):
+                        abspath = abspath.decode("utf-8", "replace")
+                return True, abspath
         except (OSError, asyncssh.Error) as exc:
             err = str(exc)
             continue

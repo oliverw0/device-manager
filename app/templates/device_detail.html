@@ -22,8 +22,6 @@
     {% if sys and sys.uptime_seconds is defined %}
     <li><span class="k">Uptime</span><span class="v">{{ sys.uptime_seconds | uptime }}</span></li>
     {% endif %}
-    <li><span class="k">Report interval</span><span class="v">{{ device.report_interval_seconds }}s</span></li>
-    <li><span class="k">Marked offline after</span><span class="v">{{ device.offline_after_seconds }}s of silence</span></li>
   </ul>
 </section>
 
@@ -33,9 +31,9 @@
     {% if sys %}
     <section class="panel">
       <h2>System</h2>
-      <div class="metric-row"><span class="metric-label">CPU</span>{{ ui.meter(sys.cpu_percent) }}</div>
-      <div class="metric-row"><span class="metric-label">Memory</span>{{ ui.meter(sys.mem_percent) }}</div>
-      <div class="metric-row"><span class="metric-label">Disk</span>{{ ui.meter(sys.disk_percent) }}</div>
+      <div class="metric-row"><span class="metric-label">CPU</span>{{ ui.meter(sys.cpu_percent, ui.cpu_title(sys)) }}</div>
+      <div class="metric-row"><span class="metric-label">Memory</span>{{ ui.meter(sys.mem_percent, ui.mem_title(sys)) }}</div>
+      <div class="metric-row"><span class="metric-label">Disk</span>{{ ui.meter(sys.disk_percent, ui.disk_title(sys)) }}</div>
     </section>
     {% endif %}
 

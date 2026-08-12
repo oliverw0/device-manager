@@ -42,9 +42,9 @@
             <span class="sub">{{ d.report.system.hostname }}</span>
             {% endif %}
           </td>
-          <td>{{ ui.meter(d.report.system.cpu_percent if d.report else none) }}</td>
-          <td>{{ ui.meter(d.report.system.mem_percent if d.report else none) }}</td>
-          <td>{{ ui.meter(d.report.system.disk_percent if d.report else none) }}</td>
+          <td>{{ ui.meter(d.report.system.cpu_percent if d.report else none, ui.cpu_title(d.report.system) if d.report else '') }}</td>
+          <td>{{ ui.meter(d.report.system.mem_percent if d.report else none, ui.mem_title(d.report.system) if d.report else '') }}</td>
+          <td>{{ ui.meter(d.report.system.disk_percent if d.report else none, ui.disk_title(d.report.system) if d.report else '') }}</td>
           <td>{{ ui.tailscale_chip(d.report.tailscale if d.report else none) }}</td>
           <td>{{ ui.container_summary(d.report.docker_containers if d.report else none) }}</td>
           <td class="last-seen-cell muted" title="{{ d.last_seen_at | dt }}">
