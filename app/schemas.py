@@ -46,12 +46,19 @@ class DockerContainerInfo(BaseModel):
     mem_percent: Optional[float] = None
 
 
+class AptInfo(BaseModel):
+    available: bool = False
+    last_update_age_seconds: Optional[float] = None  # since `apt update` last ran
+    upgradable: Optional[int] = None  # pending upgrades from the local cache
+
+
 class ClientReport(BaseModel):
     system: SystemInfo
     tailscale: Optional[TailscaleInfo] = None
     ssh_auth: Optional[SshAuthInfo] = None
     docker_containers: List[DockerContainerInfo] = []
     ssh_users: List[str] = []
+    apt: Optional[AptInfo] = None
     agent_version: str = "1.0.0"
 
 

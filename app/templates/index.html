@@ -38,6 +38,7 @@
           <td>{{ ui.status_chip(d.is_online) }}</td>
           <td class="name-cell">
             <span class="name">{{ d.name }}</span>
+            {% if d.apt_needs_update %}<span class="chip warn" title="Packages out of date">updates</span>{% endif %}
             {% if d.report and d.report.system and d.report.system.hostname and d.report.system.hostname != d.name %}
             <span class="sub">{{ d.report.system.hostname }}</span>
             {% endif %}

@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     check_interval_seconds: int = 15
     history_retention_days: int = 7
 
+    # apt staleness: flag a device (orange badge + ntfy) when its cache hasn't
+    # been refreshed in this many days, OR this many packages are upgradable.
+    apt_stale_days: int = 30
+    apt_upgradable_threshold: int = 50
+
     # Leave unset: auto-generated on first run and persisted to data/session_secret.key.
     # Only set this yourself if you need the same secret across multiple host instances.
     session_secret: str = ""

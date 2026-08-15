@@ -100,6 +100,7 @@ def serialize_device(device: Device) -> dict:
         "report_interval_seconds": device.report_interval_seconds,
         "offline_after_seconds": device.offline_after_seconds,
         "ssh_enabled": device.ssh_enabled,
+        "apt_needs_update": bool(device.apt_needs_update),
         "report": report,
     }
 
@@ -107,8 +108,10 @@ def serialize_device(device: Device) -> dict:
 @router.get("/", response_class=HTMLResponse)
 def index(request: Request, session: Session = Depends(get_session)):
     devices = session.exec(select(Device).order_by(Device.name)).all()
+    serialized = [serialize_device(d) for d in devices]
+    apt_alert_count = sum(1 for d in serialized if d["apt_needs_update"])
     return templates.TemplateResponse(
-        "index.html", {"request": request, "devices": [serialize_device(d) for d in devices]}
+        "index.html", {"request": request, "devices": serialized, "apt_alert_count": apt_alert_count}
     )
 
 
@@ -144,9 +147,16 @@ def device_detail(request: Request, device_id: int, session: Session = Depends(g
     alerts = session.exec(
         select(AlertEvent).where(AlertEvent.device_id == device_id).order_by(AlertEvent.created_at.desc()).limit(20)
     ).all()
+    apt_alert_count = len(session.exec(select(Device).where(Device.apt_needs_update == True)).all())  # noqa: E712
     return templates.TemplateResponse(
         "device_detail.html",
-        {"request": request, "device": serialize_device(device), "api_key": device.api_key, "alerts": alerts},
+        {
+            "request": request,
+            "device": serialize_device(device),
+            "api_key": device.api_key,
+            "alerts": alerts,
+            "apt_alert_count": apt_alert_count,
+        },
     )
 
 

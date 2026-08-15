@@ -24,6 +24,7 @@ class Device(SQLModel, table=True):
 
     # last known state, used to detect transitions worth alerting on
     tailscale_connected: Optional[bool] = None
+    apt_needs_update: Optional[bool] = None
 
     # denormalized snapshot of the most recent report, for quick dashboard rendering
     last_report_json: Optional[str] = None

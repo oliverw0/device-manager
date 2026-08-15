@@ -24,6 +24,17 @@
 {%- else -%}<span class="chip bad">{{ ts.backend_state or 'Down' }}</span>{%- endif -%}
 {%- endmacro %}
 
+{# Orange "updates" chip. Shown only when the host flagged the device as stale.
+   label is the raw apt dict; needs_update the host's decision. #}
+{% macro apt_chip(apt, needs_update) -%}
+{%- if not apt or not apt.available -%}<span class="faint">—</span>
+{%- elif needs_update -%}
+  {%- set n = apt.upgradable -%}
+  {%- set d = (apt.last_update_age_seconds // 86400)|int if apt.last_update_age_seconds is not none else none -%}
+  <span class="chip warn" title="{% if d is not none %}apt cache {{ d }}d old{% endif %}">{% if n is not none %}{{ n }} updates{% elif d is not none %}{{ d }}d stale{% else %}update{% endif %}</span>
+{%- else -%}<span class="chip ok">up to date</span>{%- endif -%}
+{%- endmacro %}
+
 {% macro container_status(status) -%}
 {%- set s = (status or '')|lower -%}
 <span class="chip {{ 'ok' if 'running' in s else 'bad' if 'exited' in s or 'dead' in s else 'warn' }}">{{ status or 'unknown' }}</span>

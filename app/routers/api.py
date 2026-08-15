@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse
 from sqlmodel import Session
 
-from .. import notifier, ssh_keys
+from .. import apt_check, notifier, ssh_keys
+from ..config import settings
 from ..database import get_session
 from ..models import AlertEvent, ContainerHistory, Device, ReportHistory
 from ..schemas import ClientReport
@@ -82,6 +83,18 @@ def submit_report(
                 )
             device.tailscale_connected = new_state
         # else: undetermined reading — leave the last known state untouched.
+
+    if report.apt is not None:
+        needs_update, label = apt_check.evaluate(
+            report.apt.model_dump(), settings.apt_stale_days, settings.apt_upgradable_threshold
+        )
+        # Only alert on the transition into "needs update" (avoids re-pinging
+        # every report cycle). Clearing back is silent — running updates is good news.
+        if device.apt_needs_update is not True and needs_update:
+            message = f"{device.name}: packages need updating ({label})"
+            session.add(AlertEvent(device_id=device.id, device_name=device.name, kind="apt_stale", message=message))
+            notifier.send(message, title="Packages out of date", priority="high", tags="package,warning")
+        device.apt_needs_update = needs_update
 
     session.add(device)
     session.add(

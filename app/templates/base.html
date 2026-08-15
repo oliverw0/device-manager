@@ -11,6 +11,10 @@
 <body>
   <header class="topbar">
     <a class="brand" href="/"><span class="brand-mark"></span>DeviceManager</a>
+    <a id="apt-alert" class="apt-alert" href="/" title="Devices with out-of-date packages"
+       {{ '' if (apt_alert_count | default(0)) else 'hidden' }}>
+      <span id="apt-alert-count">{{ apt_alert_count | default(0) }}</span> need updating
+    </a>
     {% if request.session.get("is_admin") %}
     <form method="post" action="/logout">
       <button type="submit" class="secondary">Log out</button>

@@ -73,9 +73,10 @@ function renderDeviceRows(devices) {
       const sys = d.report && d.report.system;
       const hostname = sys && sys.hostname && sys.hostname !== d.name
         ? `<span class="sub">${escapeHtml(sys.hostname)}</span>` : "";
+      const aptFlag = d.apt_needs_update ? ' <span class="chip warn" title="Packages out of date">updates</span>' : "";
       return `<tr class="clickable" onclick="window.location='/devices/${d.id}'">
         <td>${statusChip(d.is_online)}</td>
-        <td class="name-cell"><span class="name">${escapeHtml(d.name)}</span>${hostname}</td>
+        <td class="name-cell"><span class="name">${escapeHtml(d.name)}</span>${aptFlag}${hostname}</td>
         <td>${meter(sys ? sys.cpu_percent : null)}</td>
         <td>${meter(sys ? sys.mem_percent : null)}</td>
         <td>${meter(sys ? sys.disk_percent : null)}</td>
@@ -106,6 +107,13 @@ function updateTiles(devices) {
   set("tile-online", online);
   set("tile-offline", total - online);
   set("tile-containers", containers);
+
+  const aptCount = devices.filter((d) => d.apt_needs_update).length;
+  const aptAlert = document.getElementById("apt-alert");
+  if (aptAlert) {
+    aptAlert.hidden = aptCount === 0;
+    set("apt-alert-count", aptCount);
+  }
 }
 
 function startDevicePolling(url, intervalMs = 5000) {

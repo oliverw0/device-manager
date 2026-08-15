@@ -87,6 +87,21 @@ h3 { font-size: 11px; margin: 18px 0 6px; color: var(--muted); letter-spacing: 0
   text-transform: uppercase;
 }
 .brand:hover { text-decoration: none; }
+/* Global "packages out of date" flag. Sits next to the brand; hidden when zero. */
+.apt-alert {
+  margin-left: 16px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--amber);
+  background: rgba(255, 176, 56, 0.10);
+  border: 1px solid rgba(255, 176, 56, 0.35);
+}
+.apt-alert:hover { text-decoration: none; border-color: var(--amber); }
+.apt-alert[hidden] { display: none; }
 .brand .brand-mark {
   display: inline-block;
   width: 9px; height: 9px;

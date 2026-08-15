@@ -8,6 +8,7 @@
 {% set ts = device.report.tailscale if device.report else none %}
 {% set ssh = device.report.ssh_auth if device.report else none %}
 {% set containers = device.report.docker_containers if device.report else [] %}
+{% set apt = device.report.apt if device.report else none %}
 
 <section class="panel">
   <div class="page-head" style="margin-bottom:8px">
@@ -34,6 +35,9 @@
       <div class="metric-row"><span class="metric-label">CPU</span>{{ ui.meter(sys.cpu_percent, ui.cpu_title(sys)) }}</div>
       <div class="metric-row"><span class="metric-label">Memory</span>{{ ui.meter(sys.mem_percent, ui.mem_title(sys)) }}</div>
       <div class="metric-row"><span class="metric-label">Disk</span>{{ ui.meter(sys.disk_percent, ui.disk_title(sys)) }}</div>
+      {% if apt and apt.available %}
+      <div class="metric-row"><span class="metric-label">Packages</span>{{ ui.apt_chip(apt, device.apt_needs_update) }}</div>
+      {% endif %}
     </section>
     {% endif %}
 
@@ -93,7 +97,7 @@
       {% for a in alerts %}
       <div class="alert-item">
         <span class="alert-time">{{ a.created_at | dt }}</span>
-        <span class="chip {{ 'bad' if a.kind in ['offline','tailscale_down'] else 'ok' if a.kind in ['online','tailscale_up'] else 'neutral' }}">{{ a.kind }}</span>
+        <span class="chip {{ 'bad' if a.kind in ['offline','tailscale_down'] else 'ok' if a.kind in ['online','tailscale_up'] else 'warn' if a.kind == 'apt_stale' else 'neutral' }}">{{ a.kind }}</span>
         <span class="alert-msg">{{ a.message }}</span>
       </div>
       {% else %}
