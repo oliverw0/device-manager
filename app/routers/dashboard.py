@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
 
@@ -11,7 +11,8 @@ from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, delete, select
 
 from ..database import get_session
-from ..models import AlertEvent, ContainerHistory, Device, ReportHistory, generate_api_key
+from ..models import AlertEvent, ContainerHistory, Device, ReportHistory, ServiceCheck, generate_api_key
+from ..monitor import _project_disk_full_days
 
 from ..assets import STATIC_VERSION
 
@@ -101,6 +102,8 @@ def serialize_device(device: Device) -> dict:
         "offline_after_seconds": device.offline_after_seconds,
         "ssh_enabled": device.ssh_enabled,
         "apt_needs_update": bool(device.apt_needs_update),
+        "alerts_muted": device.alerts_muted(),
+        "alerts_muted_until": device.alerts_muted_until.isoformat() if device.alerts_muted_until else None,
         "report": report,
     }
 
@@ -119,6 +122,64 @@ def index(request: Request, session: Session = Depends(get_session)):
 def devices_json(session: Session = Depends(get_session)):
     devices = session.exec(select(Device).order_by(Device.name)).all()
     return [serialize_device(d) for d in devices]
+
+
+def _apt_count(session: Session) -> int:
+    return len(session.exec(select(Device).where(Device.apt_needs_update == True)).all())  # noqa: E712
+
+
+def _all_containers(session: Session) -> list[dict]:
+    """Flatten every device's last-reported containers, tagged with the device."""
+    rows = []
+    for d in session.exec(select(Device).order_by(Device.name)).all():
+        report = json.loads(d.last_report_json) if d.last_report_json else {}
+        for c in (report or {}).get("docker_containers", []):
+            rows.append({
+                "device_id": d.id, "device_name": d.name,
+                "device_online": d.is_online, "device_ssh_enabled": d.ssh_enabled, **c,
+            })
+    return rows
+
+
+@router.get("/containers", response_class=HTMLResponse)
+def containers_page(request: Request, session: Session = Depends(get_session)):
+    rows = _all_containers(session)
+    running = sum(1 for c in rows if "running" in (c.get("status") or "").lower())
+    return templates.TemplateResponse(
+        "containers.html",
+        {"request": request, "containers": rows, "running": running, "apt_alert_count": _apt_count(session)},
+    )
+
+
+@router.get("/stacks", response_class=HTMLResponse)
+def stacks_page(request: Request, session: Session = Depends(get_session)):
+    grouped: dict = {}
+    for c in _all_containers(session):
+        if not c.get("stack"):
+            continue
+        g = grouped.setdefault(
+            (c["device_id"], c["stack"]),
+            {
+                "device_id": c["device_id"], "device_name": c["device_name"],
+                "device_ssh_enabled": c["device_ssh_enabled"], "stack": c["stack"], "members": [],
+            },
+        )
+        g["members"].append(c)
+    stacks = sorted(grouped.values(), key=lambda s: (s["device_name"], s["stack"]))
+    for s in stacks:
+        s["total"] = len(s["members"])
+        s["running"] = sum(1 for m in s["members"] if "running" in (m.get("status") or "").lower())
+    return templates.TemplateResponse(
+        "stacks.html", {"request": request, "stacks": stacks, "apt_alert_count": _apt_count(session)}
+    )
+
+
+@router.get("/alerts", response_class=HTMLResponse)
+def alerts_page(request: Request, session: Session = Depends(get_session)):
+    alerts = session.exec(select(AlertEvent).order_by(AlertEvent.created_at.desc()).limit(200)).all()
+    return templates.TemplateResponse(
+        "alerts.html", {"request": request, "alerts": alerts, "apt_alert_count": _apt_count(session)}
+    )
 
 
 @router.post("/devices")
@@ -148,6 +209,13 @@ def device_detail(request: Request, device_id: int, session: Session = Depends(g
         select(AlertEvent).where(AlertEvent.device_id == device_id).order_by(AlertEvent.created_at.desc()).limit(20)
     ).all()
     apt_alert_count = len(session.exec(select(Device).where(Device.apt_needs_update == True)).all())  # noqa: E712
+    checks = session.exec(
+        select(ServiceCheck).where(ServiceCheck.device_id == device_id).order_by(ServiceCheck.name)
+    ).all()
+    disk_rows = session.exec(
+        select(ReportHistory).where(ReportHistory.device_id == device_id).order_by(ReportHistory.timestamp)
+    ).all()
+    disk_full_days = _project_disk_full_days([(r.timestamp.timestamp(), r.disk_percent) for r in disk_rows])
     return templates.TemplateResponse(
         "device_detail.html",
         {
@@ -156,8 +224,20 @@ def device_detail(request: Request, device_id: int, session: Session = Depends(g
             "api_key": device.api_key,
             "alerts": alerts,
             "apt_alert_count": apt_alert_count,
+            "checks": checks,
+            "disk_full_days": disk_full_days,
         },
     )
+
+
+@router.post("/devices/{device_id}/mute")
+def mute_device(device_id: int, minutes: int = Form(...), session: Session = Depends(get_session)):
+    device = session.get(Device, device_id)
+    if device:
+        device.alerts_muted_until = datetime.utcnow() + timedelta(minutes=minutes) if minutes > 0 else None
+        session.add(device)
+        session.commit()
+    return RedirectResponse(url=f"/devices/{device_id}", status_code=303)
 
 
 @router.get("/devices/{device_id}/history.json")

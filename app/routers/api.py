@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Request
@@ -12,6 +13,16 @@ from ..schemas import ClientReport
 from ..security import get_device_from_api_key
 
 router = APIRouter(prefix="/api/v1", tags=["client"])
+
+
+def _is_running(status) -> bool:
+    return "running" in (status or "").lower()
+
+
+def _notify(device: Device, message: str, **kw) -> None:
+    """ntfy push unless the device is in a mute/maintenance window."""
+    if not device.alerts_muted():
+        notifier.send(message, **kw)
 
 
 @router.get("/healthz")
@@ -40,6 +51,10 @@ def submit_report(
     was_online = device.is_online
     had_reported_before = device.last_seen_at is not None
 
+    # capture the previous containers before overwriting, to spot running->exited
+    prev_report = json.loads(device.last_report_json) if device.last_report_json else {}
+    prev_status = {c.get("name"): c.get("status") for c in (prev_report.get("docker_containers") or [])}
+
     device.last_seen_at = now
     device.is_online = True
     device.last_report_json = report.model_dump_json()
@@ -60,7 +75,7 @@ def submit_report(
             message=f"{device.name} is responding again",
         )
         session.add(event)
-        notifier.send(event.message, title="Device back online", priority="default", tags="white_check_mark")
+        _notify(device, event.message, title="Device back online", priority="default", tags="white_check_mark")
 
     if report.tailscale is not None:
         # "connected" is False both when Tailscale is genuinely down AND when the
@@ -75,7 +90,8 @@ def submit_report(
                 kind = "tailscale_up" if new_state else "tailscale_down"
                 message = f"{device.name}: Tailscale {'connected' if new_state else 'disconnected'}"
                 session.add(AlertEvent(device_id=device.id, device_name=device.name, kind=kind, message=message))
-                notifier.send(
+                _notify(
+                    device,
                     message,
                     title="Tailscale status change",
                     priority="high" if not new_state else "default",
@@ -93,8 +109,16 @@ def submit_report(
         if device.apt_needs_update is not True and needs_update:
             message = f"{device.name}: packages need updating ({label})"
             session.add(AlertEvent(device_id=device.id, device_name=device.name, kind="apt_stale", message=message))
-            notifier.send(message, title="Packages out of date", priority="high", tags="package,warning")
+            _notify(device, message, title="Packages out of date", priority="high", tags="package,warning")
         device.apt_needs_update = needs_update
+
+    # container running -> exited/dead transitions (only for names in both reports)
+    for container in report.docker_containers:
+        was = prev_status.get(container.name)
+        if was and _is_running(was) and not _is_running(container.status):
+            message = f"{device.name}: container {container.name} is {container.status}"
+            session.add(AlertEvent(device_id=device.id, device_name=device.name, kind="container_down", message=message))
+            _notify(device, message, title="Container stopped", priority="high", tags="whale,warning")
 
     session.add(device)
     session.add(

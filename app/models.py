@@ -38,6 +38,33 @@ class Device(SQLModel, table=True):
     ssh_host: Optional[str] = None
     ssh_port: int = 22
 
+    # alerts: mute suppresses ntfy pushes until this time (maintenance windows);
+    # alert_state is a JSON object of currently-active threshold alerts ({"disk": true})
+    # so a sustained-high condition pings once, not every sweep.
+    alerts_muted_until: Optional[datetime] = None
+    alert_state: Optional[str] = None
+
+    def alerts_muted(self, now: Optional[datetime] = None) -> bool:
+        now = now or datetime.utcnow()
+        return self.alerts_muted_until is not None and self.alerts_muted_until > now
+
+
+class ServiceCheck(SQLModel, table=True):
+    """An HTTP or TCP health check the monitor runs on an interval. HTTP checks
+    pass on any <400 status; TCP checks pass if the port accepts a connection."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    device_id: int = Field(foreign_key="device.id", index=True)
+    name: str
+    kind: str = "http"  # http | tcp
+    target: str         # URL for http, host:port for tcp
+    interval_seconds: int = 60
+    enabled: bool = True
+
+    last_status: str = "unknown"  # up | down | unknown
+    last_checked_at: Optional[datetime] = None
+    last_latency_ms: Optional[float] = None
+    last_error: Optional[str] = None
+
 
 class ReportHistory(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)

@@ -73,10 +73,12 @@ function renderDeviceRows(devices) {
       const sys = d.report && d.report.system;
       const hostname = sys && sys.hostname && sys.hostname !== d.name
         ? `<span class="sub">${escapeHtml(sys.hostname)}</span>` : "";
-      const aptFlag = d.apt_needs_update ? ' <span class="chip warn" title="Packages out of date">updates</span>' : "";
+      const upg = d.report && d.report.apt ? d.report.apt.upgradable : null;
+      const aptTip = upg != null ? `${upg} packages need updating` : "Packages need updating";
+      const aptFlag = d.apt_needs_update ? `<span class="pkg-badge tip-below" data-tip="${aptTip}"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v8a2 2 0 0 1-1 1.73l-7 4a2 2 0 0 1-2 0l-7-4A2 2 0 0 1 3 16V8a2 2 0 0 1 1-1.73l7-4a2 2 0 0 1 2 0l7 4A2 2 0 0 1 21 8z"/><polyline points="3.3 7 12 12 20.7 7"/><line x1="12" y1="22" x2="12" y2="12"/></svg></span>` : "";
       return `<tr class="clickable" onclick="window.location='/devices/${d.id}'">
         <td>${statusChip(d.is_online)}</td>
-        <td class="name-cell"><span class="name">${escapeHtml(d.name)}</span>${aptFlag}${hostname}</td>
+        <td class="name-cell"><span class="name-line"><span class="name">${escapeHtml(d.name)}</span>${aptFlag}</span>${hostname}</td>
         <td>${meter(sys ? sys.cpu_percent : null)}</td>
         <td>${meter(sys ? sys.mem_percent : null)}</td>
         <td>${meter(sys ? sys.disk_percent : null)}</td>
@@ -370,7 +372,7 @@ function loadContainerSparks(url) {
 }
 
 /* ---------- in-browser SSH terminal ---------- */
-var TERM = null, TERM_FIT = null, TERM_WS = null, TERM_DEVICE = null;
+var TERM = null, TERM_FIT = null, TERM_WS = null, TERM_DEVICE = null, TERM_CONTAINER = null;
 
 function termStatus(text) {
   const el = document.getElementById("term-status");
@@ -379,6 +381,11 @@ function termStatus(text) {
 
 function openTerminalFromBtn(btn) {
   openTerminal(btn.dataset.termId, btn.dataset.termName);
+}
+
+// docker exec -it <container> /bin/bash, over the same SSH terminal.
+function openContainerShell(deviceId, deviceName, container) {
+  openTerminal(deviceId, deviceName, container);
 }
 
 function showSection(id) {
@@ -417,11 +424,12 @@ function closeTerminal() {
   hideSection("term-section");
 }
 
-function openTerminal(deviceId, deviceName) {
+function openTerminal(deviceId, deviceName, container) {
   if (typeof Terminal === "undefined") { alert("Terminal library failed to load."); return; }
   TERM_DEVICE = deviceId;
+  TERM_CONTAINER = container || null;
   const title = document.getElementById("term-title");
-  if (title) title.textContent = "SSH · " + deviceName;
+  if (title) title.textContent = container ? ("EXEC · " + container + " @ " + deviceName) : ("SSH · " + deviceName);
   const userSel = document.getElementById("term-user");
   const connectBtn = document.getElementById("term-connect");
   userSel.innerHTML = "";
@@ -457,7 +465,8 @@ function connectTerminal() {
   try { TERM_FIT.fit(); } catch (e) {}
 
   const proto = location.protocol === "https:" ? "wss" : "ws";
-  const ws = new WebSocket(`${proto}://${location.host}/devices/${TERM_DEVICE}/terminal?user=${encodeURIComponent(user)}`);
+  const containerParam = TERM_CONTAINER ? `&container=${encodeURIComponent(TERM_CONTAINER)}` : "";
+  const ws = new WebSocket(`${proto}://${location.host}/devices/${TERM_DEVICE}/terminal?user=${encodeURIComponent(user)}${containerParam}`);
   ws.binaryType = "arraybuffer";
   TERM_WS = ws;
   termStatus("Connecting…");
@@ -547,7 +556,18 @@ function initSshProvisionCmd() {
     "/api/v1/ssh-pubkey >> ~/.ssh/authorized_keys && chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys";
 }
 
+function initNav() {
+  document.body.classList.toggle("nav-collapsed", localStorage.getItem("navCollapsed") === "1");
+  document.documentElement.classList.remove("nav-preload-collapsed");
+  const toggle = document.getElementById("nav-toggle");
+  if (toggle) toggle.addEventListener("click", () => {
+    const collapsed = document.body.classList.toggle("nav-collapsed");
+    localStorage.setItem("navCollapsed", collapsed ? "1" : "0");
+  });
+}
+
 document.addEventListener("DOMContentLoaded", () => {
+  initNav();
   const connectBtn = document.getElementById("term-connect");
   const closeBtn = document.getElementById("term-close");
   if (connectBtn) connectBtn.addEventListener("click", connectTerminal);

@@ -6,7 +6,6 @@
 
 {% set sys = device.report.system if device.report else none %}
 {% set ts = device.report.tailscale if device.report else none %}
-{% set ssh = device.report.ssh_auth if device.report else none %}
 {% set containers = device.report.docker_containers if device.report else [] %}
 {% set apt = device.report.apt if device.report else none %}
 
@@ -15,10 +14,22 @@
     <h1 style="display:flex;align-items:center;gap:10px">{{ device.name }} {{ ui.status_chip(device.is_online) }}</h1>
   </div>
   {% if device.notes %}<p class="muted" style="margin-top:0">{{ device.notes }}</p>{% endif %}
+  <div class="mute-row">
+    {% if device.alerts_muted %}
+    <span class="chip warn">alerts muted</span>
+    <span class="muted" style="font-size:12px">until {{ device.alerts_muted_until | dt }}</span>
+    <form method="post" action="/devices/{{ device.id }}/mute"><input type="hidden" name="minutes" value="0"><button type="submit" class="secondary">Unmute</button></form>
+    {% else %}
+    <span class="muted" style="font-size:12px">Mute alerts</span>
+    {% for m, l in [(60, '1h'), (240, '4h'), (1440, '24h')] %}
+    <form method="post" action="/devices/{{ device.id }}/mute"><input type="hidden" name="minutes" value="{{ m }}"><button type="submit" class="secondary">{{ l }}</button></form>
+    {% endfor %}
+    {% endif %}
+  </div>
   <ul class="kv-grid">
     <li><span class="k">Last seen</span><span class="v" title="{{ device.last_seen_at | dt }}">{{ device.seconds_since_seen | reltime }}</span></li>
     {% if sys and sys.hostname %}
-    <li><span class="k">Reported hostname</span><span class="v">{{ sys.hostname }}{% if sys.hostname != device.name %} <span class="chip warn" style="margin-left:6px">differs from name</span>{% endif %}</span></li>
+    <li><span class="k">Reported hostname</span><span class="v">{% if sys.hostname != device.name %}<span class="dot-tip" data-tip="Reported hostname differs from the configured device name"></span>{% endif %}{{ sys.hostname }}</span></li>
     {% endif %}
     {% if sys and sys.uptime_seconds is defined %}
     <li><span class="k">Uptime</span><span class="v">{{ sys.uptime_seconds | uptime }}</span></li>
@@ -26,192 +37,217 @@
   </ul>
 </section>
 
-<div class="detail-grid">
-  <!-- LEFT: everything else -->
-  <div class="col">
-    {% if sys %}
-    <section class="panel">
-      <h2>System</h2>
-      <div class="metric-row"><span class="metric-label">CPU</span>{{ ui.meter(sys.cpu_percent, ui.cpu_title(sys)) }}</div>
-      <div class="metric-row"><span class="metric-label">Memory</span>{{ ui.meter(sys.mem_percent, ui.mem_title(sys)) }}</div>
-      <div class="metric-row"><span class="metric-label">Disk</span>{{ ui.meter(sys.disk_percent, ui.disk_title(sys)) }}</div>
-      {% if apt and apt.available %}
-      <div class="metric-row"><span class="metric-label">Packages</span>{{ ui.apt_chip(apt, device.apt_needs_update) }}</div>
-      {% endif %}
-    </section>
+<h2 class="section-head">System</h2>
+<div class="section-grid">
+  {% if sys %}
+  <section class="panel">
+    <h2>Resources</h2>
+    <div class="metric-row"><span class="metric-label">CPU</span>{{ ui.meter(sys.cpu_percent, ui.cpu_title(sys)) }}</div>
+    <div class="metric-row"><span class="metric-label">Memory</span>{{ ui.meter(sys.mem_percent, ui.mem_title(sys)) }}</div>
+    <div class="metric-row"><span class="metric-label">Disk</span>{{ ui.meter(sys.disk_percent, ui.disk_title(sys)) }}{% if disk_full_days is not none %}<span class="chip {{ 'bad' if disk_full_days < 14 else 'warn' }}" style="margin-left:8px" title="Projected from the disk-usage trend">{% if disk_full_days < 1 %}&lt;1d to full{% else %}~{{ disk_full_days | round | int }}d to full{% endif %}</span>{% endif %}</div>
+    {% if apt and apt.available %}
+    <div class="metric-row"><span class="metric-label">Packages</span>{{ ui.apt_chip(apt, device.apt_needs_update) }}</div>
     {% endif %}
+  </section>
+  {% endif %}
 
-    <section class="panel">
-      <h2>History (last 500 reports)</h2>
-      <div class="chart-wrap">
-        <canvas id="history-chart" width="1040" height="180" style="max-width:100%"></canvas>
-      </div>
-      <p class="muted" style="font-size:12px;margin:8px 0 0">
-        <span style="color:var(--red)">■</span> CPU &nbsp;
-        <span style="color:var(--green)">■</span> Memory &nbsp;
-        <span style="color:var(--amber)">■</span> Disk
-      </p>
-    </section>
-
-    <section class="panel">
-      <h2>Tailscale</h2>
-      {% if ts and ts.backend_state == 'not_installed' %}
-      <p class="muted">No Tailscale client on this device.</p>
-      {% elif ts %}
-      <ul class="kv">
-        <li><span class="k">Status</span><span class="v">{{ ui.tailscale_chip(ts) }}</span></li>
-        <li><span class="k">Backend state</span><span class="v">{{ ts.backend_state or '—' }}</span></li>
-        {% if ts.dns_name %}
-        <li><span class="k">MagicDNS name</span><span class="v"><span class="copyable" onclick="copyText('{{ ts.dns_name }}', this)" title="Click to copy">{{ ts.dns_name }}</span></span></li>
-        {% endif %}
-        <li>
-          <span class="k">IPs</span>
-          <span class="v">
-            {% if ts.ips %}
-              {% for ip in ts.ips %}
-              <span class="copyable" onclick="copyText('{{ ip }}', this)" title="Click to copy">{{ ip }}</span>{% if not loop.last %} {% endif %}
-              {% endfor %}
-            {% else %}—{% endif %}
-          </span>
-        </li>
-        <li><span class="k">Tailnet</span><span class="v">{{ ts.tailnet or '—' }}</span></li>
-        {% if ts.exit_node %}<li><span class="k">Exit node</span><span class="v">{{ ts.exit_node }}</span></li>{% endif %}
-      </ul>
-      {% else %}<p class="muted">No data yet.</p>{% endif %}
-    </section>
-
-    <section class="panel">
-      <h2>SSH auth</h2>
-      {% if ssh %}
-      <ul class="kv">
-        <li><span class="k">Recent accepted</span><span class="v"><span class="chip neutral">{{ ssh.recent_accepted_count }}</span></span></li>
-        <li><span class="k">Recent failed</span><span class="v"><span class="chip {{ 'bad' if ssh.recent_failed_count else 'neutral' }}">{{ ssh.recent_failed_count }}</span></span></li>
-        <li><span class="k">Last accepted</span><span class="v">{{ ssh.last_accepted_user or '—' }}{% if ssh.last_accepted_ip %} from {{ ssh.last_accepted_ip }}{% endif %}</span></li>
-        <li><span class="k">Last failed from</span><span class="v">{{ ssh.last_failed_ip or '—' }}</span></li>
-      </ul>
-      {% else %}<p class="muted">No data yet.</p>{% endif %}
-    </section>
-
-    <section class="panel">
-      <h2>Recent alerts</h2>
-      {% for a in alerts %}
-      <div class="alert-item">
-        <span class="alert-time">{{ a.created_at | dt }}</span>
-        <span class="chip {{ 'bad' if a.kind in ['offline','tailscale_down'] else 'ok' if a.kind in ['online','tailscale_up'] else 'warn' if a.kind == 'apt_stale' else 'neutral' }}">{{ a.kind }}</span>
-        <span class="alert-msg">{{ a.message }}</span>
-      </div>
-      {% else %}
-      <p class="muted">No alerts yet.</p>
-      {% endfor %}
-    </section>
-  </div>
-
-  <!-- RIGHT: containers down to client configuration -->
-  <div class="col">
-    <section class="panel" id="containers-panel">
-      <div class="panel-head">
-        <h2 style="margin:0">Docker containers {% if containers %}<span class="chip neutral">{{ containers | length }}</span>{% endif %}</h2>
-        {% if containers %}
-        <div class="spark-toggle" id="spark-toggle" title="Background graph metric">
-          <button type="button" class="active" data-metric="cpu">CPU</button>
-          <button type="button" data-metric="mem">Mem</button>
-        </div>
-        {% endif %}
-      </div>
-      {% if containers %}
-        {% for stack in containers | map(attribute='stack') | select | unique | list %}
-        {% set members = containers | selectattr('stack', 'equalto', stack) | list %}
-        {% if members | length == 1 %}{{ ui.container_card(members[0], device) }}{% else %}
-        <details class="stack-item">
-          <summary>
-            <span class="chip info">STACK</span>
-            <span class="c-name">{{ stack }}</span>
-            <span class="spacer"></span>
-            {% if device.ssh_enabled %}
-            <span class="c-actions" onclick="event.stopPropagation()">
-              <button class="term-btn" title="Start all" onclick='stackAction({{ device.id }}, {{ members|map(attribute="name")|list|tojson }}, "start", this)'><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><polygon points="6 4 20 12 6 20"/></svg></button>
-              <button class="term-btn" title="Stop all" onclick='stackAction({{ device.id }}, {{ members|map(attribute="name")|list|tojson }}, "stop", this)'><svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="1"/></svg></button>
-              <button class="term-btn" title="Restart all" onclick='stackAction({{ device.id }}, {{ members|map(attribute="name")|list|tojson }}, "restart", this)'><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 3 21 9 15 9"/><path d="M20.5 14a8.5 8.5 0 1 1-2-8.9L21 9"/></svg></button>
-            </span>
-            {% endif %}
-            <span class="chip neutral">{{ members | length }}</span>
-          </summary>
-          <div class="c-body stack-body">
-            {% for c in members %}{{ ui.container_card(c, device) }}{% endfor %}
-          </div>
-        </details>
-        {% endif %}
-        {% endfor %}
-        {% for c in containers if not c.get('stack') %}{{ ui.container_card(c, device) }}{% endfor %}
-      {% else %}<p class="muted">No containers reported.</p>{% endif %}
-    </section>
-
-    <section class="panel">
-      <h2>SSH terminal</h2>
-      <div class="switch-row">
-        <span>Enable in-browser SSH</span>
-        <label class="switch">
-          <input type="checkbox" id="ssh-toggle" data-device-id="{{ device.id }}" {{ 'checked' if device.ssh_enabled else '' }} />
-          <span class="slider"></span>
-        </label>
-      </div>
-      <p class="muted" style="font-size:12px;margin:12px 0 0">
-        Connects over the device's Tailscale address (or the IP it last reported from).
-        The machine must authorize this host's key first — see below.
-      </p>
-      <div id="ssh-open-wrap" style="margin-top:14px;{{ '' if device.ssh_enabled else 'display:none' }}">
-        <button type="button" class="secondary"
-                data-term-id="{{ device.id }}" data-term-name="{{ device.name }}"
-                onclick="openTerminalFromBtn(this)">Open terminal</button>
-      </div>
-
-      <details style="margin-top:14px">
-        <summary class="muted" style="cursor:pointer;font-size:13px">How to authorize a machine</summary>
-        <p class="muted" style="font-size:12px;margin:8px 0">
-          Run on the target, logged in as the user you'll connect as (the installer's
-          SSH step does this automatically for native installs; Docker clients need it manually):
-        </p>
-        <div class="copy-row">
-          <code class="key-box" id="ssh-provision-cmd">loading…</code>
-          <button type="button" class="secondary copy-btn"
-                  onclick="copyText(document.getElementById('ssh-provision-cmd').textContent, this)">Copy</button>
-        </div>
-      </details>
-    </section>
-
-    <section class="panel">
-      <h2>Client configuration</h2>
-      <h3>API key</h3>
-      <div class="copy-row">
-        <code class="key-box" id="api-key">{{ api_key }}</code>
-        <button type="button" class="secondary copy-btn" onclick="copyText('{{ api_key }}', this)">Copy</button>
-      </div>
-      <h3>Install on the device</h3>
-      <p class="muted" style="font-size:12px;margin:0 0 6px">
-        Get the client repo onto the machine, then run the installer — it writes <code>.env</code>,
-        auto-enables the Tailscale mount if present, and starts the client. (Docker required;
-        for a box without Docker use <code>install-native.sh</code>.)
-      </p>
-      <div class="copy-row">
-        <pre class="key-box" id="install-cmd" data-key="{{ api_key }}">loading…</pre>
-        <button type="button" class="secondary copy-btn" onclick="copyText(document.getElementById('install-cmd').textContent, this)">Copy</button>
-      </div>
-      <h3>Or set .env manually</h3>
-      <pre class="key-box" id="env-snippet" data-key="{{ api_key }}">loading…</pre>
-      <form method="post" action="/devices/{{ device.id }}/rotate-key" onsubmit="return confirm('Rotate API key? The client config must be updated to match or it will be locked out.');" style="margin-top:12px">
-        <button type="submit" class="secondary">Rotate key</button>
-      </form>
-    </section>
-  </div>
+  <section class="panel">
+    <h2>History (last 500 reports)</h2>
+    <div class="chart-wrap">
+      <canvas id="history-chart" width="1040" height="180" style="max-width:100%"></canvas>
+    </div>
+    <p class="muted" style="font-size:12px;margin:8px 0 0">
+      <span style="color:var(--red)">■</span> CPU &nbsp;
+      <span style="color:var(--green)">■</span> Memory &nbsp;
+      <span style="color:var(--amber)">■</span> Disk
+    </p>
+  </section>
 </div>
 
+<h2 class="section-head">Access &amp; checks</h2>
+<div class="section-grid">
+  <section class="panel">
+    <h2>SSH terminal</h2>
+    <div class="switch-row">
+      <span>Enable in-browser SSH</span>
+      <label class="switch">
+        <input type="checkbox" id="ssh-toggle" data-device-id="{{ device.id }}" {{ 'checked' if device.ssh_enabled else '' }} />
+        <span class="slider"></span>
+      </label>
+    </div>
+    <p class="muted" style="font-size:12px;margin:12px 0 0">
+      Connects over the device's Tailscale address (or the IP it last reported from).
+      The machine must authorize this host's key first — see below.
+    </p>
+    <div id="ssh-open-wrap" style="margin-top:14px;{{ '' if device.ssh_enabled else 'display:none' }}">
+      <button type="button" class="secondary"
+              data-term-id="{{ device.id }}" data-term-name="{{ device.name }}"
+              onclick="openTerminalFromBtn(this)">Open terminal</button>
+    </div>
+
+    <details style="margin-top:14px">
+      <summary class="muted" style="cursor:pointer;font-size:13px">How to authorize a machine</summary>
+      <p class="muted" style="font-size:12px;margin:8px 0">
+        Run on the target, logged in as the user you'll connect as (the installer's
+        SSH step does this automatically for native installs; Docker clients need it manually):
+      </p>
+      <div class="copy-row">
+        <code class="key-box" id="ssh-provision-cmd">loading…</code>
+        <button type="button" class="secondary copy-btn"
+                onclick="copyText(document.getElementById('ssh-provision-cmd').textContent, this)">Copy</button>
+      </div>
+    </details>
+  </section>
+
+  <section class="panel">
+    <h2>Service checks {% if checks %}<span class="chip neutral">{{ checks | length }}</span>{% endif %}</h2>
+    {% for c in checks %}
+    <div class="check-item">
+      <span class="chip {{ 'ok' if c.last_status == 'up' else 'bad' if c.last_status == 'down' else 'neutral' }}">{{ c.last_status }}</span>
+      <span class="c-name">{{ c.name }}{% if not c.enabled %} <span class="chip neutral">paused</span>{% endif %}</span>
+      <span class="check-target">{{ c.kind }} · {{ c.target }}</span>
+      {% if c.last_status == 'up' and c.last_latency_ms is not none %}<span class="muted" style="font-size:12px">{{ c.last_latency_ms | round | int }}ms</span>{% endif %}
+      <span class="spacer"></span>
+      <form method="post" action="/checks/{{ c.id }}/toggle"><button type="submit" class="term-btn" title="{{ 'Pause' if c.enabled else 'Resume' }}">{% if c.enabled %}❚❚{% else %}▶{% endif %}</button></form>
+      <form method="post" action="/checks/{{ c.id }}/delete" onsubmit="return confirm('Delete this check?')"><button type="submit" class="term-btn" title="Delete">✕</button></form>
+    </div>
+    {% if c.last_status == 'down' and c.last_error %}<div class="check-err">{{ c.last_error }}</div>{% endif %}
+    {% else %}
+    <p class="muted">No checks yet. Add an HTTP or TCP check to watch a service on this device.</p>
+    {% endfor %}
+    <details style="margin-top:12px">
+      <summary class="muted" style="cursor:pointer;font-size:13px">+ Add check</summary>
+      <form method="post" action="/devices/{{ device.id }}/checks" class="form-grid" style="margin-top:10px">
+        <label>Name <input type="text" name="name" placeholder="nginx" required /></label>
+        <label>Type
+          <select name="kind">
+            <option value="http">HTTP</option>
+            <option value="tcp">TCP</option>
+          </select>
+        </label>
+        <label>Target <input type="text" name="target" placeholder="http://100.x:8080  or  100.x:5432" required /></label>
+        <label>Interval (s) <input type="number" name="interval_seconds" value="60" min="10" /></label>
+        <div class="full-width"><button type="submit">Add check</button></div>
+      </form>
+    </details>
+  </section>
+</div>
+
+<h2 class="section-head">Containers &amp; network</h2>
+<div class="section-grid">
+  <section class="panel" id="containers-panel">
+    <div class="panel-head">
+      <h2 style="margin:0">Docker containers {% if containers %}<span class="chip neutral">{{ containers | length }}</span>{% endif %}</h2>
+      {% if containers %}
+      <div class="spark-toggle" id="spark-toggle" title="Background graph metric">
+        <button type="button" class="active" data-metric="cpu">CPU</button>
+        <button type="button" data-metric="mem">Mem</button>
+      </div>
+      {% endif %}
+    </div>
+    {% if containers %}
+      {% for stack in containers | map(attribute='stack') | select | unique | list %}
+      {% set members = containers | selectattr('stack', 'equalto', stack) | list %}
+      {% if members | length == 1 %}{{ ui.container_card(members[0], device) }}{% else %}
+      <details class="stack-item">
+        <summary>
+          <span class="chip info">STACK</span>
+          <span class="c-name">{{ stack }}</span>
+          <span class="spacer"></span>
+          {% if device.ssh_enabled %}
+          <span class="c-actions" onclick="event.stopPropagation()">
+            <button class="term-btn" title="Start all" onclick='stackAction({{ device.id }}, {{ members|map(attribute="name")|list|tojson }}, "start", this)'><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><polygon points="6 4 20 12 6 20"/></svg></button>
+            <button class="term-btn" title="Stop all" onclick='stackAction({{ device.id }}, {{ members|map(attribute="name")|list|tojson }}, "stop", this)'><svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="1"/></svg></button>
+            <button class="term-btn" title="Restart all" onclick='stackAction({{ device.id }}, {{ members|map(attribute="name")|list|tojson }}, "restart", this)'><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 3 21 9 15 9"/><path d="M20.5 14a8.5 8.5 0 1 1-2-8.9L21 9"/></svg></button>
+          </span>
+          {% endif %}
+          <span class="chip neutral">{{ members | length }}</span>
+        </summary>
+        <div class="c-body stack-body">
+          {% for c in members %}{{ ui.container_card(c, device) }}{% endfor %}
+        </div>
+      </details>
+      {% endif %}
+      {% endfor %}
+      {% for c in containers if not c.get('stack') %}{{ ui.container_card(c, device) }}{% endfor %}
+    {% else %}<p class="muted">No containers reported.</p>{% endif %}
+  </section>
+
+  <section class="panel">
+    <h2>Tailscale</h2>
+    {% if ts and ts.backend_state == 'not_installed' %}
+    <p class="muted">No Tailscale client on this device.</p>
+    {% elif ts %}
+    <ul class="kv">
+      <li><span class="k">Status</span><span class="v">{{ ui.tailscale_chip(ts) }}</span></li>
+      <li><span class="k">Backend state</span><span class="v">{{ ts.backend_state or '—' }}</span></li>
+      {% if ts.dns_name %}
+      <li><span class="k">MagicDNS name</span><span class="v"><span class="copyable" onclick="copyText('{{ ts.dns_name }}', this)" title="Click to copy">{{ ts.dns_name }}</span></span></li>
+      {% endif %}
+      <li>
+        <span class="k">IPs</span>
+        <span class="v">
+          {% if ts.ips %}
+            {% for ip in ts.ips %}
+            <span class="copyable" onclick="copyText('{{ ip }}', this)" title="Click to copy">{{ ip }}</span>{% if not loop.last %} {% endif %}
+            {% endfor %}
+          {% else %}—{% endif %}
+        </span>
+      </li>
+      <li><span class="k">Tailnet</span><span class="v">{{ ts.tailnet or '—' }}</span></li>
+      {% if ts.exit_node %}<li><span class="k">Exit node</span><span class="v">{{ ts.exit_node }}</span></li>{% endif %}
+    </ul>
+    {% else %}<p class="muted">No data yet.</p>{% endif %}
+  </section>
+</div>
+
+<h2 class="section-head">Activity</h2>
 <section class="panel">
-  <h2>Danger zone</h2>
-  <p class="muted" style="margin-top:0">Removes this device and all of its history and alerts. This cannot be undone.</p>
-  <form method="post" action="/devices/{{ device.id }}/delete" onsubmit="return confirm('Delete this device and all its history?');">
-    <button type="submit" class="danger">Delete device</button>
-  </form>
+  {% for a in alerts %}
+  <div class="alert-item">
+    <span class="alert-time">{{ a.created_at | dt }}</span>
+    <span class="chip {{ 'bad' if a.kind in ['offline','tailscale_down','container_down','service_down'] else 'ok' if a.kind in ['online','tailscale_up','service_up'] else 'warn' if a.kind in ['apt_stale','cpu_high','mem_high','disk_high'] else 'neutral' }}">{{ a.kind }}</span>
+    <span class="alert-msg">{{ a.message }}</span>
+  </div>
+  {% else %}
+  <p class="muted">No alerts yet.</p>
+  {% endfor %}
 </section>
+
+<h2 class="section-head">Configuration</h2>
+<div class="section-grid">
+  <section class="panel">
+    <h2>Client configuration</h2>
+    <h3>API key</h3>
+    <div class="copy-row">
+      <code class="key-box" id="api-key">{{ api_key }}</code>
+      <button type="button" class="secondary copy-btn" onclick="copyText('{{ api_key }}', this)">Copy</button>
+    </div>
+    <h3>Install on the device</h3>
+    <p class="muted" style="font-size:12px;margin:0 0 6px">
+      Get the client repo onto the machine, then run the installer — it writes <code>.env</code>,
+      auto-enables the Tailscale mount if present, and starts the client. (Docker required;
+      for a box without Docker use <code>install-native.sh</code>.)
+    </p>
+    <div class="copy-row">
+      <pre class="key-box" id="install-cmd" data-key="{{ api_key }}">loading…</pre>
+      <button type="button" class="secondary copy-btn" onclick="copyText(document.getElementById('install-cmd').textContent, this)">Copy</button>
+    </div>
+    <h3>Or set .env manually</h3>
+    <pre class="key-box" id="env-snippet" data-key="{{ api_key }}">loading…</pre>
+    <form method="post" action="/devices/{{ device.id }}/rotate-key" onsubmit="return confirm('Rotate API key? The client config must be updated to match or it will be locked out.');" style="margin-top:12px">
+      <button type="submit" class="secondary">Rotate key</button>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>Danger zone</h2>
+    <p class="muted" style="margin-top:0">Removes this device and all of its history and alerts. This cannot be undone.</p>
+    <form method="post" action="/devices/{{ device.id }}/delete" onsubmit="return confirm('Delete this device and all its history?');">
+      <button type="submit" class="danger">Delete device</button>
+    </form>
+  </section>
+</div>
 {% endblock %}
 {% block scripts %}
 <script>

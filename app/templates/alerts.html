@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Alerts - DeviceManager{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Alerts</h1>
+</div>
+
+<section class="panel">
+  {% for a in alerts %}
+  <a class="alert-item alert-link" href="/devices/{{ a.device_id }}">
+    <span class="alert-time">{{ a.created_at | dt }}</span>
+    <span class="chip {{ 'bad' if a.kind in ['offline','tailscale_down','container_down','service_down'] else 'ok' if a.kind in ['online','tailscale_up','service_up'] else 'warn' if a.kind in ['apt_stale','cpu_high','mem_high','disk_high'] else 'neutral' }}">{{ a.kind }}</span>
+    <span class="alert-dev">{{ a.device_name }}</span>
+    <span class="alert-msg">{{ a.message }}</span>
+  </a>
+  {% else %}
+  <p class="muted">No alerts yet.</p>
+  {% endfor %}
+</section>
+{% endblock %}

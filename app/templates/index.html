@@ -37,8 +37,7 @@
         <tr class="clickable" onclick="window.location='/devices/{{ d.id }}'">
           <td>{{ ui.status_chip(d.is_online) }}</td>
           <td class="name-cell">
-            <span class="name">{{ d.name }}</span>
-            {% if d.apt_needs_update %}<span class="chip warn" title="Packages out of date">updates</span>{% endif %}
+            <span class="name-line"><span class="name">{{ d.name }}</span>{% if d.apt_needs_update %}{% set upg = d.report.apt.upgradable if d.report and d.report.apt else none %}<span class="pkg-badge tip-below" data-tip="{{ (upg ~ ' packages need updating') if upg is not none else 'Packages need updating' }}"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v8a2 2 0 0 1-1 1.73l-7 4a2 2 0 0 1-2 0l-7-4A2 2 0 0 1 3 16V8a2 2 0 0 1 1-1.73l7-4a2 2 0 0 1 2 0l7 4A2 2 0 0 1 21 8z"/><polyline points="3.3 7 12 12 20.7 7"/><line x1="12" y1="22" x2="12" y2="12"/></svg></span>{% endif %}</span>
             {% if d.report and d.report.system and d.report.system.hostname and d.report.system.hostname != d.name %}
             <span class="sub">{{ d.report.system.hostname }}</span>
             {% endif %}

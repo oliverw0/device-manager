@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+{% block title %}Stacks - DeviceManager{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Stacks</h1>
+</div>
+
+<section class="panel">
+  {% for s in stacks %}
+  {% set dev = {"id": s.device_id, "name": s.device_name, "ssh_enabled": s.device_ssh_enabled} %}
+  <details class="stack-item">
+    <summary>
+      <span class="chip info">STACK</span>
+      <span class="c-name">{{ s.stack }}</span>
+      <a class="stack-dev" href="/devices/{{ s.device_id }}" onclick="event.stopPropagation()">{{ s.device_name }}</a>
+      <span class="spacer"></span>
+      {% if dev.ssh_enabled %}
+      <span class="c-actions" onclick="event.stopPropagation()">
+        <button class="term-btn" title="Start all" onclick='stackAction({{ s.device_id }}, {{ s.members|map(attribute="name")|list|tojson }}, "start", this)'><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><polygon points="6 4 20 12 6 20"/></svg></button>
+        <button class="term-btn" title="Stop all" onclick='stackAction({{ s.device_id }}, {{ s.members|map(attribute="name")|list|tojson }}, "stop", this)'><svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="1"/></svg></button>
+        <button class="term-btn" title="Restart all" onclick='stackAction({{ s.device_id }}, {{ s.members|map(attribute="name")|list|tojson }}, "restart", this)'><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 3 21 9 15 9"/><path d="M20.5 14a8.5 8.5 0 1 1-2-8.9L21 9"/></svg></button>
+      </span>
+      {% endif %}
+      <span class="chip {{ 'ok' if s.running == s.total else 'bad' if s.running == 0 else 'warn' }}">{{ s.running }}/{{ s.total }} up</span>
+    </summary>
+    <div class="c-body stack-body">
+      {% for c in s.members %}{{ ui.container_card(c, dev) }}{% endfor %}
+    </div>
+  </details>
+  {% else %}
+  <p class="muted">No compose stacks reported. Containers with a compose project name appear here grouped by stack.</p>
+  {% endfor %}
+</section>
+{% endblock %}

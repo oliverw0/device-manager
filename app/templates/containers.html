@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+{% block title %}Containers - DeviceManager{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Containers</h1>
+</div>
+
+<div class="tiles">
+  <div class="tile"><div class="tile-value">{{ containers | length }}</div><div class="tile-label">Total</div></div>
+  <div class="tile ok"><div class="tile-value">{{ running }}</div><div class="tile-label">Running</div></div>
+  <div class="tile bad"><div class="tile-value">{{ containers | length - running }}</div><div class="tile-label">Not running</div></div>
+</div>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table class="device-table">
+      <thead>
+        <tr><th>Status</th><th>Container</th><th>Device</th><th>Stack</th><th>CPU</th><th>Memory</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for c in containers %}
+        <tr class="clickable" onclick="window.location='/devices/{{ c.device_id }}'">
+          <td>{{ ui.container_status(c.status) }}</td>
+          <td class="name-cell"><span class="name">{{ c.name }}</span><span class="sub">{{ c.image }}</span></td>
+          <td>{{ c.device_name }}</td>
+          <td>{% if c.stack %}<span class="chip info">{{ c.stack }}</span>{% else %}<span class="faint">—</span>{% endif %}</td>
+          <td>{{ ui.meter(c.cpu_percent) }}</td>
+          <td>{{ ui.meter(c.mem_percent) }}</td>
+          <td class="term-cell">
+            {% if c.device_ssh_enabled %}
+            <span class="c-actions" onclick="event.stopPropagation()">
+              <button class="term-btn" title="Shell (docker exec)" onclick="openContainerShell({{ c.device_id }}, '{{ c.device_name }}', '{{ c.name }}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></button>
+              <button class="term-btn" title="Logs" onclick="containerLogs({{ c.device_id }}, '{{ c.name }}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="7" x2="19" y2="7"/><line x1="5" y1="12" x2="19" y2="12"/><line x1="5" y1="17" x2="13" y2="17"/></svg></button>
+              <button class="term-btn" title="Start" onclick="containerAction({{ c.device_id }}, '{{ c.name }}', 'start', this)"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><polygon points="6 4 20 12 6 20"/></svg></button>
+              <button class="term-btn" title="Stop" onclick="containerAction({{ c.device_id }}, '{{ c.name }}', 'stop', this)"><svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="1"/></svg></button>
+              <button class="term-btn" title="Restart" onclick="containerAction({{ c.device_id }}, '{{ c.name }}', 'restart', this)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 3 21 9 15 9"/><path d="M20.5 14a8.5 8.5 0 1 1-2-8.9L21 9"/></svg></button>
+            </span>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr class="empty-row"><td colspan="7">No containers reported by any device.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

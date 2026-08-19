@@ -46,6 +46,14 @@ class Settings(BaseSettings):
     apt_stale_days: int = 30
     apt_upgradable_threshold: int = 50
 
+    # Resource threshold alerts: ntfy once when a metric stays at/above the
+    # percentage for alert_sustained_minutes straight (set a threshold to 0 to
+    # disable that metric). Sustained, not spiky — a brief peak won't page you.
+    alert_cpu_percent: int = 95
+    alert_mem_percent: int = 90
+    alert_disk_percent: int = 90
+    alert_sustained_minutes: int = 10
+
     # Leave unset: auto-generated on first run and persisted to data/session_secret.key.
     # Only set this yourself if you need the same secret across multiple host instances.
     session_secret: str = ""

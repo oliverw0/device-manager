@@ -7,20 +7,53 @@
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/static/vendor/xterm.css" />
   <link rel="stylesheet" href="/static/style.css?v={{ static_version }}" />
+  <script>if (localStorage.getItem("navCollapsed") === "1") document.documentElement.classList.add("nav-preload-collapsed");</script>
+  <style>html.nav-preload-collapsed body { --nav-w: 58px; }</style>
 </head>
-<body>
-  <header class="topbar">
-    <a class="brand" href="/"><span class="brand-mark"></span>DeviceManager</a>
-    <a id="apt-alert" class="apt-alert" href="/" title="Devices with out-of-date packages"
-       {{ '' if (apt_alert_count | default(0)) else 'hidden' }}>
-      <span id="apt-alert-count">{{ apt_alert_count | default(0) }}</span> need updating
-    </a>
-    {% if request.session.get("is_admin") %}
-    <form method="post" action="/logout">
-      <button type="submit" class="secondary">Log out</button>
-    </form>
-    {% endif %}
-  </header>
+<body class="{{ '' if request.session.get('is_admin') else 'no-nav' }}">
+  {% set p = request.url.path %}
+  {% if request.session.get('is_admin') %}
+  <nav class="sidebar">
+    <div class="sidebar-head">
+      <button type="button" class="nav-toggle" id="nav-toggle" title="Collapse menu" aria-label="Toggle menu">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+      <a class="brand" href="/"><span class="brand-mark"></span><span class="brand-text">DeviceManager</span></a>
+    </div>
+    <div class="sidebar-nav">
+      <a class="nav-item {{ 'active' if p == '/' or p.startswith('/devices') }}" href="/" title="Devices">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="6" rx="1"/><rect x="2" y="15" width="20" height="6" rx="1"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+        <span class="nav-label">Devices</span>
+      </a>
+      <a class="nav-item {{ 'active' if p.startswith('/containers') }}" href="/containers" title="Containers">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v8a2 2 0 0 1-1 1.73l-7 4a2 2 0 0 1-2 0l-7-4A2 2 0 0 1 3 16V8a2 2 0 0 1 1-1.73l7-4a2 2 0 0 1 2 0l7 4A2 2 0 0 1 21 8z"/><polyline points="3.3 7 12 12 20.7 7"/><line x1="12" y1="22" x2="12" y2="12"/></svg>
+        <span class="nav-label">Containers</span>
+      </a>
+      <a class="nav-item {{ 'active' if p.startswith('/stacks') }}" href="/stacks" title="Stacks">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+        <span class="nav-label">Stacks</span>
+      </a>
+      <a class="nav-item {{ 'active' if p.startswith('/alerts') }}" href="/alerts" title="Alerts">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        <span class="nav-label">Alerts</span>
+      </a>
+    </div>
+    <div class="sidebar-foot">
+      <a id="apt-alert" class="apt-alert" href="/" title="Devices with out-of-date packages"
+         {{ '' if (apt_alert_count | default(0)) else 'hidden' }}>
+        <span id="apt-alert-count">{{ apt_alert_count | default(0) }}</span> <span class="apt-text">need updating</span>
+      </a>
+      {% if request.session.get("is_admin") %}
+      <form method="post" action="/logout">
+        <button type="submit" class="nav-item" title="Log out">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          <span class="nav-label">Log out</span>
+        </button>
+      </form>
+      {% endif %}
+    </div>
+  </nav>
+  {% endif %}
   <main class="container">
     {% block content %}{% endblock %}
   </main>

@@ -11,7 +11,7 @@ from . import monitor, ssh_keys
 from .auth_middleware import AdminAuthMiddleware
 from .config import settings
 from .database import init_db
-from .routers import api, auth, dashboard, terminal
+from .routers import api, auth, checks, dashboard, terminal
 
 logging.basicConfig(level=logging.INFO)
 
@@ -47,5 +47,6 @@ def favicon():
 
 app.include_router(api.router)
 app.include_router(auth.router)
+app.include_router(checks.router)
 app.include_router(dashboard.router)
 app.include_router(terminal.router)

@@ -20,6 +20,8 @@ _COLUMN_MIGRATIONS = {
         "ssh_port": "ALTER TABLE device ADD COLUMN ssh_port INTEGER NOT NULL DEFAULT 22",
         "last_report_ip": "ALTER TABLE device ADD COLUMN last_report_ip VARCHAR",
         "apt_needs_update": "ALTER TABLE device ADD COLUMN apt_needs_update BOOLEAN",
+        "alerts_muted_until": "ALTER TABLE device ADD COLUMN alerts_muted_until DATETIME",
+        "alert_state": "ALTER TABLE device ADD COLUMN alert_state VARCHAR",
     },
 }
 

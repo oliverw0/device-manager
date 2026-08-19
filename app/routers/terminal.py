@@ -124,7 +124,7 @@ async def _send(ws: WebSocket, message: str) -> None:
 
 
 @router.websocket("/devices/{device_id}/terminal")
-async def terminal(websocket: WebSocket, device_id: int, user: str = ""):
+async def terminal(websocket: WebSocket, device_id: int, user: str = "", container: str = ""):
     await websocket.accept()
 
     # SessionMiddleware runs for websocket scope too, so the login cookie is here.
@@ -147,6 +147,7 @@ async def terminal(websocket: WebSocket, device_id: int, user: str = ""):
         port = device.ssh_port
         report = json.loads(device.last_report_json) if device.last_report_json else {}
         allowed_users = set((report or {}).get("ssh_users", []))
+        container_known = _known_container(device.last_report_json, container) if container else False
         device_name = device.name
 
     if not candidates:
@@ -162,6 +163,11 @@ async def terminal(websocket: WebSocket, device_id: int, user: str = ""):
         return
     if not user:
         await _send(websocket, "No user selected.")
+        await websocket.close()
+        return
+
+    if container and not container_known:
+        await _send(websocket, "Unknown container.")
         await websocket.close()
         return
 
@@ -199,8 +205,15 @@ async def terminal(websocket: WebSocket, device_id: int, user: str = ""):
         await websocket.close()
         return
 
+    # container name is whitelisted against the last report above, so it's a safe
+    # docker-name charset — no shell-injection risk in the exec command.
+    exec_cmd = None
+    if container:
+        exec_cmd = f"docker exec -it {container} /bin/bash 2>/dev/null || docker exec -it {container} /bin/sh"
+        await _send(websocket, f"docker exec into {container}…")
     try:
         proc = await conn.create_process(
+            exec_cmd,  # None -> login shell; set -> exec into the container
             term_type="xterm-256color",
             term_size=(80, 24),
             encoding=None,  # raw bytes both ways
