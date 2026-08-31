@@ -2,7 +2,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, RedirectResponse
 from urllib.parse import quote
 
-PUBLIC_PATHS = {"/login", "/logout", "/favicon.ico"}
+PUBLIC_PATHS = {"/login", "/logout", "/favicon.ico", "/sw.js"}
 PUBLIC_PREFIXES = ("/static", "/api/v1")
 
 

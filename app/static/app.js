@@ -41,17 +41,19 @@ function meter(value) {
   return `<div class="meter" title="${p}%"><div class="meter-fill ${cls}" style="width:${Math.min(100, p)}%"></div><span class="meter-label">${p}%</span></div>`;
 }
 
-function statusChip(isOnline) {
-  return isOnline
-    ? '<span class="chip ok"><span class="chip-dot"></span>Online</span>'
-    : '<span class="chip bad"><span class="chip-dot"></span>Offline</span>';
+function statusDot(isOnline) {
+  return `<span class="stat-led ${isOnline ? "on" : "off"}" title="${isOnline ? "Online" : "Offline"}"></span>`;
 }
 
-function tailscaleChip(ts) {
-  if (!ts) return '<span class="faint">—</span>';
-  if (ts.backend_state === "not_installed") return '<span class="chip neutral">No Tailscale client</span>';
-  if (ts.connected) return '<span class="chip ok">Connected</span>';
-  return `<span class="chip bad">${escapeHtml(ts.backend_state || "Down")}</span>`;
+// Official Tailscale logomark; colour + glow by state (mirrors _macros.html).
+var TS_PATH = "M24 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm-9 9a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm0-9a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm6-6a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm0-.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM3 24a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm0-.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zm18 .5a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm0-.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM6 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm9-9a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm-3 2.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM6 3a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM3 5.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z";
+function tailscaleLogo(ts) {
+  let st, txt;
+  if (!ts || ts.backend_state === "not_installed") { st = "off"; txt = "Not set up"; }
+  else if (ts.connected) { st = "online"; txt = "Connected"; }
+  else if (ts.backend_state === "NeedsLogin" || ts.backend_state === "Stopped") { st = "alert"; txt = ts.backend_state; }
+  else { st = "down"; txt = ts.backend_state || "Down"; }
+  return `<span class="ts-logo ts-${st}" title="Tailscale: ${escapeHtml(txt)}"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-label="Tailscale ${escapeHtml(txt)}"><path d="${TS_PATH}"/></svg></span>`;
 }
 
 function containerSummary(list) {
@@ -67,7 +69,7 @@ function renderDeviceRows(devices) {
   if (!tbody) return;
 
   if (devices.length === 0) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="9">No devices yet. Add one below to get an API key.</td></tr>';
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="10">No devices yet. Add one below to get an API key.</td></tr>';
   } else {
     tbody.innerHTML = devices.map((d) => {
       const sys = d.report && d.report.system;
@@ -76,20 +78,21 @@ function renderDeviceRows(devices) {
       const upg = d.report && d.report.apt ? d.report.apt.upgradable : null;
       const aptTip = upg != null ? `${upg} packages need updating` : "Packages need updating";
       const aptFlag = d.apt_needs_update ? `<span class="pkg-badge tip-below" data-tip="${aptTip}"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v8a2 2 0 0 1-1 1.73l-7 4a2 2 0 0 1-2 0l-7-4A2 2 0 0 1 3 16V8a2 2 0 0 1 1-1.73l7-4a2 2 0 0 1 2 0l7 4A2 2 0 0 1 21 8z"/><polyline points="3.3 7 12 12 20.7 7"/><line x1="12" y1="22" x2="12" y2="12"/></svg></span>` : "";
-      return `<tr class="clickable" onclick="window.location='/devices/${d.id}'">
-        <td>${statusChip(d.is_online)}</td>
+      return `<tr class="clickable${d.apt_needs_update ? " needs-update" : ""}" onclick="window.location='/devices/${d.id}'">
+        <td class="col-status">${statusDot(d.is_online)}</td>
         <td class="name-cell"><span class="name-line"><span class="name">${escapeHtml(d.name)}</span>${aptFlag}</span>${hostname}</td>
-        <td>${meter(sys ? sys.cpu_percent : null)}</td>
-        <td>${meter(sys ? sys.mem_percent : null)}</td>
-        <td>${meter(sys ? sys.disk_percent : null)}</td>
-        <td>${tailscaleChip(d.report ? d.report.tailscale : null)}</td>
-        <td>${containerSummary(d.report ? d.report.docker_containers : null)}</td>
-        <td class="last-seen-cell muted" title="${escapeHtml(fmtAbsolute(d.last_seen_at))}">
+        <td class="col-cpu">${meter(sys ? sys.cpu_percent : null)}</td>
+        <td class="col-mem">${meter(sys ? sys.mem_percent : null)}</td>
+        <td class="col-disk">${meter(sys ? sys.disk_percent : null)}</td>
+        <td class="col-ts">${tailscaleLogo(d.report ? d.report.tailscale : null)}</td>
+        <td class="col-ctr">${containerSummary(d.report ? d.report.docker_containers : null)}</td>
+        <td class="col-seen last-seen-cell muted" title="${escapeHtml(fmtAbsolute(d.last_seen_at))}">
           <span>${fmtRelative(d.seconds_since_seen)}</span>
         </td>
-        <td class="term-cell">
+        <td class="col-ssh term-cell">
           ${d.ssh_enabled ? `<button class="term-btn" title="Open SSH terminal" data-term-id="${d.id}" data-term-name="${escapeHtml(d.name)}" onclick="event.stopPropagation(); openTerminalFromBtn(this)">${TERMINAL_ICON}</button>` : ""}
         </td>
+        <td class="col-go"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></td>
       </tr>`;
     }).join("");
   }
@@ -611,6 +614,43 @@ function containerLogs(deviceId, name) {
   load();
   clearInterval(LOGS_TIMER);
   LOGS_TIMER = setInterval(load, 2000);  // ponytail: poll --tail 200; swap for docker logs -f WS if live streaming needed
+}
+
+/* ---------- mobile container action sheet ----------
+   On phones the container row is just a dot + name; tapping it slides up a bar
+   with the action buttons, cloned from that row's (hidden) .c-actions. */
+function openActionSheet(item) {
+  const sheet = document.getElementById("action-sheet");
+  if (!sheet) return;
+  const nameEl = item.querySelector(".c-name");
+  const actions = item.querySelector(":scope > summary .c-actions");
+  document.getElementById("sheet-title").textContent = nameEl ? nameEl.textContent : "Container";
+  const dst = document.getElementById("sheet-actions");
+  dst.innerHTML = actions
+    ? actions.innerHTML
+    : '<p class="muted" style="margin:0">Enable SSH for this device to control containers.</p>';
+  sheet.hidden = false;
+  document.body.classList.add("sheet-open");
+}
+
+function closeActionSheet() {
+  const sheet = document.getElementById("action-sheet");
+  if (sheet) sheet.hidden = true;
+  document.body.classList.remove("sheet-open");
+}
+
+function initContainerActionSheet() {
+  // Tapping an action button (which opens the terminal/logs pane) dismisses the sheet.
+  const dst = document.getElementById("sheet-actions");
+  if (dst) dst.addEventListener("click", (e) => { if (e.target.closest("button")) closeActionSheet(); });
+  // Intercept container-row taps on mobile so the <details> info doesn't toggle.
+  document.addEventListener("click", (e) => {
+    if (!window.matchMedia("(max-width: 720px)").matches) return;
+    const summary = e.target.closest(".container-item > summary");
+    if (!summary) return;
+    e.preventDefault();
+    openActionSheet(summary.parentElement);
+  });
 }
 
 function stackAction(deviceId, names, action, btn) {

@@ -17,11 +17,20 @@
 {%- else -%}<span class="chip bad"><span class="chip-dot"></span>Offline</span>{%- endif -%}
 {%- endmacro %}
 
-{% macro tailscale_chip(ts) -%}
-{%- if not ts -%}<span class="faint">—</span>
-{%- elif ts.backend_state == 'not_installed' -%}<span class="chip neutral">No Tailscale client</span>
-{%- elif ts.connected -%}<span class="chip ok">Connected</span>
-{%- else -%}<span class="chip bad">{{ ts.backend_state or 'Down' }}</span>{%- endif -%}
+{# Bare glowing LED for compact device lists. #}
+{% macro status_dot(is_online) -%}
+<span class="stat-led {{ 'on' if is_online else 'off' }}" title="{{ 'Online' if is_online else 'Offline' }}"></span>
+{%- endmacro %}
+
+{# Official Tailscale logomark (3x3 dot grid), colour + glow by state:
+   online=green, down=red, alert=amber, not-set-up=grey. #}
+{% set TS_PATH = "M24 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm-9 9a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm0-9a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm6-6a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm0-.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM3 24a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm0-.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zm18 .5a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm0-.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM6 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm9-9a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm-3 2.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM6 3a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM3 5.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z" %}
+{% macro tailscale_logo(ts, label=false) -%}
+{%- if not ts or ts.backend_state == 'not_installed' -%}{% set st = 'off' %}{% set txt = 'Not set up' %}
+{%- elif ts.connected -%}{% set st = 'online' %}{% set txt = 'Connected' %}
+{%- elif ts.backend_state in ('NeedsLogin', 'Stopped') -%}{% set st = 'alert' %}{% set txt = ts.backend_state %}
+{%- else -%}{% set st = 'down' %}{% set txt = ts.backend_state or 'Down' %}{%- endif -%}
+<span class="ts-logo ts-{{ st }}" title="Tailscale: {{ txt }}"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-label="Tailscale {{ txt }}"><path d="{{ TS_PATH }}"/></svg>{% if label %}<span class="ts-txt">{{ txt }}</span>{% endif %}</span>
 {%- endmacro %}
 
 {# Orange "updates" chip. Shown only when the host flagged the device as stale.
@@ -40,6 +49,12 @@
 <span class="chip {{ 'ok' if 'running' in s else 'bad' if 'exited' in s or 'dead' in s else 'warn' }}">{{ status or 'unknown' }}</span>
 {%- endmacro %}
 
+{# Coloured status dot for the compact mobile container list. #}
+{% macro container_dot(status) -%}
+{%- set s = (status or '')|lower -%}
+<span class="c-dot {{ 'ok' if 'running' in s else 'bad' if 'exited' in s or 'dead' in s else 'warn' }}" title="{{ status or 'unknown' }}"></span>
+{%- endmacro %}
+
 {% macro container_summary(list) -%}
 {%- if not list -%}<span class="faint">—</span>
 {%- else -%}
@@ -54,6 +69,7 @@
 <details class="container-item" data-name="{{ c.name }}">
   <summary>
     <canvas class="container-spark"></canvas>
+    {{ container_dot(c.status) }}
     <span class="c-name">{{ c.name }}</span>
     {% if ccpu is not none or cmem is not none %}
     <span class="c-usage" data-cpu="{{ ccpu if ccpu is not none else '' }}" data-mem="{{ cmem if cmem is not none else '' }}">{{ '%.0f'|format(ccpu) ~ '%' if ccpu is not none else '' }}</span>

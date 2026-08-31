@@ -3,7 +3,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.responses import RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -43,6 +43,14 @@ app.add_middleware(
 @app.get("/favicon.ico", include_in_schema=False)
 def favicon():
     return RedirectResponse(url="/static/favicon.svg")
+
+
+# Served from root so the service worker's scope covers the whole app (a
+# /static/ URL would only control /static/). AdminAuthMiddleware must let it
+# through unauthenticated — the SW is fetched before login.
+@app.get("/sw.js", include_in_schema=False)
+def service_worker():
+    return FileResponse("app/static/sw.js", media_type="application/javascript")
 
 
 app.include_router(api.router)

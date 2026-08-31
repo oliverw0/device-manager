@@ -140,8 +140,8 @@
       <h2 style="margin:0">Docker containers {% if containers %}<span class="chip neutral">{{ containers | length }}</span>{% endif %}</h2>
       {% if containers %}
       <div class="spark-toggle" id="spark-toggle" title="Background graph metric">
-        <button type="button" class="active" data-metric="cpu">CPU</button>
-        <button type="button" data-metric="mem">Mem</button>
+        <button type="button" class="active" data-metric="cpu"><svg class="st-ico" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="7" y="7" width="10" height="10" rx="1"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg><span class="st-txt">CPU</span></button>
+        <button type="button" data-metric="mem"><svg class="st-ico" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="7" width="20" height="10" rx="1"/><path d="M6 7v10M10 7v10M14 7v10M18 7v10"/></svg><span class="st-txt">Mem</span></button>
       </div>
       {% endif %}
     </div>
@@ -179,7 +179,7 @@
     <p class="muted">No Tailscale client on this device.</p>
     {% elif ts %}
     <ul class="kv">
-      <li><span class="k">Status</span><span class="v">{{ ui.tailscale_chip(ts) }}</span></li>
+      <li><span class="k">Status</span><span class="v">{{ ui.tailscale_logo(ts, label=true) }}</span></li>
       <li><span class="k">Backend state</span><span class="v">{{ ts.backend_state or '—' }}</span></li>
       {% if ts.dns_name %}
       <li><span class="k">MagicDNS name</span><span class="v"><span class="copyable" onclick="copyText('{{ ts.dns_name }}', this)" title="Click to copy">{{ ts.dns_name }}</span></span></li>
@@ -248,10 +248,23 @@
     </form>
   </section>
 </div>
+{# Mobile slide-in bar for container/stack actions (buttons cloned from the tapped row). #}
+<div id="action-sheet" class="action-sheet" hidden>
+  <div class="sheet-backdrop" onclick="closeActionSheet()"></div>
+  <div class="sheet-panel">
+    <div class="sheet-head">
+      <span id="sheet-title" class="c-name"></span>
+      <span class="spacer"></span>
+      <button type="button" class="secondary" onclick="closeActionSheet()" title="Close">✕</button>
+    </div>
+    <div id="sheet-actions" class="sheet-actions"></div>
+  </div>
+</div>
 {% endblock %}
 {% block scripts %}
 <script>
   loadHistoryChart('/devices/{{ device.id }}/history.json', 'history-chart');
   loadContainerSparks('/devices/{{ device.id }}/containers/history.json');
+  initContainerActionSheet();
 </script>
 {% endblock %}

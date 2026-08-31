@@ -132,21 +132,42 @@ h3 { font-size: 11px; margin: 18px 0 6px; color: var(--muted); letter-spacing: 0
   text-transform: uppercase;
 }
 .brand:hover { text-decoration: none; }
-/* Global "packages out of date" flag. Sits next to the brand; hidden when zero. */
-.apt-alert {
-  margin-left: 16px;
-  padding: 4px 10px;
-  border-radius: 4px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--amber);
-  background: rgba(255, 176, 56, 0.10);
-  border: 1px solid rgba(255, 176, 56, 0.35);
+/* Amber count badge on the Devices nav item — links to the "needs updates" filter. */
+.nav-slot { position: relative; }
+.apt-badge {
+  position: absolute; top: 4px; right: 6px; z-index: 2;
+  min-width: 16px; height: 16px; padding: 0 4px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #1a1206; background: var(--amber);
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700; line-height: 1;
+  border-radius: 9px; box-shadow: var(--glow-amber);
 }
-.apt-alert:hover { text-decoration: none; border-color: var(--amber); }
-.apt-alert[hidden] { display: none; }
+.apt-badge:hover { text-decoration: none; filter: brightness(1.1); }
+.apt-badge[hidden] { display: none; }
+
+/* "needs updates" filter (Devices page, ?updates=1) */
+.filter-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-bottom: 14px; padding: 9px 12px; border-radius: var(--radius);
+  color: var(--amber); background: rgba(255, 176, 56, 0.10); border: 1px solid rgba(255, 176, 56, 0.35);
+  font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.04em;
+}
+.filter-banner[hidden] { display: none; }
+body.filter-updates #device-table tbody tr.clickable:not(.needs-update) { display: none; }
+
+/* glowing status LED (device list) */
+.stat-led { display: inline-block; width: 11px; height: 11px; border-radius: 50%; vertical-align: middle; }
+.stat-led.on { background: var(--green); box-shadow: var(--glow-green); }
+.stat-led.off { background: var(--red); box-shadow: var(--glow-red); }
+
+/* official Tailscale logomark, colour + glow by state */
+.ts-logo { display: inline-flex; align-items: center; gap: 8px; vertical-align: middle; line-height: 0; }
+.ts-logo svg { display: block; }
+.ts-online { color: var(--green); filter: drop-shadow(0 0 4px rgba(55, 224, 106, 0.7)); }
+.ts-down   { color: var(--red);   filter: drop-shadow(0 0 4px rgba(255, 82, 48, 0.65)); }
+.ts-alert  { color: var(--amber); filter: drop-shadow(0 0 4px rgba(255, 176, 56, 0.75)); }
+.ts-off    { color: var(--faint); opacity: 0.55; }
+.ts-txt { font-family: var(--font-mono); font-size: 12px; color: var(--muted); line-height: 1; }
 .brand .brand-mark {
   display: inline-block;
   width: 9px; height: 9px;
@@ -182,20 +203,42 @@ h3 { font-size: 11px; margin: 18px 0 6px; color: var(--muted); letter-spacing: 0
 .sidebar-foot { display: flex; flex-direction: column; gap: 8px; padding: 10px 8px; border-top: 1px solid var(--border); }
 .sidebar-foot form { margin: 0; }
 .sidebar-foot .nav-item { width: 100%; background: none; border: none; cursor: pointer; }
-.sidebar-foot .apt-alert { margin: 0; display: flex; align-items: center; justify-content: center; gap: 5px; }
 
 /* collapsed: icons only */
 body.nav-collapsed .brand-text,
-body.nav-collapsed .nav-label,
-body.nav-collapsed .apt-text { display: none; }
+body.nav-collapsed .nav-label { display: none; }
 body.nav-collapsed .nav-item { justify-content: center; gap: 0; }
 body.nav-collapsed .sidebar-head { justify-content: center; padding: 0; }
 
+/* ---------- mobile: sidebar becomes a bottom tab bar ---------- */
 @media (max-width: 720px) {
-  :root, body.nav-collapsed { --nav-w: 58px; }
-  .brand-text, .nav-label, .apt-text { display: none; }
-  .nav-item { justify-content: center; gap: 0; }
-  .sidebar-head { justify-content: center; padding: 0; }
+  :root { --nav-h: 58px; }
+  body {
+    padding-left: 0;
+    padding-top: env(safe-area-inset-top);  /* clear the notch under black-translucent status bar */
+    padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom));
+  }
+  .sidebar {
+    top: auto; left: 0; right: 0; bottom: 0; width: auto; height: auto;
+    flex-direction: row; align-items: stretch;
+    border-right: none; border-top: 1px solid var(--border-strong);
+    padding-bottom: env(safe-area-inset-bottom);
+    background: rgba(16, 18, 22, 0.98); backdrop-filter: blur(8px);
+  }
+  .sidebar-head { display: none; }
+  /* flex-grow matches item count so every tab (4 nav + 1 logout) is equal width */
+  .sidebar-nav { flex-direction: row; flex: 4; gap: 0; padding: 0; }
+  .sidebar-foot { flex-direction: row; flex: 1; gap: 0; padding: 0; border-top: none; }
+  .sidebar-foot form, .sidebar-foot .nav-item { flex: 1; }
+  .nav-slot { flex: 1; display: flex; }
+  .apt-badge { top: 7px; right: calc(50% - 18px); }  /* over the icon's upper-right */
+  .nav-item {
+    flex: 1; justify-content: center; gap: 0;
+    height: var(--nav-h); padding: 0; border-radius: 0;
+  }
+  .nav-item svg { width: 22px; height: 22px; }
+  .nav-label { display: none; }  /* icons only on the bottom bar */
+  .nav-item.active { background: rgba(55, 224, 106, 0.10); box-shadow: inset 0 2px 0 var(--green); }
 }
 
 /* ---------- panels ---------- */
@@ -256,6 +299,23 @@ body.nav-collapsed .sidebar-head { justify-content: center; padding: 0; }
 .name-cell .name { font-weight: 500; }
 .name-cell .sub { display: block; font-family: var(--font-mono); font-size: 11px; color: var(--faint); margin-top: 1px; }
 .empty-row td { text-align: center; color: var(--muted); padding: 26px 12px; }
+/* narrow columns; chevron affordance is mobile-only */
+.device-table .col-status { width: 1%; text-align: center; }
+.device-table .col-ts, .device-table .col-ctr { white-space: nowrap; }
+.device-table .col-go { display: none; }
+
+/* ---------- mobile: device table trims to a clean list ---------- */
+@media (max-width: 720px) {
+  .device-table .col-cpu, .device-table .col-mem, .device-table .col-disk,
+  .device-table .col-seen, .device-table .col-ssh { display: none; }
+  .device-table .col-go { display: table-cell; width: 1%; text-align: right; color: var(--faint); padding: 12px 2px 12px 4px; }
+  .device-table th { padding: 8px 6px; }
+  .device-table td { padding: 13px 6px; }
+  .device-table .col-status { padding-right: 2px; }
+  .device-table .name-cell .name { font-size: 15px; }
+  .device-table .col-ts, .device-table .col-ctr { text-align: center; }
+  .panel { padding: 14px; }
+}
 
 /* ---------- chips (segment indicators) ---------- */
 .chip {
@@ -426,7 +486,7 @@ a.alert-link:hover .alert-msg { color: var(--green); }
 }
 .section-head::after { content: ""; flex: 1; height: 1px; background: var(--border); }
 .section-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; margin-bottom: 8px; }
-@media (max-width: 860px) { .section-grid { grid-template-columns: 1fr; } }
+@media (max-width: 860px) { .section-grid { grid-template-columns: minmax(0, 1fr); } }
 .section-grid > .panel { margin-bottom: 0; }
 
 /* ---------- click-to-copy values ---------- */
@@ -493,6 +553,8 @@ body.term-open { padding-right: 50vw; }
 .pane-section[hidden] { display: none; }
 .logs-body { flex: 1; min-height: 0; margin: 0; padding: 10px 12px; overflow: auto; background: #0c0e11; font-family: var(--font-mono); font-size: 12px; color: var(--green); white-space: pre-wrap; word-break: break-all; }
 @media (max-width: 860px) { body.term-open { padding-right: 0; } body.term-open .container { display: none; } .terminal-pane { width: auto; left: var(--nav-w); } }
+/* mobile: terminal is full-width and sits above the bottom tab bar */
+@media (max-width: 720px) { .terminal-pane { left: 0; bottom: calc(var(--nav-h) + env(safe-area-inset-bottom)); } }
 
 /* ---------- SSH toggle switch ---------- */
 .switch-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
@@ -531,6 +593,32 @@ body { overflow-x: hidden; }
 .c-actions .term-btn { width: 26px; height: 26px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
 .c-actions .term-btn svg { display: block; }
 
+/* coloured status dot for compact (mobile) container rows */
+.c-dot { display: none; width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.c-dot.ok { background: var(--green); box-shadow: var(--glow-green); }
+.c-dot.bad { background: var(--red); box-shadow: var(--glow-red); }
+.c-dot.warn { background: var(--amber); box-shadow: var(--glow-amber); }
+
+.st-ico { display: none; }  /* spark-toggle shows text on desktop, icon on mobile */
+
+/* ---------- mobile container action sheet (slide-in bar) ---------- */
+.action-sheet { position: fixed; inset: 0; z-index: 80; }
+.action-sheet[hidden] { display: none; }
+.sheet-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.5); }
+.sheet-panel {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  background: var(--panel); border-top: 1px solid var(--border-strong);
+  border-radius: 12px 12px 0 0; padding: 14px 16px calc(18px + env(safe-area-inset-bottom));
+  transform: translateY(100%); animation: sheet-up 0.18s ease forwards;
+}
+@keyframes sheet-up { to { transform: translateY(0); } }
+.sheet-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.sheet-head .c-name { font-family: var(--font-mono); font-weight: 600; font-size: 15px; }
+.sheet-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.sheet-actions .term-btn { width: auto; height: 46px; min-width: 60px; flex: 1 1 60px; padding: 0 16px; display: inline-flex; align-items: center; justify-content: center; }
+.sheet-actions .term-btn svg { display: block; width: 18px; height: 18px; }
+body.sheet-open { overflow: hidden; }
+
 /* ---------- stack (compose project) card ---------- */
 .stack-item { border: 1px solid var(--border-strong); border-radius: var(--radius); margin-bottom: 8px; background: var(--panel-2); }
 .stack-item > summary { display: flex; align-items: center; gap: 10px; padding: 10px 12px; cursor: pointer; list-style: none; user-select: none; }
@@ -541,3 +629,33 @@ body { overflow-x: hidden; }
 .stack-dev:hover { color: var(--green); }
 .stack-body { padding: 4px 10px 10px; }
 .stack-body .container-item { margin-bottom: 6px; }
+
+/* ---------- mobile: minimise the device-detail containers + network ---------- */
+@media (max-width: 720px) {
+  /* containers collapse to [dot] name; actions move to the slide-in sheet */
+  .c-dot { display: inline-block; }
+  .container-item > summary { padding: 14px 12px; }
+  .container-item > summary::before { display: none; }
+  .container-item > summary .c-usage,
+  .container-item > summary > .chip,
+  .container-item > summary .c-actions,
+  .container-item .c-body { display: none; }
+  .container-item .c-name { font-size: 14px; }
+  .stack-item > summary .c-actions { display: none; }
+
+  /* spark metric toggle: icon-only */
+  .spark-toggle .st-txt { display: none; }
+  .spark-toggle .st-ico { display: block; }
+  .spark-toggle button { padding: 6px 12px; }
+
+  /* key/value lists (Tailscale, etc.): heading on top, info beneath */
+  .kv li { flex-direction: column; align-items: flex-start; gap: 3px; }
+  .kv li .v { text-align: left; width: 100%; }
+
+  /* alerts: kind + device on the first line, message full-width beneath */
+  .alert-item { flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 0; }
+  .alert-item .chip { order: 1; }
+  .alert-item .alert-dev { order: 2; }
+  .alert-item .alert-time { order: 3; margin-left: auto; }
+  .alert-item .alert-msg { order: 4; flex-basis: 100%; width: 100%; }
+}
