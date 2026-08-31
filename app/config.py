@@ -54,6 +54,11 @@ class Settings(BaseSettings):
     alert_disk_percent: int = 90
     alert_sustained_minutes: int = 10
 
+    # Set to true ONLY when the browser reaches the app over HTTPS (e.g. behind
+    # a TLS-terminating proxy). Over plain http:// the browser silently drops a
+    # Secure cookie, so the session never persists and login loops back to /login.
+    session_https_only: bool = False
+
     # Leave unset: auto-generated on first run and persisted to data/session_secret.key.
     # Only set this yourself if you need the same secret across multiple host instances.
     session_secret: str = ""

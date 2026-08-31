@@ -38,7 +38,7 @@ app.add_middleware(
     session_cookie="dm_session",
     max_age=60 * 60 * 24 * 30,  # 30 days — persistent so phones aren't re-prompted twice a day
     same_site="lax",
-    https_only=True,  # cookie only sent over HTTPS (app runs behind the TLS proxy)
+    https_only=settings.session_https_only,
 )
 
 @app.get("/favicon.ico", include_in_schema=False)

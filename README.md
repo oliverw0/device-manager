@@ -47,6 +47,7 @@ The dashboard is served on port 8000. Log in with the admin credentials from
 | `NTFY_URL` | (empty) | Full ntfy topic URL, e.g. `https://ntfy.sh/my-topic`. Empty disables alerts. |
 | `NTFY_DEFAULT_PRIORITY` | `default` | ntfy priority for notifications. |
 | `SESSION_SECRET` | (empty) | Login cookie signing key. Left empty, one is generated and persisted in `./data`. |
+| `SESSION_HTTPS_ONLY` | `false` | Mark the login cookie `Secure`. Set `true` only when reached over HTTPS; over plain HTTP it breaks login. |
 | `DATABASE_URL` | SQLite in `./data` | Point at Postgres if you outgrow SQLite. |
 | `CHECK_INTERVAL_SECONDS` | `15` | How often the host checks for devices that went silent. |
 | `HISTORY_RETENTION_DAYS` | `7` | How long per-report history is kept. |
