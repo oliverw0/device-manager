@@ -106,7 +106,8 @@ function updateTiles(devices) {
   const total = devices.length;
   const online = devices.filter((d) => d.is_online).length;
   const containers = devices.reduce((sum, d) => {
-    const list = d.report && d.report.docker_containers;
+    // offline device's report is stale — its containers are counted as down
+    const list = d.is_online && d.report && d.report.docker_containers;
     return sum + (list ? list.filter((c) => c.status === "running").length : 0);
   }, 0);
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };

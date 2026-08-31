@@ -574,8 +574,12 @@ body.term-open { padding-right: 50vw; }
 .spark-toggle button.active { background: rgba(55,224,106,0.16); color: var(--green); }
 .spark-toggle button.active:hover { background: rgba(55,224,106,0.24); }
 
-/* ---------- mobile: prevent horizontal overflow on device detail ---------- */
-body { overflow-x: hidden; }
+/* ---------- prevent horizontal overflow ---------- */
+/* Must be on <html>, not just <body>: iOS Safari otherwise lets the layout
+   viewport expand past the screen, and the fixed bottom nav (right:0) stretches
+   with it. `clip` avoids creating a scroll container (falls back to hidden). */
+html { overflow-x: hidden; overflow-x: clip; }
+body { overflow-x: hidden; overflow-x: clip; }
 #history-chart { max-width: 100%; }
 .copy-row { flex-wrap: wrap; }
 .copy-row .key-box { min-width: 0; }
