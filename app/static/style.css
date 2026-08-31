@@ -602,11 +602,19 @@ body { overflow-x: hidden; }
 .st-ico { display: none; }  /* spark-toggle shows text on desktop, icon on mobile */
 
 /* ---------- mobile container action sheet (slide-in bar) ---------- */
-.action-sheet { position: fixed; inset: 0; z-index: 80; }
+/* Anchor to the dynamic viewport (dvh), not the layout viewport — otherwise the
+   panel's bottom sits behind the phone browser's bottom toolbar and reads as too
+   low / too large until the address bar collapses. Flex-end pins it to the
+   visible bottom; the panel slides up from there. */
+.action-sheet {
+  position: fixed; left: 0; right: 0; top: 0; z-index: 80;
+  height: 100vh; height: 100dvh;
+  display: flex; flex-direction: column; justify-content: flex-end;
+}
 .action-sheet[hidden] { display: none; }
 .sheet-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.5); }
 .sheet-panel {
-  position: absolute; left: 0; right: 0; bottom: 0;
+  position: relative; z-index: 1; max-height: 85dvh; overflow-y: auto;
   background: var(--panel); border-top: 1px solid var(--border-strong);
   border-radius: 12px 12px 0 0; padding: 14px 16px calc(18px + env(safe-area-inset-bottom));
   transform: translateY(100%); animation: sheet-up 0.18s ease forwards;

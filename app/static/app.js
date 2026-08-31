@@ -47,17 +47,19 @@ function statusDot(isOnline) {
 
 // Official Tailscale logomark; colour + glow by state (mirrors _macros.html).
 var TS_PATH = "M24 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm-9 9a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm0-9a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm6-6a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm0-.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM3 24a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm0-.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zm18 .5a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm0-.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM6 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm9-9a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm-3 2.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM6 3a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM3 5.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z";
-function tailscaleLogo(ts) {
+function tailscaleLogo(ts, offline) {
   let st, txt;
   if (!ts || ts.backend_state === "not_installed") { st = "off"; txt = "Not set up"; }
+  else if (offline) { st = "down"; txt = "Offline"; }
   else if (ts.connected) { st = "online"; txt = "Connected"; }
   else if (ts.backend_state === "NeedsLogin" || ts.backend_state === "Stopped") { st = "alert"; txt = ts.backend_state; }
   else { st = "down"; txt = ts.backend_state || "Down"; }
   return `<span class="ts-logo ts-${st}" title="Tailscale: ${escapeHtml(txt)}"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-label="Tailscale ${escapeHtml(txt)}"><path d="${TS_PATH}"/></svg></span>`;
 }
 
-function containerSummary(list) {
+function containerSummary(list, offline) {
   if (!list || !list.length) return '<span class="faint">—</span>';
+  if (offline) return `<span class="chip bad">0/${list.length} up</span>`;
   const running = list.filter((c) => c.status === "running").length;
   const cls = running === list.length ? "ok" : running === 0 ? "bad" : "warn";
   return `<span class="chip ${cls}">${running}/${list.length} up</span>`;
@@ -84,8 +86,8 @@ function renderDeviceRows(devices) {
         <td class="col-cpu">${meter(sys ? sys.cpu_percent : null)}</td>
         <td class="col-mem">${meter(sys ? sys.mem_percent : null)}</td>
         <td class="col-disk">${meter(sys ? sys.disk_percent : null)}</td>
-        <td class="col-ts">${tailscaleLogo(d.report ? d.report.tailscale : null)}</td>
-        <td class="col-ctr">${containerSummary(d.report ? d.report.docker_containers : null)}</td>
+        <td class="col-ts">${tailscaleLogo(d.report ? d.report.tailscale : null, !d.is_online)}</td>
+        <td class="col-ctr">${containerSummary(d.report ? d.report.docker_containers : null, !d.is_online)}</td>
         <td class="col-seen last-seen-cell muted" title="${escapeHtml(fmtAbsolute(d.last_seen_at))}">
           <span>${fmtRelative(d.seconds_since_seen)}</span>
         </td>

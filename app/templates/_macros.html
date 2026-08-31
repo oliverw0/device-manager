@@ -25,8 +25,9 @@
 {# Official Tailscale logomark (3x3 dot grid), colour + glow by state:
    online=green, down=red, alert=amber, not-set-up=grey. #}
 {% set TS_PATH = "M24 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm-9 9a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm0-9a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm6-6a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm0-.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM3 24a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm0-.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zm18 .5a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm0-.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM6 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm9-9a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm-3 2.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM6 3a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM3 5.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z" %}
-{% macro tailscale_logo(ts, label=false) -%}
+{% macro tailscale_logo(ts, label=false, offline=false) -%}
 {%- if not ts or ts.backend_state == 'not_installed' -%}{% set st = 'off' %}{% set txt = 'Not set up' %}
+{%- elif offline -%}{% set st = 'down' %}{% set txt = 'Offline' %}
 {%- elif ts.connected -%}{% set st = 'online' %}{% set txt = 'Connected' %}
 {%- elif ts.backend_state in ('NeedsLogin', 'Stopped') -%}{% set st = 'alert' %}{% set txt = ts.backend_state %}
 {%- else -%}{% set st = 'down' %}{% set txt = ts.backend_state or 'Down' %}{%- endif -%}
@@ -44,38 +45,43 @@
 {%- else -%}<span class="chip ok">up to date</span>{%- endif -%}
 {%- endmacro %}
 
-{% macro container_status(status) -%}
+{# offline: the device's last report is stale, so containers are shown as down. #}
+{% macro container_status(status, offline=false) -%}
+{%- if offline -%}<span class="chip bad">down</span>
+{%- else -%}
 {%- set s = (status or '')|lower -%}
 <span class="chip {{ 'ok' if 'running' in s else 'bad' if 'exited' in s or 'dead' in s else 'warn' }}">{{ status or 'unknown' }}</span>
+{%- endif -%}
 {%- endmacro %}
 
 {# Coloured status dot for the compact mobile container list. #}
-{% macro container_dot(status) -%}
+{% macro container_dot(status, offline=false) -%}
 {%- set s = (status or '')|lower -%}
-<span class="c-dot {{ 'ok' if 'running' in s else 'bad' if 'exited' in s or 'dead' in s else 'warn' }}" title="{{ status or 'unknown' }}"></span>
+<span class="c-dot {{ 'bad' if offline else 'ok' if 'running' in s else 'bad' if 'exited' in s or 'dead' in s else 'warn' }}" title="{{ 'offline' if offline else (status or 'unknown') }}"></span>
 {%- endmacro %}
 
-{% macro container_summary(list) -%}
+{% macro container_summary(list, offline=false) -%}
 {%- if not list -%}<span class="faint">—</span>
+{%- elif offline -%}<span class="chip bad">0/{{ list|length }} up</span>
 {%- else -%}
 {%- set running = list|selectattr('status','equalto','running')|list|length -%}
 <span class="chip {{ 'ok' if running==list|length else 'bad' if running==0 else 'warn' }}">{{ running }}/{{ list|length }} up</span>
 {%- endif -%}
 {%- endmacro %}
 
-{% macro container_card(c, device) -%}
+{% macro container_card(c, device, offline=false) -%}
 {%- set ccpu = c.get('cpu_percent') -%}
 {%- set cmem = c.get('mem_percent') -%}
 <details class="container-item" data-name="{{ c.name }}">
   <summary>
     <canvas class="container-spark"></canvas>
-    {{ container_dot(c.status) }}
+    {{ container_dot(c.status, offline) }}
     <span class="c-name">{{ c.name }}</span>
     {% if ccpu is not none or cmem is not none %}
     <span class="c-usage" data-cpu="{{ ccpu if ccpu is not none else '' }}" data-mem="{{ cmem if cmem is not none else '' }}">{{ '%.0f'|format(ccpu) ~ '%' if ccpu is not none else '' }}</span>
     {% endif %}
     <span class="spacer"></span>
-    {{ container_status(c.status) }}
+    {{ container_status(c.status, offline) }}
     {% if device.ssh_enabled %}
     <span class="c-actions" onclick="event.stopPropagation()">
       <button class="term-btn" title="Shell (docker exec)" onclick="openContainerShell({{ device.id }}, '{{ device.name }}', '{{ c.name }}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></button>
