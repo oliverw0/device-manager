@@ -391,10 +391,13 @@ body.nav-collapsed .sidebar-head { justify-content: center; padding: 0; }
 .upd-cd-fill.ok { background: var(--green); box-shadow: var(--glow-green); }
 .upd-cd-fill.bad { background: var(--red); box-shadow: var(--glow-red); }
 
-/* ---------- persistent update overlay (bottom-centre, survives navigation) ---------- */
+/* ---------- persistent update overlay (bottom-right, survives navigation) ---------- */
 .update-overlay {
-  position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
-  z-index: 65; width: min(380px, calc(100vw - 32px));
+  position: fixed; left: auto;
+  right: calc(16px + env(safe-area-inset-right));
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  z-index: 65; width: min(360px, calc(100vw - 32px));
+  max-height: 70vh; overflow-y: auto;
   background: var(--panel); border: 1px solid var(--border-strong);
   border-radius: var(--radius); box-shadow: 0 8px 28px rgba(0,0,0,0.45);
 }
@@ -412,9 +415,16 @@ body.nav-collapsed .sidebar-head { justify-content: center; padding: 0; }
 }
 .uov-pill:hover { border-color: var(--green); }
 .uov-caret { color: var(--muted); font-size: 10px; }
-/* shift the overlay left of the terminal pane when it's open, so they don't collide */
-body.term-open .update-overlay { left: auto; right: calc(50vw + 16px); transform: none; }
-@media (max-width: 720px) { body.term-open .update-overlay { left: 50%; right: auto; transform: translateX(-50%); } }
+/* desktop: keep clear of the right-hand terminal pane when it's open */
+body.term-open .update-overlay { right: calc(50vw + 16px); }
+/* mobile / installed PWA: lift above the bottom nav bar and honour the safe-area insets */
+@media (max-width: 720px) {
+  .update-overlay, body.term-open .update-overlay {
+    right: calc(12px + env(safe-area-inset-right)); left: auto;
+    bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 12px);
+    width: min(360px, calc(100vw - 24px)); max-height: 60vh;
+  }
+}
 
 /* ---------- code / key boxes ---------- */
 .key-box {
