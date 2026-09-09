@@ -20,7 +20,7 @@
       </thead>
       <tbody>
         {% for c in containers %}
-        <tr class="clickable" onclick="window.location='/devices/{{ c.device_id }}'">
+        <tr class="clickable" onclick="navTo('/devices/{{ c.device_id }}')">
           <td>{{ ui.container_status(c.status) }}</td>
           <td class="name-cell"><span class="name">{{ c.name }}</span><span class="sub">{{ c.image }}</span></td>
           <td>{{ c.device_name }}</td>

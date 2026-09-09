@@ -80,7 +80,7 @@ function renderDeviceRows(devices) {
       const upg = d.report && d.report.apt ? d.report.apt.upgradable : null;
       const aptTip = upg != null ? `${upg} packages need updating` : "Packages need updating";
       const aptFlag = d.apt_needs_update ? `<span class="pkg-badge tip-below" data-tip="${aptTip}"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v8a2 2 0 0 1-1 1.73l-7 4a2 2 0 0 1-2 0l-7-4A2 2 0 0 1 3 16V8a2 2 0 0 1 1-1.73l7-4a2 2 0 0 1 2 0l7 4A2 2 0 0 1 21 8z"/><polyline points="3.3 7 12 12 20.7 7"/><line x1="12" y1="22" x2="12" y2="12"/></svg></span>` : "";
-      return `<tr class="clickable${d.apt_needs_update ? " needs-update" : ""}" onclick="window.location='/devices/${d.id}'">
+      return `<tr class="clickable${d.apt_needs_update ? " needs-update" : ""}" onclick="navTo('/devices/${d.id}')">
         <td class="col-status">${statusDot(d.is_online)}</td>
         <td class="name-cell"><span class="name-line"><span class="name">${escapeHtml(d.name)}</span>${aptFlag}</span>${hostname}</td>
         <td class="col-cpu">${meter(sys ? sys.cpu_percent : null)}</td>
@@ -127,7 +127,7 @@ function updateTiles(devices) {
 function startDevicePolling(url, intervalMs = 5000) {
   const poll = () => fetch(url).then((r) => r.json()).then(renderDeviceRows).catch(() => {});
   poll();
-  setInterval(poll, intervalMs);
+  PAGE_TIMERS.push(setInterval(poll, intervalMs));
 }
 
 /* ---------- copy to clipboard ---------- */
@@ -292,7 +292,7 @@ function loadHistoryChart(url, canvasId) {
     draw();
   }).catch(() => {});
   render();
-  setInterval(render, 10000);
+  PAGE_TIMERS.push(setInterval(render, 10000));
 }
 
 /* ---------- per-container background sparklines ---------- */
@@ -373,12 +373,12 @@ function loadContainerSparks(url) {
     drawAll();
   }).catch(() => {});
   render();
-  setInterval(render, 15000);
+  PAGE_TIMERS.push(setInterval(render, 15000));
   window.addEventListener("resize", drawAll);
 }
 
 /* ---------- in-browser SSH terminal ---------- */
-var TERM = null, TERM_FIT = null, TERM_WS = null, TERM_DEVICE = null, TERM_CONTAINER = null;
+var TERM = null, TERM_FIT = null, TERM_WS = null, TERM_DEVICE = null, TERM_CONTAINER = null, TERM_AUTOCMD = null;
 
 function termStatus(text) {
   const el = document.getElementById("term-status");
@@ -392,6 +392,38 @@ function openTerminalFromBtn(btn) {
 // docker exec -it <container> /bin/bash, over the same SSH terminal.
 function openContainerShell(deviceId, deviceName, container) {
   openTerminal(deviceId, deviceName, container);
+}
+
+/* ---------- device update actions (run as root over the SSH terminal) ----------
+   These open the terminal, connect as root, and run one command with live output
+   so the admin can watch (and Ctrl-C). Long-running, so they can't be a plain
+   request/response — the streaming shell is the natural fit. */
+function runDeviceCommand(deviceId, deviceName, cmd, confirmMsg) {
+  if (!confirm(confirmMsg)) return;
+  openTerminal(deviceId, deviceName, null, cmd);
+}
+
+function updateAptPackages(deviceId, deviceName) {
+  runDeviceCommand(deviceId, deviceName,
+    "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get -y upgrade",
+    "Update all apt packages on " + deviceName + "?\n\nRuns 'apt-get upgrade' as root over SSH. Watch the terminal for output.");
+}
+
+function updateClientAgent(deviceId, deviceName) {
+  // Auto-detects Docker vs native install. The container is named
+  // 'devicemanager-client' (compose) and its working dir is on the compose label,
+  // so the host dir doesn't need to be known ahead of time.
+  var cmd =
+    'if docker inspect devicemanager-client >/dev/null 2>&1; then ' +
+      'wd=$(docker inspect devicemanager-client -f \'{{index .Config.Labels "com.docker.compose.project.working_dir"}}\'); ' +
+      'echo "Updating Docker client in $wd"; ' +
+      'cd "$wd" && git pull --ff-only && { docker compose up -d --build || docker-compose up -d --build; }; ' +
+    'else ' +
+      'echo "Updating native client in /opt/devicemanager-client"; ' +
+      'cd /opt/devicemanager-client && git pull --ff-only && systemctl restart devicemanager-client; ' +
+    'fi';
+  runDeviceCommand(deviceId, deviceName, cmd,
+    "Update the DeviceManager client on " + deviceName + "?\n\nPulls the latest code and rebuilds/restarts the client, as root over SSH.");
 }
 
 function showSection(id) {
@@ -430,10 +462,11 @@ function closeTerminal() {
   hideSection("term-section");
 }
 
-function openTerminal(deviceId, deviceName, container) {
+function openTerminal(deviceId, deviceName, container, autoCmd) {
   if (typeof Terminal === "undefined") { alert("Terminal library failed to load."); return; }
   TERM_DEVICE = deviceId;
   TERM_CONTAINER = container || null;
+  TERM_AUTOCMD = autoCmd || null;
   const title = document.getElementById("term-title");
   if (title) title.textContent = container ? ("EXEC · " + container + " @ " + deviceName) : ("SSH · " + deviceName);
   const userSel = document.getElementById("term-user");
@@ -454,6 +487,11 @@ function openTerminal(deviceId, deviceName, container) {
     if (!info.host) { termStatus("No SSH address available for this device."); return; }
     termStatus("Ready — target " + info.host + ":" + (info.port || 22));
     connectBtn.disabled = false;
+    // Update actions: connect as root automatically and run the command.
+    if (TERM_AUTOCMD) {
+      if ([...userSel.options].some((o) => o.value === "root")) userSel.value = "root";
+      connectTerminal();
+    }
   }).catch(() => termStatus("Failed to load users."));
 }
 
@@ -488,6 +526,10 @@ function connectTerminal() {
     sendResize();
     TERM.onData((d) => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: "input", data: d })); });
     TERM.focus();
+    if (TERM_AUTOCMD) {
+      const cmd = TERM_AUTOCMD; TERM_AUTOCMD = null;  // one-shot: don't re-run on manual reconnect
+      ws.send(JSON.stringify({ type: "input", data: cmd + "\n" }));
+    }
   };
   ws.onmessage = (ev) => {
     if (typeof ev.data === "string") TERM.write(ev.data);
@@ -572,8 +614,81 @@ function initNav() {
   });
 }
 
+/* ---------- boosted navigation ----------
+   The app is a plain MPA, so a normal link click reloads the page and destroys
+   the live xterm + WebSocket. To keep the terminal pane alive while navigating,
+   we intercept same-origin link clicks on desktop and swap only <main> + the
+   sidebar, leaving #terminal-pane untouched. Desktop only: on phones the
+   terminal is fullscreen and normal navigation is fine. Falls back to a real
+   navigation on any hiccup (cross-origin, non-GET target, fetch error). */
+var PAGE_TIMERS = [];  // per-page intervals, cleared before each swap so they don't pile up
+
+function isDesktop() { return window.matchMedia("(min-width: 721px)").matches; }
+
+// For rows/elements that navigate via JS (not an <a>): boost on desktop.
+function navTo(url) { if (isDesktop()) boostTo(url, true); else window.location = url; }
+
+function runPageScripts(container) {
+  container.querySelectorAll("script").forEach((old) => {
+    const s = document.createElement("script");
+    if (old.src) s.src = old.src; else s.textContent = old.textContent;
+    document.body.appendChild(s);  // appending executes it
+    document.body.removeChild(s);
+  });
+}
+
+function boostTo(url, push) {
+  fetch(url, { headers: { "X-Boost": "1" }, credentials: "same-origin" })
+    .then((r) => { if (!r.ok || r.redirected) throw new Error("full-load"); return r.text(); })
+    .then((html) => {
+      const doc = new DOMParser().parseFromString(html, "text/html");
+      const newMain = doc.querySelector("main.container");
+      const curMain = document.querySelector("main.container");
+      if (!newMain || !curMain) throw new Error("no-main");
+
+      PAGE_TIMERS.forEach(clearInterval);
+      PAGE_TIMERS = [];
+
+      curMain.replaceWith(newMain);
+      const newNav = doc.querySelector("nav.sidebar");
+      const curNav = document.querySelector("nav.sidebar");
+      if (newNav && curNav) { curNav.replaceWith(newNav); initNav(); }
+      document.title = doc.title;
+
+      // Re-bind handlers that target the freshly swapped <main> content.
+      initSshToggle();
+      initSshProvisionCmd();
+      initInstallCmd();
+      const ps = doc.getElementById("page-scripts");
+      if (ps) runPageScripts(ps);
+
+      if (push) history.pushState({}, "", url);
+      window.scrollTo(0, 0);
+    })
+    .catch(() => { window.location.href = url; });
+}
+
+function initBoost() {
+  document.addEventListener("click", (e) => {
+    if (!isDesktop()) return;
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const a = e.target.closest("a[href]");
+    if (!a || a.target === "_blank" || a.hasAttribute("download")) return;
+    let url;
+    try { url = new URL(a.href, location.href); } catch (_) { return; }
+    if (url.origin !== location.origin) return;
+    e.preventDefault();
+    boostTo(url.pathname + url.search, true);
+  });
+  window.addEventListener("popstate", () => {
+    if (isDesktop()) boostTo(location.pathname + location.search, false);
+    else window.location.reload();
+  });
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   initNav();
+  initBoost();
   const connectBtn = document.getElementById("term-connect");
   const closeBtn = document.getElementById("term-close");
   if (connectBtn) connectBtn.addEventListener("click", connectTerminal);

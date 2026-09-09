@@ -48,6 +48,14 @@
     {% if apt and apt.available %}
     <div class="metric-row"><span class="metric-label">Packages</span>{{ ui.apt_chip(apt, device.apt_needs_update) }}</div>
     {% endif %}
+    {% if device.ssh_enabled %}
+    <div class="update-actions">
+      <button type="button" class="secondary" onclick='updateAptPackages({{ device.id }}, {{ device.name | tojson }})'>Update packages</button>
+      <button type="button" class="secondary" onclick='updateClientAgent({{ device.id }}, {{ device.name | tojson }})'>Update client</button>
+    </div>
+    {% else %}
+    <p class="muted" style="font-size:12px;margin:14px 0 0">Enable SSH (below) to update packages or the client.</p>
+    {% endif %}
   </section>
   {% endif %}
 
