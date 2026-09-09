@@ -451,20 +451,24 @@ function updateBox(kind) {
   return box;
 }
 
+function updDismiss() {
+  return `<button class="term-btn upd-dismiss" title="Dismiss" onclick="this.closest('.upd-card').parentNode.remove()">✕</button>`;
+}
+
 function renderUpdate(box, label, job) {
   if (job.status === "error") {
     box.innerHTML =
-      `<div class="upd-card err"><div class="upd-head"><span class="upd-x-ico">✕</span>` +
-      `<span class="upd-label">${escapeHtml(label)} failed</span>` +
-      `<button class="upd-dismiss" onclick="this.closest('.upd-card').parentNode.remove()">Dismiss</button></div>` +
-      `<div class="upd-stage">${escapeHtml(job.error || "Update failed")}</div></div>`;
+      `<div class="upd-card"><div class="upd-head">` +
+      `<span class="chip bad"><span class="chip-dot"></span>Failed</span>` +
+      `<span class="upd-label">${escapeHtml(label)}</span>${updDismiss()}</div>` +
+      `<div class="upd-stage upd-err">${escapeHtml(job.error || "Update failed")}</div></div>`;
     return;
   }
   if (job.status === "done") {
     box.innerHTML =
-      `<div class="upd-card done"><div class="upd-head"><span class="upd-check">✓</span>` +
-      `<span class="upd-label">${escapeHtml(label)} — ${escapeHtml(job.stage || "done")}</span>` +
-      `<button class="upd-dismiss" onclick="this.closest('.upd-card').parentNode.remove()">Dismiss</button></div></div>`;
+      `<div class="upd-card"><div class="upd-head">` +
+      `<span class="chip ok"><span class="chip-dot"></span>Up to date</span>` +
+      `<span class="upd-label">${escapeHtml(label)}</span>${updDismiss()}</div></div>`;
     return;
   }
   const indet = job.percent === null || job.percent === undefined;
@@ -472,10 +476,11 @@ function renderUpdate(box, label, job) {
   const eta = job.eta_seconds != null ? ` · ~${fmtEta(job.eta_seconds)} left` : "";
   box.innerHTML =
     `<div class="upd-card"><div class="upd-head"><span class="upd-spin"></span>` +
-    `<span class="upd-label">${escapeHtml(label)}</span>` +
-    `<span class="upd-pct">${indet ? "" : pct + "%"}</span></div>` +
+    `<span class="upd-label">${escapeHtml(label)}</span></div>` +
     `<div class="upd-stage">${escapeHtml(job.stage || "Working…")}${eta}</div>` +
-    `<div class="upd-bar${indet ? " indet" : ""}"><div class="upd-fill" style="width:${indet ? 40 : pct}%"></div></div></div>`;
+    `<div class="meter wide upd-meter${indet ? " indet" : ""}">` +
+    `<div class="meter-fill ok" style="width:${indet ? 38 : pct}%"></div>` +
+    `${indet ? "" : `<span class="meter-label">${pct}%</span>`}</div></div>`;
 }
 
 // On (re)load of a device page, re-attach to any update still running for it.

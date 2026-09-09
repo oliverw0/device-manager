@@ -370,26 +370,21 @@ body.nav-collapsed .sidebar-head { justify-content: center; padding: 0; }
 .metric-row .meter { flex: 1; }
 .update-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
 
-/* ---------- async update progress ---------- */
-.upd-card { margin-top: 12px; padding: 11px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); }
+/* ---------- async update progress (built from the app's own meter + chip) ---------- */
+.upd-card { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel-2); }
 .upd-head { display: flex; align-items: center; gap: 9px; }
 .upd-label { font-size: 13px; font-weight: 500; color: var(--text); }
-.upd-pct { margin-left: auto; font-family: var(--font-mono); font-size: 12px; color: var(--green); }
-.upd-stage { font-size: 12px; color: var(--muted); margin: 7px 0 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* glowy green loader dot */
-.upd-spin { width: 11px; height: 11px; border-radius: 50%; background: var(--green); box-shadow: var(--glow-green); animation: upd-pulse 1s ease-in-out infinite; flex: none; }
-@keyframes upd-pulse { 0%, 100% { opacity: .35; transform: scale(.75); } 50% { opacity: 1; transform: scale(1.15); } }
-.upd-bar { height: 8px; border-radius: 5px; background: var(--panel); overflow: hidden; }
-.upd-fill { height: 100%; border-radius: 5px; background: linear-gradient(90deg, #2bb257, var(--green)); box-shadow: var(--glow-green); transition: width .5s ease; }
-/* indeterminate: a green comet sweeping while the host is "figuring out" */
-.upd-bar.indet { position: relative; }
-.upd-bar.indet .upd-fill { width: 40% !important; position: absolute; animation: upd-sweep 1.2s ease-in-out infinite; transition: none; }
-@keyframes upd-sweep { 0% { left: -45%; } 100% { left: 100%; } }
-.upd-card.done .upd-check { color: var(--green); text-shadow: var(--glow-green); font-weight: 700; flex: none; }
-.upd-card.err { border-color: var(--red); }
-.upd-card.err .upd-x-ico { color: var(--red); font-weight: 700; flex: none; }
-.upd-dismiss { margin-left: auto; background: none; border: none; color: var(--muted); cursor: pointer; font-size: 12px; padding: 2px 4px; }
-.upd-dismiss:hover { color: var(--text); }
+.upd-dismiss { margin-left: auto; }
+.upd-stage { font-family: var(--font-mono); font-size: 11px; color: var(--muted); margin: 8px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.upd-stage.upd-err { color: var(--red); white-space: normal; }
+/* glowy green loader dot shown while the host is still figuring out */
+.upd-spin { width: 9px; height: 9px; border-radius: 50%; background: var(--green); box-shadow: var(--glow-green); animation: upd-pulse 1s ease-in-out infinite; flex: none; }
+@keyframes upd-pulse { 0%, 100% { opacity: .4; transform: scale(.75); } 50% { opacity: 1; transform: scale(1.1); } }
+.upd-meter { transition: none; }
+.upd-meter .meter-fill { transition: width .5s ease; }
+/* indeterminate: sweep the square green fill across the meter while it's connecting */
+.upd-meter.indet .meter-fill { transition: none; animation: upd-sweep 1.15s ease-in-out infinite; }
+@keyframes upd-sweep { 0% { margin-left: -40%; } 100% { margin-left: 102%; } }
 
 /* ---------- code / key boxes ---------- */
 .key-box {
