@@ -385,6 +385,36 @@ body.nav-collapsed .sidebar-head { justify-content: center; padding: 0; }
 /* indeterminate: sweep the square green fill across the meter while it's connecting */
 .upd-meter.indet .meter-fill { transition: none; animation: upd-sweep 1.15s ease-in-out infinite; }
 @keyframes upd-sweep { 0% { margin-left: -40%; } 100% { margin-left: 102%; } }
+/* reverse-bar countdown shown for 5s after a job finishes, in both card and overlay */
+.upd-cd { height: 3px; margin-top: 9px; background: var(--panel); overflow: hidden; }
+.upd-cd-fill { height: 100%; transition: width 60ms linear; }
+.upd-cd-fill.ok { background: var(--green); box-shadow: var(--glow-green); }
+.upd-cd-fill.bad { background: var(--red); box-shadow: var(--glow-red); }
+
+/* ---------- persistent update overlay (bottom-centre, survives navigation) ---------- */
+.update-overlay {
+  position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
+  z-index: 65; width: min(380px, calc(100vw - 32px));
+  background: var(--panel); border: 1px solid var(--border-strong);
+  border-radius: var(--radius); box-shadow: 0 8px 28px rgba(0,0,0,0.45);
+}
+.uov-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px 4px; }
+.uov-title { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.uov-min { margin-left: auto; }
+.uov-body { padding: 0 10px 10px; }
+.uov-body .upd-card { margin-top: 8px; }
+/* minimised: a compact pill */
+.update-overlay.min { width: auto; padding: 0; border: none; background: none; box-shadow: none; }
+.uov-pill {
+  display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+  padding: 8px 13px; border-radius: 20px; font-size: 12px; color: var(--text);
+  background: var(--panel); border: 1px solid var(--border-strong); box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+}
+.uov-pill:hover { border-color: var(--green); }
+.uov-caret { color: var(--muted); font-size: 10px; }
+/* shift the overlay left of the terminal pane when it's open, so they don't collide */
+body.term-open .update-overlay { left: auto; right: calc(50vw + 16px); transform: none; }
+@media (max-width: 720px) { body.term-open .update-overlay { left: 50%; right: auto; transform: translateX(-50%); } }
 
 /* ---------- code / key boxes ---------- */
 .key-box {

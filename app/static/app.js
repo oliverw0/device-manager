@@ -395,102 +395,165 @@ function openContainerShell(deviceId, deviceName, container) {
 }
 
 /* ---------- device update actions (async background jobs) ----------
-   Kick off an update on the host, then poll its progress and render a glowy
-   loader → progress bar. Runs server-side over SSH as root; the page just
-   watches, so you can navigate away and the job keeps going. */
+   Each update becomes a "tracker": one poller (independent of the DOM) drives
+   both the in-panel card on the device page AND a persistent bottom-centre
+   overlay (in base.html, so boosted nav can't destroy it). When a job finishes
+   it gets a 5s reverse-bar countdown before auto-dismissing from both places. */
 var UPDATE_META = {
-  apt: {
-    label: "Package update",
-    confirm: (n) => "Update all apt packages on " + n + "?\n\nRuns apt-get upgrade as root, in the background — you can leave this page.",
-  },
-  client: {
-    label: "Client update",
-    confirm: (n) => "Update the DeviceManager client on " + n + "?\n\nPulls the latest code and rebuilds/restarts the client, in the background.",
-  },
+  apt: { label: "Package update", confirm: (n) => "Update all apt packages on " + n + "?\n\nRuns apt-get upgrade as root, in the background — you can leave this page." },
+  client: { label: "Client update", confirm: (n) => "Update the DeviceManager client on " + n + "?\n\nPulls the latest code and rebuilds/restarts the client, in the background." },
 };
+var UPD_TRACK = {};                 // key "deviceId:kind" -> tracker
+var UPD_CD_TIMER = null;            // drives the countdown reverse-bars
+var UPD_OVERLAY_MIN = false;        // overlay minimised to a pill
+var UPD_DISMISS_MS = 5000;
 
 function fmtEta(s) {
   if (s === null || s === undefined) return "";
   if (s < 60) return s + "s";
-  const m = Math.floor(s / 60);
-  return m + "m " + String(s % 60).padStart(2, "0") + "s";
+  return Math.floor(s / 60) + "m " + String(s % 60).padStart(2, "0") + "s";
 }
 
 function startUpdate(deviceId, deviceName, kind) {
   const meta = UPDATE_META[kind];
   if (!meta || !confirm(meta.confirm(deviceName))) return;
-  const box = updateBox(kind);
-  if (!box) return;
-  renderUpdate(box, meta.label, { status: "starting", percent: null, stage: "Starting…" });
   fetch(`/devices/${deviceId}/update/${kind}`, { method: "POST" })
     .then((r) => r.json())
     .then((res) => {
-      if (!res.job_id) { renderUpdate(box, meta.label, { status: "error", error: res.detail || "Failed to start" }); return; }
-      pollUpdate(deviceId, res.job_id, meta.label, box);
+      if (res.job_id) trackUpdate({ device_id: deviceId, device_name: deviceName, kind, id: res.job_id });
+      else alert("Couldn't start update: " + (res.detail || "unknown error"));
     })
-    .catch(() => renderUpdate(box, meta.label, { status: "error", error: "Failed to start" }));
+    .catch(() => alert("Couldn't start update."));
 }
 
-function pollUpdate(deviceId, jobId, label, box) {
-  const tick = () => fetch(`/devices/${deviceId}/update/${jobId}.json`)
+function trackUpdate(job) {
+  const key = job.device_id + ":" + job.kind;
+  if (UPD_TRACK[key]) { UPD_TRACK[key].job = job; renderUpdaters(); return; }
+  const t = UPD_TRACK[key] = {
+    key, deviceId: job.device_id, deviceName: job.device_name, kind: job.kind,
+    jobId: job.id, label: (UPDATE_META[job.kind] || {}).label || "Update",
+    job, dismissAt: null,
+  };
+  pollTracker(t);
+  renderUpdaters();
+}
+
+function pollTracker(t) {
+  const tick = () => fetch(`/devices/${t.deviceId}/update/${t.jobId}.json`)
     .then((r) => (r.ok ? r.json() : Promise.reject()))
     .then((job) => {
-      if (!document.body.contains(box)) return;  // page swapped away; job keeps running server-side
-      renderUpdate(box, label, job);
-      if (job.status === "starting" || job.status === "running") setTimeout(tick, 1000);
+      if (!UPD_TRACK[t.key]) return;         // dismissed while in flight
+      t.job = job;
+      if (job.status === "done" || job.status === "error") { startDismiss(t); return; }
+      renderUpdaters();
+      setTimeout(tick, 1000);
     })
-    .catch(() => { if (document.body.contains(box)) setTimeout(tick, 2000); });
+    .catch(() => { if (UPD_TRACK[t.key]) setTimeout(tick, 2000); });
   tick();
 }
 
-function updateBox(kind) {
+function startDismiss(t) {
+  if (t.dismissAt == null) t.dismissAt = Date.now() + UPD_DISMISS_MS;
+  renderUpdaters();          // paint the finished card once; the timer only nudges widths
+  ensureCountdownTimer();
+}
+
+// One lightweight timer narrows every countdown bar; it edits widths directly
+// rather than re-rendering, so it stays smooth and cheap.
+function ensureCountdownTimer() {
+  if (UPD_CD_TIMER) return;
+  UPD_CD_TIMER = setInterval(() => {
+    let any = false;
+    Object.values(UPD_TRACK).forEach((t) => {
+      if (t.dismissAt == null) return;
+      const remain = t.dismissAt - Date.now();
+      if (remain <= 0) { removeTracker(t.key); return; }
+      any = true;
+      const w = (remain / UPD_DISMISS_MS) * 100 + "%";
+      document.querySelectorAll(`.upd-cd-fill[data-cd="${t.key}"]`).forEach((f) => { f.style.width = w; });
+    });
+    if (!any) { clearInterval(UPD_CD_TIMER); UPD_CD_TIMER = null; }
+  }, 60);
+}
+
+function dismissTracker(key) { removeTracker(key); }
+
+function removeTracker(key) {
+  delete UPD_TRACK[key];
+  renderUpdaters();
+}
+
+/* ----- rendering ----- */
+function renderUpdaters() {
   const host = document.getElementById("update-status");
-  if (!host) return null;
-  let box = host.querySelector(`[data-upd="${kind}"]`);
-  if (!box) { box = document.createElement("div"); box.dataset.upd = kind; host.appendChild(box); }
-  return box;
+  const onDevice = host ? Number(host.dataset.deviceId) : null;
+  const overlayTrackers = [];
+  if (host) host.innerHTML = "";
+  Object.values(UPD_TRACK).forEach((t) => {
+    if (host && onDevice === t.deviceId) {
+      const box = document.createElement("div");
+      box.dataset.upd = t.kind;
+      box.innerHTML = updCardHtml(t, false);
+      host.appendChild(box);
+    } else {
+      overlayTrackers.push(t);
+    }
+  });
+  renderOverlay(overlayTrackers);
 }
 
-function updDismiss() {
-  return `<button class="term-btn upd-dismiss" title="Dismiss" onclick="this.closest('.upd-card').parentNode.remove()">✕</button>`;
-}
-
-function renderUpdate(box, label, job) {
-  if (job.status === "error") {
-    box.innerHTML =
-      `<div class="upd-card"><div class="upd-head">` +
-      `<span class="chip bad"><span class="chip-dot"></span>Failed</span>` +
-      `<span class="upd-label">${escapeHtml(label)}</span>${updDismiss()}</div>` +
-      `<div class="upd-stage upd-err">${escapeHtml(job.error || "Update failed")}</div></div>`;
+function renderOverlay(trackers) {
+  const el = document.getElementById("update-overlay");
+  if (!el) return;
+  if (!trackers.length) { el.hidden = true; el.className = "update-overlay"; el.innerHTML = ""; return; }
+  el.hidden = false;
+  if (UPD_OVERLAY_MIN) {
+    const running = trackers.filter((t) => t.dismissAt == null).length;
+    el.className = "update-overlay min";
+    el.innerHTML =
+      `<button class="uov-pill" onclick="toggleOverlayMin()"><span class="upd-spin"></span>` +
+      `${running ? running + " update" + (running > 1 ? "s" : "") + " running…" : "updates"}` +
+      `<span class="uov-caret">▴</span></button>`;
     return;
   }
-  if (job.status === "done") {
-    box.innerHTML =
-      `<div class="upd-card"><div class="upd-head">` +
-      `<span class="chip ok"><span class="chip-dot"></span>Up to date</span>` +
-      `<span class="upd-label">${escapeHtml(label)}</span>${updDismiss()}</div></div>`;
-    return;
+  el.className = "update-overlay";
+  el.innerHTML =
+    `<div class="uov-head"><span class="uov-title">Updates</span>` +
+    `<button class="term-btn uov-min" title="Minimise" onclick="toggleOverlayMin()">▾</button></div>` +
+    `<div class="uov-body">${trackers.map((t) => `<div data-upd="${t.kind}">${updCardHtml(t, true)}</div>`).join("")}</div>`;
+}
+
+function toggleOverlayMin() { UPD_OVERLAY_MIN = !UPD_OVERLAY_MIN; renderUpdaters(); }
+
+// The card body — identical for in-panel and overlay; overlay adds the device name.
+function updCardHtml(t, inOverlay) {
+  const job = t.job || { status: "starting", percent: null, stage: "Starting…" };
+  const label = escapeHtml(t.label) + (inOverlay ? ` · ${escapeHtml(t.deviceName || "")}` : "");
+  if (job.status === "done" || job.status === "error") {
+    const ok = job.status === "done";
+    const cd = `<div class="upd-cd"><div class="upd-cd-fill ${ok ? "ok" : "bad"}" data-cd="${t.key}" style="width:100%"></div></div>`;
+    const dismiss = `<button class="term-btn upd-dismiss" title="Dismiss now" onclick="dismissTracker('${t.key}')">✕</button>`;
+    return `<div class="upd-card"><div class="upd-head">` +
+      `<span class="chip ${ok ? "ok" : "bad"}"><span class="chip-dot"></span>${ok ? "Up to date" : "Failed"}</span>` +
+      `<span class="upd-label">${label}</span>${dismiss}</div>` +
+      (ok ? "" : `<div class="upd-stage upd-err">${escapeHtml(job.error || "Update failed")}</div>`) + cd + `</div>`;
   }
   const indet = job.percent === null || job.percent === undefined;
   const pct = indet ? 0 : job.percent;
   const eta = job.eta_seconds != null ? ` · ~${fmtEta(job.eta_seconds)} left` : "";
-  box.innerHTML =
-    `<div class="upd-card"><div class="upd-head"><span class="upd-spin"></span>` +
-    `<span class="upd-label">${escapeHtml(label)}</span></div>` +
+  return `<div class="upd-card"><div class="upd-head"><span class="upd-spin"></span>` +
+    `<span class="upd-label">${label}</span></div>` +
     `<div class="upd-stage">${escapeHtml(job.stage || "Working…")}${eta}</div>` +
     `<div class="meter wide upd-meter${indet ? " indet" : ""}">` +
     `<div class="meter-fill ok" style="width:${indet ? 38 : pct}%"></div>` +
     `${indet ? "" : `<span class="meter-label">${pct}%</span>`}</div></div>`;
 }
 
-// On (re)load of a device page, re-attach to any update still running for it.
-function resumeUpdates(deviceId) {
-  fetch(`/devices/${deviceId}/updates.json`).then((r) => r.json()).then((data) => {
-    (data.jobs || []).forEach((job) => {
-      const meta = UPDATE_META[job.kind];
-      const box = updateBox(job.kind);
-      if (meta && box) { renderUpdate(box, meta.label, job); pollUpdate(deviceId, job.id, meta.label, box); }
-    });
+// Re-attach to any running job on page load (survives a hard reload too).
+function resumeUpdates() {
+  fetch("/updates.json").then((r) => r.json()).then((data) => {
+    (data.jobs || []).forEach((job) => trackUpdate(job));
+    renderUpdaters();
   }).catch(() => {});
 }
 
@@ -719,6 +782,7 @@ function boostTo(url, push) {
       initInstallCmd();
       const ps = doc.getElementById("page-scripts");
       if (ps) runPageScripts(ps);
+      renderUpdaters();  // re-place in-flight update cards into the new page / overlay
 
       if (push) history.pushState({}, "", url);
       window.scrollTo(0, 0);
@@ -747,6 +811,7 @@ function initBoost() {
 document.addEventListener("DOMContentLoaded", () => {
   initNav();
   initBoost();
+  resumeUpdates();
   const connectBtn = document.getElementById("term-connect");
   const closeBtn = document.getElementById("term-close");
   if (connectBtn) connectBtn.addEventListener("click", connectTerminal);

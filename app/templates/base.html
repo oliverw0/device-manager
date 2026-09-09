@@ -91,6 +91,9 @@
     </section>
   </aside>
 
+  {# Persistent progress for background updates — survives navigation. Populated by app.js. #}
+  <div id="update-overlay" class="update-overlay" hidden></div>
+
   <script src="/static/vendor/xterm.js"></script>
   <script src="/static/vendor/xterm-addon-fit.js"></script>
   <script src="/static/app.js?v={{ static_version }}"></script>

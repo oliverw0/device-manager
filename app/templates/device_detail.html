@@ -53,7 +53,7 @@
       <button type="button" class="secondary" onclick='startUpdate({{ device.id }}, {{ device.name | tojson }}, "apt")'>Update packages</button>
       <button type="button" class="secondary" onclick='startUpdate({{ device.id }}, {{ device.name | tojson }}, "client")'>Update client</button>
     </div>
-    <div id="update-status"></div>
+    <div id="update-status" data-device-id="{{ device.id }}"></div>
     {% else %}
     <p class="muted" style="font-size:12px;margin:14px 0 0">Enable SSH (below) to update packages or the client.</p>
     {% endif %}
@@ -155,9 +155,10 @@
       {% endif %}
     </div>
     {% if containers %}
+      {# real (multi-container) stacks pinned to the top #}
       {% for stack in containers | map(attribute='stack') | select | unique | list %}
       {% set members = containers | selectattr('stack', 'equalto', stack) | list %}
-      {% if members | length == 1 %}{{ ui.container_card(members[0], device, offline=not device.is_online) }}{% else %}
+      {% if members | length > 1 %}
       <details class="stack-item">
         <summary>
           <span class="chip info">STACK</span>
@@ -178,7 +179,13 @@
       </details>
       {% endif %}
       {% endfor %}
-      {% for c in containers if not c.get('stack') %}{{ ui.container_card(c, device, offline=not device.is_online) }}{% endfor %}
+      {# then every standalone container (no stack, or a stack of one), below the stacks #}
+      {% for c in containers %}
+      {% set st = c.get('stack') %}
+      {% if not st or (containers | selectattr('stack', 'equalto', st) | list | length == 1) %}
+      {{ ui.container_card(c, device, offline=not device.is_online) }}
+      {% endif %}
+      {% endfor %}
     {% else %}<p class="muted">No containers reported.</p>{% endif %}
   </section>
 
@@ -275,6 +282,6 @@
   loadHistoryChart('/devices/{{ device.id }}/history.json', 'history-chart');
   loadContainerSparks('/devices/{{ device.id }}/containers/history.json');
   initContainerActionSheet();
-  {% if device.ssh_enabled %}resumeUpdates({{ device.id }});{% endif %}
+  renderUpdaters();  {# paint any in-flight update into this device's panel #}
 </script>
 {% endblock %}

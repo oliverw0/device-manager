@@ -167,12 +167,13 @@ async def start_update(device_id: int, kind: str):
             return JSONResponse({"detail": "SSH is not enabled for this device"}, status_code=400)
         candidates = ssh_candidates(device)
         port = device.ssh_port
+        device_name = device.name
     if not candidates:
         return JSONResponse({"detail": "No SSH address for this device"}, status_code=400)
 
     jid = uuid.uuid4().hex[:12]
     job = JOBS[jid] = {
-        "id": jid, "device_id": device_id, "kind": kind,
+        "id": jid, "device_id": device_id, "device_name": device_name, "kind": kind,
         "status": "starting", "percent": None, "stage": "Connecting…",
         "eta_seconds": None, "error": None, "tail": [], "started_at": time.time(),
     }
@@ -182,7 +183,8 @@ async def start_update(device_id: int, kind: str):
 
 def _public(job: dict) -> dict:
     return {k: job[k] for k in
-            ("id", "kind", "status", "percent", "stage", "eta_seconds", "error", "tail")}
+            ("id", "device_id", "device_name", "kind", "status", "percent",
+             "stage", "eta_seconds", "error", "tail")}
 
 
 @router.get("/devices/{device_id}/update/{job_id}.json")
@@ -193,11 +195,13 @@ def update_status(device_id: int, job_id: str):
     return _public(job)
 
 
-@router.get("/devices/{device_id}/updates.json")
-def active_updates(device_id: int):
-    """Running jobs for this device, so a page revisit can re-attach its progress."""
+@router.get("/updates.json")
+def active_updates():
+    """Every running job across all devices, so the persistent overlay can
+    re-attach after any navigation (boosted or a hard reload)."""
+    _prune()
     return {"jobs": [_public(j) for j in JOBS.values()
-                     if j["device_id"] == device_id and j["status"] in ("starting", "running")]}
+                     if j["status"] in ("starting", "running")]}
 
 
 if __name__ == "__main__":  # ponytail: progress-parser self-check
