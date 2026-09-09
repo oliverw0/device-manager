@@ -50,9 +50,10 @@
     {% endif %}
     {% if device.ssh_enabled %}
     <div class="update-actions">
-      <button type="button" class="secondary" onclick='updateAptPackages({{ device.id }}, {{ device.name | tojson }})'>Update packages</button>
-      <button type="button" class="secondary" onclick='updateClientAgent({{ device.id }}, {{ device.name | tojson }})'>Update client</button>
+      <button type="button" class="secondary" onclick='startUpdate({{ device.id }}, {{ device.name | tojson }}, "apt")'>Update packages</button>
+      <button type="button" class="secondary" onclick='startUpdate({{ device.id }}, {{ device.name | tojson }}, "client")'>Update client</button>
     </div>
+    <div id="update-status"></div>
     {% else %}
     <p class="muted" style="font-size:12px;margin:14px 0 0">Enable SSH (below) to update packages or the client.</p>
     {% endif %}
@@ -274,5 +275,6 @@
   loadHistoryChart('/devices/{{ device.id }}/history.json', 'history-chart');
   loadContainerSparks('/devices/{{ device.id }}/containers/history.json');
   initContainerActionSheet();
+  {% if device.ssh_enabled %}resumeUpdates({{ device.id }});{% endif %}
 </script>
 {% endblock %}

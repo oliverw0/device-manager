@@ -378,7 +378,7 @@ function loadContainerSparks(url) {
 }
 
 /* ---------- in-browser SSH terminal ---------- */
-var TERM = null, TERM_FIT = null, TERM_WS = null, TERM_DEVICE = null, TERM_CONTAINER = null, TERM_AUTOCMD = null;
+var TERM = null, TERM_FIT = null, TERM_WS = null, TERM_DEVICE = null, TERM_CONTAINER = null;
 
 function termStatus(text) {
   const el = document.getElementById("term-status");
@@ -394,36 +394,99 @@ function openContainerShell(deviceId, deviceName, container) {
   openTerminal(deviceId, deviceName, container);
 }
 
-/* ---------- device update actions (run as root over the SSH terminal) ----------
-   These open the terminal, connect as root, and run one command with live output
-   so the admin can watch (and Ctrl-C). Long-running, so they can't be a plain
-   request/response — the streaming shell is the natural fit. */
-function runDeviceCommand(deviceId, deviceName, cmd, confirmMsg) {
-  if (!confirm(confirmMsg)) return;
-  openTerminal(deviceId, deviceName, null, cmd);
+/* ---------- device update actions (async background jobs) ----------
+   Kick off an update on the host, then poll its progress and render a glowy
+   loader → progress bar. Runs server-side over SSH as root; the page just
+   watches, so you can navigate away and the job keeps going. */
+var UPDATE_META = {
+  apt: {
+    label: "Package update",
+    confirm: (n) => "Update all apt packages on " + n + "?\n\nRuns apt-get upgrade as root, in the background — you can leave this page.",
+  },
+  client: {
+    label: "Client update",
+    confirm: (n) => "Update the DeviceManager client on " + n + "?\n\nPulls the latest code and rebuilds/restarts the client, in the background.",
+  },
+};
+
+function fmtEta(s) {
+  if (s === null || s === undefined) return "";
+  if (s < 60) return s + "s";
+  const m = Math.floor(s / 60);
+  return m + "m " + String(s % 60).padStart(2, "0") + "s";
 }
 
-function updateAptPackages(deviceId, deviceName) {
-  runDeviceCommand(deviceId, deviceName,
-    "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get -y upgrade",
-    "Update all apt packages on " + deviceName + "?\n\nRuns 'apt-get upgrade' as root over SSH. Watch the terminal for output.");
+function startUpdate(deviceId, deviceName, kind) {
+  const meta = UPDATE_META[kind];
+  if (!meta || !confirm(meta.confirm(deviceName))) return;
+  const box = updateBox(kind);
+  if (!box) return;
+  renderUpdate(box, meta.label, { status: "starting", percent: null, stage: "Starting…" });
+  fetch(`/devices/${deviceId}/update/${kind}`, { method: "POST" })
+    .then((r) => r.json())
+    .then((res) => {
+      if (!res.job_id) { renderUpdate(box, meta.label, { status: "error", error: res.detail || "Failed to start" }); return; }
+      pollUpdate(deviceId, res.job_id, meta.label, box);
+    })
+    .catch(() => renderUpdate(box, meta.label, { status: "error", error: "Failed to start" }));
 }
 
-function updateClientAgent(deviceId, deviceName) {
-  // Auto-detects Docker vs native install. The container is named
-  // 'devicemanager-client' (compose) and its working dir is on the compose label,
-  // so the host dir doesn't need to be known ahead of time.
-  var cmd =
-    'if docker inspect devicemanager-client >/dev/null 2>&1; then ' +
-      'wd=$(docker inspect devicemanager-client -f \'{{index .Config.Labels "com.docker.compose.project.working_dir"}}\'); ' +
-      'echo "Updating Docker client in $wd"; ' +
-      'cd "$wd" && git pull --ff-only && { docker compose up -d --build || docker-compose up -d --build; }; ' +
-    'else ' +
-      'echo "Updating native client in /opt/devicemanager-client"; ' +
-      'cd /opt/devicemanager-client && git pull --ff-only && systemctl restart devicemanager-client; ' +
-    'fi';
-  runDeviceCommand(deviceId, deviceName, cmd,
-    "Update the DeviceManager client on " + deviceName + "?\n\nPulls the latest code and rebuilds/restarts the client, as root over SSH.");
+function pollUpdate(deviceId, jobId, label, box) {
+  const tick = () => fetch(`/devices/${deviceId}/update/${jobId}.json`)
+    .then((r) => (r.ok ? r.json() : Promise.reject()))
+    .then((job) => {
+      if (!document.body.contains(box)) return;  // page swapped away; job keeps running server-side
+      renderUpdate(box, label, job);
+      if (job.status === "starting" || job.status === "running") setTimeout(tick, 1000);
+    })
+    .catch(() => { if (document.body.contains(box)) setTimeout(tick, 2000); });
+  tick();
+}
+
+function updateBox(kind) {
+  const host = document.getElementById("update-status");
+  if (!host) return null;
+  let box = host.querySelector(`[data-upd="${kind}"]`);
+  if (!box) { box = document.createElement("div"); box.dataset.upd = kind; host.appendChild(box); }
+  return box;
+}
+
+function renderUpdate(box, label, job) {
+  if (job.status === "error") {
+    box.innerHTML =
+      `<div class="upd-card err"><div class="upd-head"><span class="upd-x-ico">✕</span>` +
+      `<span class="upd-label">${escapeHtml(label)} failed</span>` +
+      `<button class="upd-dismiss" onclick="this.closest('.upd-card').parentNode.remove()">Dismiss</button></div>` +
+      `<div class="upd-stage">${escapeHtml(job.error || "Update failed")}</div></div>`;
+    return;
+  }
+  if (job.status === "done") {
+    box.innerHTML =
+      `<div class="upd-card done"><div class="upd-head"><span class="upd-check">✓</span>` +
+      `<span class="upd-label">${escapeHtml(label)} — ${escapeHtml(job.stage || "done")}</span>` +
+      `<button class="upd-dismiss" onclick="this.closest('.upd-card').parentNode.remove()">Dismiss</button></div></div>`;
+    return;
+  }
+  const indet = job.percent === null || job.percent === undefined;
+  const pct = indet ? 0 : job.percent;
+  const eta = job.eta_seconds != null ? ` · ~${fmtEta(job.eta_seconds)} left` : "";
+  box.innerHTML =
+    `<div class="upd-card"><div class="upd-head"><span class="upd-spin"></span>` +
+    `<span class="upd-label">${escapeHtml(label)}</span>` +
+    `<span class="upd-pct">${indet ? "" : pct + "%"}</span></div>` +
+    `<div class="upd-stage">${escapeHtml(job.stage || "Working…")}${eta}</div>` +
+    `<div class="upd-bar${indet ? " indet" : ""}"><div class="upd-fill" style="width:${indet ? 40 : pct}%"></div></div></div>`;
+}
+
+// On (re)load of a device page, re-attach to any update still running for it.
+function resumeUpdates(deviceId) {
+  fetch(`/devices/${deviceId}/updates.json`).then((r) => r.json()).then((data) => {
+    (data.jobs || []).forEach((job) => {
+      const meta = UPDATE_META[job.kind];
+      const box = updateBox(job.kind);
+      if (meta && box) { renderUpdate(box, meta.label, job); pollUpdate(deviceId, job.id, meta.label, box); }
+    });
+  }).catch(() => {});
 }
 
 function showSection(id) {
@@ -462,11 +525,10 @@ function closeTerminal() {
   hideSection("term-section");
 }
 
-function openTerminal(deviceId, deviceName, container, autoCmd) {
+function openTerminal(deviceId, deviceName, container) {
   if (typeof Terminal === "undefined") { alert("Terminal library failed to load."); return; }
   TERM_DEVICE = deviceId;
   TERM_CONTAINER = container || null;
-  TERM_AUTOCMD = autoCmd || null;
   const title = document.getElementById("term-title");
   if (title) title.textContent = container ? ("EXEC · " + container + " @ " + deviceName) : ("SSH · " + deviceName);
   const userSel = document.getElementById("term-user");
@@ -487,11 +549,6 @@ function openTerminal(deviceId, deviceName, container, autoCmd) {
     if (!info.host) { termStatus("No SSH address available for this device."); return; }
     termStatus("Ready — target " + info.host + ":" + (info.port || 22));
     connectBtn.disabled = false;
-    // Update actions: connect as root automatically and run the command.
-    if (TERM_AUTOCMD) {
-      if ([...userSel.options].some((o) => o.value === "root")) userSel.value = "root";
-      connectTerminal();
-    }
   }).catch(() => termStatus("Failed to load users."));
 }
 
@@ -526,10 +583,6 @@ function connectTerminal() {
     sendResize();
     TERM.onData((d) => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: "input", data: d })); });
     TERM.focus();
-    if (TERM_AUTOCMD) {
-      const cmd = TERM_AUTOCMD; TERM_AUTOCMD = null;  // one-shot: don't re-run on manual reconnect
-      ws.send(JSON.stringify({ type: "input", data: cmd + "\n" }));
-    }
   };
   ws.onmessage = (ev) => {
     if (typeof ev.data === "string") TERM.write(ev.data);
