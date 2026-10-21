@@ -100,11 +100,11 @@ body {
 /* Subtle diagonal dashed lines over the background glow. One tile holds four
    horizontal lines, each a short-dash, gap, long-dash, gap pattern (4/8/20/8 =
    the 40px tile width, so it repeats seamlessly), each line shifted a quarter
-   period from the last. The fixed layer is oversized and turned 45° so the
+   period from the last. The fixed layer is oversized and turned 45° (top-left to bottom-right) so the
    tiles become diagonals; panels are opaque, so it only shows between them. */
 body::before {
   content: ""; position: fixed; inset: -50%; z-index: -1; pointer-events: none;
-  transform: rotate(-45deg);
+  transform: rotate(45deg);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='48'%3E%3Cg fill='none' stroke='%23ffffff' stroke-opacity='0.045' stroke-width='1' stroke-dasharray='4 8 20 8'%3E%3Cpath d='M0 5.5h40'/%3E%3Cpath d='M0 17.5h40' stroke-dashoffset='10'/%3E%3Cpath d='M0 29.5h40' stroke-dashoffset='20'/%3E%3Cpath d='M0 41.5h40' stroke-dashoffset='30'/%3E%3C/g%3E%3C/svg%3E");
 }
 
