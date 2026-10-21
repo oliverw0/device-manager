@@ -87,7 +87,9 @@ pull() {{
 }}
 cid=$( (docker ps -aq --filter 'name=^devicemanager-client$'; docker ps -aq --filter 'label=com.docker.compose.service=devicemanager-client') 2>/dev/null | head -n 1)
 if [ -n "$cid" ]; then
-  label() {{ docker inspect "$cid" -f "{{{{index .Config.Labels \"com.docker.compose.$1\"}}}}"; }}
+  # \\" reaches the shell as \" so Docker gets "com.docker.compose.<x>" quoted
+  # (a bare com.docker... is parsed as a function call: 'function "com" not defined').
+  label() {{ docker inspect "$cid" -f "{{{{index .Config.Labels \\"com.docker.compose.$1\\"}}}}"; }}
   wd=$(label project.working_dir)
   [ -n "$wd" ] || {{ echo "The client container wasn't started with docker compose, so there's no checkout to update."; exit 1; }}
   echo "STAGE:git"; update_code "$wd"
