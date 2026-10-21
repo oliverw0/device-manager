@@ -29,6 +29,7 @@
       {% if sys and sys.uptime_seconds is defined %}{% set _ = facts.append('up ' ~ (sys.uptime_seconds | uptime)) %}{% endif %}
       {% if sys and sys.cpu_cores %}{% set _ = facts.append(sys.cpu_cores ~ ' cores') %}{% endif %}
       {% if sys and sys.mem_total_bytes %}{% set _ = facts.append(((sys.mem_total_bytes / 1073741824) | round | int) ~ ' GiB RAM') %}{% endif %}
+      {% if device.report %}{% set _ = facts.append('client ' ~ (device.agent_version or '1.0.0')) %}{% endif %}
       <p class="hero-facts">{{ facts | join(' · ') if facts else 'Waiting for the first report from this device.' }}</p>
       {% if device.notes %}<p class="hero-notes">{{ device.notes }}</p>{% endif %}
     </div>

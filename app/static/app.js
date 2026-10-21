@@ -239,7 +239,16 @@ const vOlder = (a, b) => { const x = vtuple(a), y = vtuple(b); for (let i = 0; i
 function renderClientBanner() {
   const el = document.getElementById("client-banner");
   if (!el) return;
-  const old = FLEET.latest ? FLEET.devices.filter((d) => d.report && vOlder(d.agent_version, FLEET.latest)) : [];
+  if (!FLEET.latest) {
+    // GitHub lookup failed: we can't tell who's behind, so offer to update everyone reachable.
+    const ready = FLEET.devices.filter((d) => d.report && d.ssh_enabled && d.is_online);
+    el.hidden = ready.length === 0;
+    el.innerHTML = `<span class="cb-text"><span>Couldn't check for the latest client release</span>` +
+      `<span class="cb-names">The host couldn't read it from GitHub; it retries every 5 minutes.</span></span>` +
+      `<button type="button" class="secondary" onclick="updateAllClients(${ready.length})">Update all ${ready.length}</button>`;
+    return;
+  }
+  const old = FLEET.devices.filter((d) => d.report && vOlder(d.agent_version, FLEET.latest));
   el.hidden = old.length === 0;
   if (!old.length) return;
   const ready = old.filter((d) => d.ssh_enabled && d.is_online);

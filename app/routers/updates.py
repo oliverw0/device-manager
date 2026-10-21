@@ -206,7 +206,7 @@ async def start_update(device_id: int, kind: str):
 # --- client release tracking -------------------------------------------------
 # The client's version lives in client/__init__.py on the repo's main branch.
 CLIENT_VERSION_URL = "https://raw.githubusercontent.com/oliverw0/device-manager-client/main/client/__init__.py"
-_latest_cache = {"at": 0.0, "version": None}
+_latest_cache = {"at": 0.0, "version": None, "ttl": 0}
 
 
 def _vtuple(v: str) -> tuple:
@@ -214,17 +214,23 @@ def _vtuple(v: str) -> tuple:
 
 
 def latest_client_version(reported: list) -> str | None:
-    """Newest of: main branch on GitHub (cached for an hour, skipped if offline)
-    and any version a device already reports."""
-    if time.time() - _latest_cache["at"] > 3600:
+    """Newest of: main branch on GitHub and any version a device already reports.
+    None when GitHub has never answered (the dashboard then offers "update all"
+    without version info). A good answer is kept an hour, a failure 5 minutes."""
+    if time.time() - _latest_cache["at"] > _latest_cache["ttl"]:
         _latest_cache["at"] = time.time()
         try:
-            m = re.search(r'__version__\s*=\s*"([^"]+)"', httpx.get(CLIENT_VERSION_URL, timeout=3).text)
-            _latest_cache["version"] = m.group(1) if m else None
-        except httpx.HTTPError:
-            pass  # keep the last known value
-    found = [v for v in [_latest_cache["version"], *reported] if v]
-    return max(found, key=_vtuple) if found else None
+            r = httpx.get(CLIENT_VERSION_URL, timeout=5, follow_redirects=True)
+            m = re.search(r'__version__\s*=\s*"([^"]+)"', r.text)
+            if not m:
+                raise ValueError(f"HTTP {r.status_code}, no __version__ in response")
+            _latest_cache.update(version=m.group(1), ttl=3600)
+        except (httpx.HTTPError, ValueError) as exc:
+            _latest_cache["ttl"] = 300
+            logger.warning("Couldn't read the latest client version from %s: %s", CLIENT_VERSION_URL, exc)
+    if not _latest_cache["version"]:
+        return None
+    return max([_latest_cache["version"], *[v for v in reported if v]], key=_vtuple)
 
 
 def is_outdated(version: str | None, latest: str | None) -> bool:
@@ -233,12 +239,14 @@ def is_outdated(version: str | None, latest: str | None) -> bool:
 
 @router.post("/updates/client-all")
 async def update_all_clients():
-    """Start a client update on every online, SSH-enabled device behind the latest release."""
+    """Start a client update on every online, SSH-enabled device behind the latest
+    release, or on all of them when the latest release can't be looked up."""
     with Session(engine) as s:
         devices = s.exec(select(Device)).all()
         versions = {d.id: _agent_version(d) for d in devices}
         latest = latest_client_version(list(versions.values()))
-        targets = [d.id for d in devices if d.ssh_enabled and d.is_online and is_outdated(versions[d.id], latest)]
+        targets = [d.id for d in devices if d.ssh_enabled and d.is_online
+                   and (latest is None or is_outdated(versions[d.id], latest))]
     started = []
     for device_id in targets:
         res = await start_update(device_id, "client")
