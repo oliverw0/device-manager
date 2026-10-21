@@ -282,11 +282,17 @@ def device_detail(request: Request, device_id: int, session: Session = Depends(g
         select(ReportHistory).where(ReportHistory.device_id == device_id).order_by(ReportHistory.timestamp)
     ).all()
     disk_full_days = _project_disk_full_days([(r.timestamp.timestamp(), r.disk_percent) for r in disk_rows])
+    from .updates import is_outdated, latest_client_version  # updates imports this module
+
+    serialized = serialize_device(device)
+    latest = latest_client_version([serialized["agent_version"]])
     return templates.TemplateResponse(
         "device_detail.html",
         {
             "request": request,
-            "device": serialize_device(device),
+            "device": serialized,
+            "latest_client": latest,
+            "client_outdated": bool(device.last_report_json) and is_outdated(serialized["agent_version"], latest),
             "api_key": device.api_key,
             "alerts": alerts,
             "apt_alert_count": apt_alert_count,

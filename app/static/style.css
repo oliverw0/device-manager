@@ -839,7 +839,14 @@ tr:has(.stat-led.off) .os-icon { opacity: 0.45; }
 .hero-name { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .hero-name h1 { margin: 0; font-family: var(--font-mono); font-size: 26px; color: #e6e9ec; overflow-wrap: anywhere; }
 .hero-name .fc-status { padding: 4px 9px; border: 1px solid currentColor; }
-.hero-facts { margin: 0; color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
+.hero-facts { list-style: none; margin: 2px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.hero-facts > li:not(.fact) { display: contents; }
+.fact { display: inline-flex; align-items: baseline; gap: 6px; padding: 4px 9px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-family: var(--font-sans); font-size: 13px; font-weight: 400; text-transform: none; letter-spacing: 0; max-width: 100%; overflow-wrap: anywhere; }
+.fact-k { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.fact.warn { border-color: rgba(255,176,56,0.45); background: rgba(255,176,56,0.08); color: var(--amber); }
+.copyable-fact { cursor: pointer; min-height: 0; }
+.copyable-fact:hover { border-color: var(--green); background: var(--panel); box-shadow: none; }
+.hero-facts-empty { margin: 0; color: var(--muted); font-size: 14px; }
 .hero-notes { margin: 0; color: var(--text); font-size: 13px; }
 .hero-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .hero-actions > button, .menu-btn { min-height: 40px; display: inline-flex; align-items: center; gap: 6px; }

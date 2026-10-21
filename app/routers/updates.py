@@ -33,13 +33,19 @@ APT_CMD = (
     "export DEBIAN_FRONTEND=noninteractive; "
     "apt-get update -qq && apt-get -y -o APT::Status-Fd=1 upgrade"
 )
+# set -e: any failed step fails the job (it used to end in an unconditional
+# `echo STAGE:done`, so a failed pull still reported success). safe.directory:
+# root pulls a checkout usually owned by the user who cloned it, which git
+# otherwise refuses as "dubious ownership".
 CLIENT_CMD = (
+    'set -e; '
     'if docker inspect devicemanager-client >/dev/null 2>&1; then '
     'wd=$(docker inspect devicemanager-client -f \'{{index .Config.Labels "com.docker.compose.project.working_dir"}}\'); '
-    'echo "STAGE:git"; cd "$wd" && git pull --ff-only && '
-    'echo "STAGE:build"; { docker compose up -d --build --progress plain || docker-compose up -d --build; }; '
+    '[ -n "$wd" ] || { echo "The client container has no compose working directory to update."; exit 1; }; '
+    'echo "STAGE:git"; cd "$wd"; git -c safe.directory="*" pull --ff-only; '
+    'echo "STAGE:build"; docker compose up -d --build --progress plain || docker-compose up -d --build; '
     'else '
-    'echo "STAGE:git"; cd /opt/devicemanager-client && git pull --ff-only && '
+    'echo "STAGE:git"; cd /opt/devicemanager-client; git -c safe.directory="*" pull --ff-only; '
     'echo "STAGE:restart"; systemctl restart devicemanager-client; '
     'fi; echo "STAGE:done"'
 )
@@ -114,6 +120,9 @@ def _parse_line(job: dict, line: str):
         job["note"] = line[5:].strip()
         return
 
+    if job["kind"] == "client" and "Already up to date" in line:  # git: nothing new was pulled
+        job["note"] = "Already on the latest code"
+
     if line.startswith("STAGE:"):
         st = line.split(":", 1)[1].strip()
         if st in CLIENT_STAGES:
@@ -155,7 +164,8 @@ async def _run_job(job: dict, candidates: list[str], port: int, user: str, cmd: 
                     _parse_line(job, buf.rstrip("\r"))
                 await proc.wait()
                 if proc.exit_status == 0:
-                    job.update(status="done", percent=100, stage=job.get("note") or "Up to date", eta_seconds=None)
+                    done = "Client updated" if job["kind"] == "client" else "Up to date"
+                    job.update(status="done", percent=100, stage=job.get("note") or done, eta_seconds=None)
                 else:
                     job.update(status="error", stage="Failed",
                                error="\n".join(job["tail"][-4:]) or f"exit {proc.exit_status}")

@@ -595,7 +595,10 @@ function startUpdate(deviceId, deviceName, kind, os) {
 
 function trackUpdate(job) {
   const key = job.device_id + ":" + job.kind;
-  if (UPD_TRACK[key]) { UPD_TRACK[key].job = job; renderUpdaters(); return; }
+  const existing = UPD_TRACK[key];
+  if (existing && existing.jobId === job.id) { if (existing.dismissAt == null) existing.job = job; renderUpdaters(); return; }
+  // a NEW job for a device whose last one is still on screen replaces that card
+  if (existing) delete UPD_TRACK[key];
   const t = UPD_TRACK[key] = {
     key, deviceId: job.device_id, deviceName: job.device_name, kind: job.kind,
     jobId: job.id, label: (UPDATE_META[job.kind] || {}).label || "Update",
@@ -650,44 +653,85 @@ function removeTracker(key) {
   renderUpdaters();
 }
 
-/* ----- rendering ----- */
+/* ----- rendering -----
+   Cards are patched in place, never rebuilt on a poll: every tracker polls each
+   second, and rebuilding all cards each time restarted the sweep animation and
+   snapped finished cards' countdown bars back to full ("progress resets"). A
+   card is only rebuilt when it switches between running / indeterminate /
+   finished. */
 function renderUpdaters() {
   const host = document.getElementById("update-status");
   const onDevice = host ? Number(host.dataset.deviceId) : null;
-  const overlayTrackers = [];
-  if (host) host.innerHTML = "";
-  Object.values(UPD_TRACK).forEach((t) => {
-    if (host && onDevice === t.deviceId) {
-      const box = document.createElement("div");
-      box.dataset.upd = t.kind;
-      box.innerHTML = updCardHtml(t, false);
-      host.appendChild(box);
-    } else {
-      overlayTrackers.push(t);
+  const all = Object.values(UPD_TRACK);
+  if (host) syncCards(host, all.filter((t) => t.deviceId === onDevice), false);
+  renderOverlay(host ? all.filter((t) => t.deviceId !== onDevice) : all);
+}
+
+function cardMode(t) {
+  const job = t.job || {};
+  if (job.status === "done" || job.status === "error") return "end";
+  return job.percent === null || job.percent === undefined ? "indet" : "run";
+}
+
+function syncCards(container, trackers, inOverlay) {
+  const want = new Set(trackers.map((t) => t.key));
+  [...container.children].forEach((el) => { if (!want.has(el.dataset.key)) el.remove(); });
+  trackers.forEach((t) => {
+    const mode = cardMode(t);
+    const el = [...container.children].find((c) => c.dataset.key === t.key);
+    if (el && el.dataset.mode === mode) {
+      if (mode !== "end") patchRunningCard(el, t);  // finished cards: the countdown timer owns them
+      return;
     }
+    const card = document.createElement("div");
+    card.dataset.key = t.key;
+    card.dataset.upd = t.kind;
+    card.dataset.mode = mode;
+    card.innerHTML = updCardHtml(t, inOverlay);
+    if (el) el.replaceWith(card); else container.appendChild(card);
   });
-  renderOverlay(overlayTrackers);
+}
+
+function patchRunningCard(el, t) {
+  const job = t.job || {};
+  const stage = el.querySelector(".upd-stage");
+  const text = (job.stage || "Working…") + (job.eta_seconds != null ? ` · ~${fmtEta(job.eta_seconds)} left` : "");
+  if (stage && stage.textContent !== text) stage.textContent = text;
+  if (job.percent === null || job.percent === undefined) return;
+  const fill = el.querySelector(".meter-fill");
+  const label = el.querySelector(".meter-label");
+  if (fill) fill.style.width = job.percent + "%";
+  if (label) label.textContent = job.percent + "%";
 }
 
 function renderOverlay(trackers) {
   const el = document.getElementById("update-overlay");
   if (!el) return;
-  if (!trackers.length) { el.hidden = true; el.className = "update-overlay"; el.innerHTML = ""; return; }
+  if (!trackers.length) { el.hidden = true; el.className = "update-overlay"; el.innerHTML = ""; el.dataset.view = ""; return; }
   el.hidden = false;
   if (UPD_OVERLAY_MIN) {
     const running = trackers.filter((t) => t.dismissAt == null).length;
-    el.className = "update-overlay min";
-    el.innerHTML =
+    const html =
       `<button class="uov-pill" onclick="toggleOverlayMin()"><span class="upd-spin"></span>` +
       `${running ? running + " update" + (running > 1 ? "s" : "") + " running…" : "updates"}` +
       `<span class="uov-caret">▴</span></button>`;
+    if (el.dataset.view !== "min" || el.dataset.pill !== html) {  // keep the spinner running between polls
+      el.className = "update-overlay min";
+      el.innerHTML = html;
+      el.dataset.view = "min";
+      el.dataset.pill = html;
+    }
     return;
   }
-  el.className = "update-overlay";
-  el.innerHTML =
-    `<div class="uov-head"><span class="uov-title">Updates</span>` +
-    `<button class="term-btn uov-min" title="Minimise" onclick="toggleOverlayMin()">▾</button></div>` +
-    `<div class="uov-body">${trackers.map((t) => `<div data-upd="${t.kind}">${updCardHtml(t, true)}</div>`).join("")}</div>`;
+  if (el.dataset.view !== "full") {
+    el.className = "update-overlay";
+    el.innerHTML =
+      `<div class="uov-head"><span class="uov-title">Updates</span>` +
+      `<button class="term-btn uov-min" title="Minimise" onclick="toggleOverlayMin()">▾</button></div>` +
+      `<div class="uov-body"></div>`;
+    el.dataset.view = "full";
+  }
+  syncCards(el.querySelector(".uov-body"), trackers, true);
 }
 
 function toggleOverlayMin() { UPD_OVERLAY_MIN = !UPD_OVERLAY_MIN; renderUpdaters(); }
@@ -698,12 +742,15 @@ function updCardHtml(t, inOverlay) {
   const label = escapeHtml(t.label) + (inOverlay ? ` · ${escapeHtml(t.deviceName || "")}` : "");
   if (job.status === "done" || job.status === "error") {
     const ok = job.status === "done";
-    const cd = `<div class="upd-cd"><div class="upd-cd-fill ${ok ? "ok" : "bad"}" data-cd="${t.key}" style="width:100%"></div></div>`;
+    // start the countdown bar where it really is, in case the card is (re)drawn mid-countdown
+    const left = t.dismissAt ? Math.max(0, Math.min(100, ((t.dismissAt - Date.now()) / UPD_DISMISS_MS) * 100)) : 100;
+    const cd = `<div class="upd-cd"><div class="upd-cd-fill ${ok ? "ok" : "bad"}" data-cd="${t.key}" style="width:${left}%"></div></div>`;
     const dismiss = `<button class="term-btn upd-dismiss" title="Dismiss now" onclick="dismissTracker('${t.key}')">✕</button>`;
+    const doneText = t.kind === "client" ? "Updated" : "Up to date";
     return `<div class="upd-card"><div class="upd-head">` +
-      `<span class="chip ${ok ? "ok" : "bad"}"><span class="chip-dot"></span>${ok ? "Up to date" : "Failed"}</span>` +
+      `<span class="chip ${ok ? "ok" : "bad"}"><span class="chip-dot"></span>${ok ? doneText : "Failed"}</span>` +
       `<span class="upd-label">${label}</span>${dismiss}</div>` +
-      (ok ? (job.stage && job.stage !== "Up to date" ? `<div class="upd-stage">${escapeHtml(job.stage)}</div>` : "")
+      (ok ? (job.stage && !["Up to date", "Client updated"].includes(job.stage) ? `<div class="upd-stage">${escapeHtml(job.stage)}</div>` : "")
           : `<div class="upd-stage upd-err">${escapeHtml(job.error || "Update failed")}</div>`) + cd + `</div>`;
   }
   const indet = job.percent === null || job.percent === undefined;

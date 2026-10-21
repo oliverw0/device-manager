@@ -22,15 +22,20 @@
         <span class="fc-status {{ 'on' if device.is_online else 'off' }}" title="Last seen {{ device.last_seen_at | dt }}"><span class="dot"></span>{{ 'Online' if device.is_online else 'Offline' }} · {{ device.seconds_since_seen | reltime }}</span>
         {% if device.alerts_muted %}<span class="chip warn" title="{% if device.alerts_muted_forever %}Until unmuted{% else %}Until {{ device.alerts_muted_until | dt }}{% endif %}">alerts muted</span>{% endif %}
       </div>
-      {% set facts = [] %}
-      {% if sys and sys.os_version %}{% set _ = facts.append(sys.os_version) %}{% endif %}
-      {% if sys and sys.hostname %}{% set _ = facts.append(sys.hostname) %}{% endif %}
-      {% if ts and ts.ips %}{% set _ = facts.append(ts.ips[0]) %}{% elif sys and sys.local_ip %}{% set _ = facts.append(sys.local_ip) %}{% endif %}
-      {% if sys and sys.uptime_seconds is defined %}{% set _ = facts.append('up ' ~ (sys.uptime_seconds | uptime)) %}{% endif %}
-      {% if sys and sys.cpu_cores %}{% set _ = facts.append(sys.cpu_cores ~ ' cores') %}{% endif %}
-      {% if sys and sys.mem_total_bytes %}{% set _ = facts.append(((sys.mem_total_bytes / 1073741824) | round | int) ~ ' GiB RAM') %}{% endif %}
-      {% if device.report %}{% set _ = facts.append('client ' ~ (device.agent_version or '1.0.0')) %}{% endif %}
-      <p class="hero-facts">{{ facts | join(' · ') if facts else 'Waiting for the first report from this device.' }}</p>
+      {% if device.report %}
+      <ul class="hero-facts" aria-label="Device facts">
+        {% if sys and sys.os_version %}<li class="fact"><span class="fact-k">OS</span>{{ sys.os_version }}</li>{% endif %}
+        {% if sys and sys.hostname %}<li class="fact"><span class="fact-k">Host</span>{{ sys.hostname }}</li>{% endif %}
+        {% set ip = ts.ips[0] if ts and ts.ips else (sys.local_ip if sys else none) %}
+        {% if ip %}<li><button type="button" class="fact copyable-fact" onclick="copyText('{{ ip }}', this)" title="Copy IP"><span class="fact-k">{{ 'Tailscale' if ts and ts.ips else 'IP' }}</span>{{ ip }}</button></li>{% endif %}
+        {% if sys and sys.uptime_seconds is defined %}<li class="fact"><span class="fact-k">Up</span>{{ sys.uptime_seconds | uptime }}</li>{% endif %}
+        {% if sys and sys.cpu_cores %}<li class="fact"><span class="fact-k">CPU</span>{{ sys.cpu_cores }} cores</li>{% endif %}
+        {% if sys and sys.mem_total_bytes %}<li class="fact"><span class="fact-k">RAM</span>{{ (sys.mem_total_bytes / 1073741824) | round | int }} GiB</li>{% endif %}
+        <li class="fact{{ ' warn' if client_outdated }}"{% if client_outdated %} title="Latest is {{ latest_client }}"{% endif %}><span class="fact-k">Client</span>{{ device.agent_version or '1.0.0' }}{% if client_outdated %} · update available{% endif %}</li>
+      </ul>
+      {% else %}
+      <p class="hero-facts-empty">Waiting for the first report from this device.</p>
+      {% endif %}
       {% if device.notes %}<p class="hero-notes">{{ device.notes }}</p>{% endif %}
     </div>
     <div class="hero-actions" role="toolbar" aria-label="Device actions">
