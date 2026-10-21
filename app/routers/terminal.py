@@ -27,13 +27,13 @@ def _known_container(last_report_json, name) -> bool:
     return name in {c.get("name") for c in (report.get("docker_containers") or [])}
 
 
-async def _ssh_run(device: Device, user: str, cmd: str):
+async def _ssh_run(device: Device, user: str, cmd: str, timeout: float = 25):
     """Run one command over SSH, trying each candidate address. Returns (exit, output)."""
     tried = []
     for addr in ssh_candidates(device):
         try:
             async with await remote.connect(addr, device.ssh_port, user, remote.expected_hostname(device)) as conn:
-                r = await conn.run(cmd, check=False, timeout=25)
+                r = await conn.run(cmd, check=False, timeout=timeout)
                 return r.exit_status, (r.stdout or "") + (r.stderr or "")
         except (OSError, asyncssh.Error) as exc:
             tried.append(f"{addr}: {remote.describe_error(exc)}")

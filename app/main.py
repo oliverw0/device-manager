@@ -11,7 +11,7 @@ from . import monitor, ssh_keys
 from .auth_middleware import AdminAuthMiddleware
 from .config import settings
 from .database import init_db
-from .routers import api, auth, checks, dashboard, terminal, updates
+from .routers import api, auth, checks, dashboard, storage, terminal, updates
 
 logging.basicConfig(level=logging.INFO)
 
@@ -60,3 +60,4 @@ app.include_router(checks.router)
 app.include_router(dashboard.router)
 app.include_router(terminal.router)
 app.include_router(updates.router)
+app.include_router(storage.router)

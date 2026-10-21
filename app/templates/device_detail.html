@@ -84,7 +84,7 @@
         {{ ui.ring(disks[0].percent, 'System drive', ((sysdrive ~ ' · ') if sysdrive else '') ~ ui.disk_title(sys)) }}
       </section>
 
-      <section class="panel storage" aria-label="Storage">
+      <section class="panel storage" aria-label="Storage" data-device-id="{{ device.id }}" data-device-name="{{ device.name }}">
         <h2>Storage{% if disks | length > 1 %} <span class="muted">· {{ disks | length }} drives</span>{% endif %}</h2>
         {% for dk in disks %}
         {% set p = dk.percent | round | int %}
@@ -95,6 +95,16 @@
             <span class="fc-bar"><span class="{{ 'crit' if p >= 90 else 'warn' if p >= 70 else 'ok' }}" style="width:{{ [p, 100] | min }}%"></span></span>
           </div>
           <span class="drive-used">{% if dk.total_bytes %}{{ ui.gib(dk.used_bytes) }} / {{ ui.gib(dk.total_bytes) }}{% endif %}</span>
+          {% if device.ssh_enabled %}
+          {% set name = dk.mount.rstrip('\\') or dk.mount or 'Disk' %}
+          <span class="drive-act">
+            <button type="button" class="{{ 'secondary drive-btn' if p >= 90 else 'icon-btn icon-btn-sm tip-below tip-end' }}"
+              {% if p < 90 %}data-tip="What's using space?"{% endif %} aria-label="What's using space on {{ name }}"
+              data-inspect="{{ dk.mount }}" data-name="{{ name }}" data-pct="{{ p }}"
+              data-used="{{ dk.used_bytes or 0 }}" data-total="{{ dk.total_bytes or 0 }}"
+              onclick="openDiskDrawer(this)">{% if p >= 90 %}What's using space?{% else %}<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-4-4"></path></svg>{% endif %}</button>
+          </span>
+          {% endif %}
         </div>
         {% endfor %}
       </section>
@@ -367,6 +377,16 @@
   </section>
 </div>
 
+{# "What's using space?" side panel, filled by openDiskDrawer() in app.js. #}
+<dialog id="disk-drawer" class="drawer" aria-labelledby="disk-drawer-title">
+  <div class="drawer-head">
+    <h2 id="disk-drawer-title">What's using space</h2>
+    <span class="spacer"></span>
+    <button type="button" class="icon-btn" aria-label="Close" onclick="this.closest('dialog').close()"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"></path></svg></button>
+  </div>
+  <div id="disk-drawer-body" class="drawer-body"></div>
+</dialog>
+
 {# Mobile slide-in bar for container/stack actions (buttons cloned from the tapped row). #}
 <div id="action-sheet" class="action-sheet" hidden>
   <div class="sheet-backdrop" onclick="closeActionSheet()"></div>
@@ -386,6 +406,7 @@
   loadContainerSparks('/devices/{{ device.id }}/containers/history.json');
   initContainerActionSheet();
   initDeviceTabs();
+  initDiskDrawer();
   renderUpdaters();  {# paint any in-flight update into this device's panel #}
 </script>
 {% endblock %}

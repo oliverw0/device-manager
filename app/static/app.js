@@ -97,7 +97,7 @@ function deviceIssues(d) {
     const disks = sys.disks && sys.disks.length ? sys.disks : [{ mount: "Disk", percent: sys.disk_percent }];
     disks.forEach((dk) => {
       const name = (dk.mount || "").replace(/\\+$/, "") || "Disk";
-      if (dk.percent >= 90) out.push({ id: "disk:" + name, sev: "bad", text: `${name} ${Math.round(dk.percent)}% full` });
+      if (dk.percent >= 90) out.push({ id: "disk:" + name, inspect: dk.mount, sev: "bad", text: `${name} ${Math.round(dk.percent)}% full` });
     });
     if (sys.mem_percent >= 90) out.push({ id: "mem", sev: "bad", text: `Memory ${Math.round(sys.mem_percent)}%` });
     if (sys.cpu_percent >= 90) out.push({ id: "cpu", sev: "bad", text: `CPU ${Math.round(sys.cpu_percent)}%` });
@@ -211,7 +211,7 @@ function renderFleet() {
     const hiddenCount = items.length - shown.length;
     attention.hidden = items.length === 0;
     attention.innerHTML = shown.slice(0, 6).map(({ d, i, key }) =>
-      `<div class="attn ${i.sev}"><a class="attn-link" href="/devices/${d.id}"><span class="attn-what">${escapeHtml(i.text)}</span><span class="attn-dev">${escapeHtml(d.name)}</span></a>` +
+      `<div class="attn ${i.sev}"><a class="attn-link" href="/devices/${d.id}${i.inspect != null && d.ssh_enabled ? "?inspect=" + encodeURIComponent(i.inspect) : ""}"><span class="attn-what">${escapeHtml(i.text)}</span><span class="attn-dev">${escapeHtml(d.name)}</span></a>` +
       `<button type="button" class="attn-x tip-below tip-end" data-dismiss="${key}" data-tip="Dismiss" aria-label="Dismiss: ${escapeHtml(i.text)} on ${escapeHtml(d.name)}">✕</button></div>`).join("") +
       (hiddenCount ? `<button type="button" class="attn-restore" data-restore="1">Show ${hiddenCount} dismissed</button>` : "");
   }
@@ -984,6 +984,116 @@ function initInstallCmd() {
   };
   tabs.forEach((t) => t.addEventListener("click", () => show(t.dataset.platform)));
   show(new URLSearchParams(location.search).get("platform") || cmd.dataset.default);
+}
+
+/* ---------- "What's using space?" drawer ----------
+   Scans one drive over SSH (POST /devices/<id>/disk-usage) and lists the
+   largest folders, expandable one level, plus safe cleanups with their size. */
+function fmtBytes(n) {
+  if (!n) return "0 B";
+  const u = ["B", "KiB", "MiB", "GiB", "TiB"];
+  const i = Math.min(u.length - 1, Math.floor(Math.log(n) / Math.log(1024)));
+  return (n / Math.pow(1024, i)).toFixed(i >= 3 ? 1 : 0) + " " + u[i];
+}
+
+var DISK = null;  // { deviceId, deviceName, btn, scan }
+
+function openDiskDrawer(btn) {
+  const storage = btn.closest("[data-device-id]");
+  DISK = { deviceId: storage.dataset.deviceId, deviceName: storage.dataset.deviceName, btn, scan: null };
+  const dlg = document.getElementById("disk-drawer");
+  document.getElementById("disk-drawer-title").textContent = `What's using space on ${btn.dataset.name}`;
+  dlg.showModal();
+  scanDisk();
+}
+
+function diskMeterHtml() {
+  const b = DISK.btn.dataset, pct = Number(b.pct), used = Number(b.used), total = Number(b.total);
+  const cls = pct >= 90 ? "crit" : pct >= 70 ? "warn" : "ok";
+  return `<div class="dd-meter"><span class="dd-meter-top"><span class="dd-${cls}">${total ? `${fmtBytes(used)} of ${fmtBytes(total)} · ` : ""}${pct}%</span>` +
+    `${total ? `<span class="muted">${fmtBytes(total - used)} free</span>` : ""}</span>` +
+    `<span class="fc-bar"><span class="${cls}" style="width:${Math.min(100, pct)}%"></span></span></div>`;
+}
+
+function scanDisk() {
+  const body = document.getElementById("disk-drawer-body");
+  const windows = /^[A-Za-z]:/.test(DISK.btn.dataset.name);
+  body.innerHTML = diskMeterHtml() +
+    `<div class="dd-scanning"><span class="upd-spin"></span>Scanning ${escapeHtml(DISK.btn.dataset.name)} over SSH…` +
+    `<span class="muted">${windows ? "Windows drives can take a minute or two." : "Large drives can take a minute."}</span></div>`;
+  const started = DISK;
+  fetch(`/devices/${DISK.deviceId}/disk-usage?mount=${encodeURIComponent(DISK.btn.dataset.inspect)}`, { method: "POST" })
+    .then((r) => r.json().then((j) => ({ ok: r.ok, j })))
+    .then(({ ok, j }) => {
+      if (DISK !== started) return;  // closed / reopened meanwhile
+      if (!ok) { body.innerHTML = diskMeterHtml() + `<p class="dd-error">${escapeHtml(j.detail || "Scan failed.")}</p><button type="button" class="secondary" onclick="scanDisk()">Try again</button>`; return; }
+      DISK.scan = j;
+      renderDiskScan();
+    })
+    .catch(() => { body.innerHTML = diskMeterHtml() + '<p class="dd-error">Couldn\'t reach the host.</p>'; });
+}
+
+function renderDiskScan() {
+  const s = DISK.scan, max = Math.max(1, ...s.items.map((i) => i.bytes));
+  const row = (item, depth, idx) => {
+    const kids = depth === 0 && item.children && item.children.length;
+    return `<div class="dd-row${depth ? " dd-child" : ""}" ${kids ? `data-expand="${idx}"` : ""}>` +
+      `<span class="dd-chev">${kids ? '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>' : ""}</span>` +
+      `<span class="dd-path"><span title="${escapeHtml(item.path)}">${escapeHtml(item.path)}</span>` +
+      `<span class="dd-bar"><span style="width:${Math.max(1, Math.round((item.bytes / max) * 100))}%"></span></span></span>` +
+      `<span class="dd-size">${fmtBytes(item.bytes)}</span></div>` +
+      (kids ? `<div class="dd-kids" id="dd-kids-${idx}" hidden>${item.children.map((c) => row(c, 1)).join("")}</div>` : "");
+  };
+  const total = s.cleanups.reduce((a, c) => a + c.bytes, 0);
+  const when = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  document.getElementById("disk-drawer-body").innerHTML = diskMeterHtml() +
+    `<p class="dd-meta">Scanned ${when} over SSH · took ${s.took}s · <button type="button" class="linkish" onclick="scanDisk()">Rescan</button></p>` +
+    `<section class="dd-section"><h3>Largest folders</h3>${s.items.map((i, n) => row(i, 0, n)).join("")}</section>` +
+    (s.cleanups.length ? `<section class="dd-section dd-clean"><h3>Safe cleanups <span class="dd-free">could free ${fmtBytes(total)}</span></h3>` +
+      s.cleanups.map((c) => `<div class="dd-crow"><span class="dd-cwhat"><span>${escapeHtml(c.what)}</span><span class="muted">${escapeHtml(c.how)}</span></span>` +
+        `<span class="dd-size">${fmtBytes(c.bytes)}</span>` +
+        `<button type="button" class="secondary" data-cleanup="${c.key}">${c.key === "recycle" ? "Empty" : c.key.startsWith("docker") ? "Prune" : "Clean"}</button></div>`).join("") +
+      `<p class="dd-note">Runs over SSH. Nothing is deleted until you confirm, and the confirmation says exactly what runs.</p></section>` : "");
+}
+
+function runCleanup(btn) {
+  const c = DISK.scan.cleanups.find((x) => x.key === btn.dataset.cleanup);
+  if (!c || !confirm(`Run "${c.how}" on ${DISK.deviceName}?\n\n${c.note}\nFrees about ${fmtBytes(c.bytes)}.`)) return;
+  btn.disabled = true;
+  btn.textContent = "Running…";
+  fetch(`/devices/${DISK.deviceId}/cleanup/${c.key}`, { method: "POST" })
+    .then((r) => r.json().then((j) => ({ ok: r.ok, j })))
+    .then(({ ok, j }) => {
+      if (!ok) { btn.disabled = false; btn.textContent = "Retry"; alert(j.detail || "Cleanup failed."); return; }
+      btn.textContent = "Done";
+      btn.classList.add("dd-done");
+    })
+    .catch(() => { btn.disabled = false; btn.textContent = "Retry"; });
+}
+
+function initDiskDrawer() {
+  const dlg = document.getElementById("disk-drawer");
+  if (!dlg || dlg.dataset.bound) return;
+  dlg.dataset.bound = "1";
+  dlg.addEventListener("click", (e) => {
+    if (e.target === dlg) { dlg.close(); return; }  // backdrop
+    const exp = e.target.closest("[data-expand]");
+    if (exp) {
+      const kids = document.getElementById("dd-kids-" + exp.dataset.expand);
+      kids.hidden = !kids.hidden;
+      exp.classList.toggle("open", !kids.hidden);
+      return;
+    }
+    const clean = e.target.closest("[data-cleanup]");
+    if (clean && !clean.disabled) runCleanup(clean);
+  });
+  dlg.addEventListener("close", () => { DISK = null; });
+  // /devices/<id>?inspect=<mount> (from a full-disk alert) opens the drawer straight away
+  const want = new URLSearchParams(location.search).get("inspect");
+  if (want !== null) {
+    const btn = [...document.querySelectorAll("[data-inspect]")].find((b) => b.dataset.inspect === want || b.dataset.name === want);
+    if (btn) openDiskDrawer(btn);
+  }
 }
 
 /* ---------- device page tabs ----------

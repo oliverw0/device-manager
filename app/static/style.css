@@ -958,3 +958,53 @@ tr:has(.stat-led.off) .os-icon { opacity: 0.45; }
 .cb-names { font-size: 12px; color: var(--muted); font-family: var(--font-mono); overflow-wrap: anywhere; }
 .cb-note { font-size: 13px; }
 [hidden] { display: none !important; }  /* the hidden attribute must win over display:flex/grid rules */
+
+/* ---------- "What's using space?" drawer ---------- */
+.drive { grid-template-columns: 52px minmax(0, 1fr) auto auto; }
+.drive-act { display: inline-flex; justify-content: flex-end; }
+.drive-btn { padding: 6px 11px; font-size: 11px; white-space: nowrap; }
+.icon-btn-sm { width: 30px; height: 30px; }
+.drawer { position: fixed; inset: 0 0 0 auto; width: min(580px, 100vw); max-width: 100vw; height: 100%; max-height: 100%; margin: 0; padding: 0;
+  background: var(--panel); color: var(--text); border: 0; border-left: 1px solid var(--border-strong); box-shadow: -12px 0 40px rgba(0,0,0,0.5); }
+.drawer::backdrop { background: rgba(8, 9, 11, 0.6); }
+.drawer[open] { display: flex; flex-direction: column; }
+.drawer-head { display: flex; align-items: center; gap: 10px; padding: 18px 22px; border-bottom: 1px solid var(--border); }
+.drawer-head h2 { margin: 0; font-family: var(--font-mono); font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; color: #e6e9ec; }
+.drawer-body { flex: 1; overflow-y: auto; padding: 18px 22px 24px; display: flex; flex-direction: column; gap: 16px; }
+.dd-meter { display: flex; flex-direction: column; gap: 8px; }
+.dd-meter-top { display: flex; justify-content: space-between; gap: 12px; font-family: var(--font-mono); font-size: 13px; }
+.dd-meter .fc-bar, .dd-meter .fc-bar span { height: 8px; }
+.dd-crit { color: var(--red); } .dd-warn { color: var(--amber); } .dd-ok { color: #e6e9ec; }
+.dd-meta { margin: 0; font-size: 12.5px; color: var(--muted); }
+.dd-meta .linkish { padding: 0; font-size: 12.5px; }
+.dd-scanning { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 18px 0; color: var(--text); }
+.dd-scanning .muted { flex-basis: 100%; padding-left: 26px; font-size: 12.5px; }
+.dd-error { margin: 0; padding: 10px 12px; border: 1px solid rgba(255,82,48,0.5); background: rgba(255,82,48,0.08); color: var(--red); font-size: 13px; overflow-wrap: anywhere; }
+.dd-section h3 { margin: 0 0 8px; font-family: var(--font-mono); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); display: flex; align-items: baseline; gap: 10px; }
+.dd-free { color: var(--green); text-transform: none; letter-spacing: 0; font-family: var(--font-sans); font-weight: 500; font-size: 12.5px; }
+.dd-row { display: grid; grid-template-columns: 18px minmax(0, 1fr) 84px; align-items: center; gap: 10px; padding: 7px 0; }
+.dd-row[data-expand] { cursor: pointer; }
+.dd-row[data-expand]:hover .dd-path > span:first-child { color: #e6e9ec; }
+.dd-chev { color: var(--muted); display: grid; place-items: center; transition: transform 0.12s; }
+.dd-row.open .dd-chev { transform: rotate(90deg); }
+.dd-path { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.dd-path > span:first-child { font-family: var(--font-mono); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dd-bar { height: 4px; background: var(--border); display: block; }
+.dd-bar span { display: block; height: 4px; background: var(--muted); }
+.dd-size { font-family: var(--font-mono); font-size: 12.5px; color: #e6e9ec; text-align: right; white-space: nowrap; }
+.dd-kids { padding-left: 28px; border-left: 1px solid var(--border); margin-left: 8px; }
+.dd-child { grid-template-columns: 0 minmax(0, 1fr) 84px; gap: 10px 0; }
+.dd-child .dd-bar span { background: var(--faint); }
+.dd-clean { margin-top: auto; padding: 16px 22px 4px; margin-left: -22px; margin-right: -22px; background: var(--bg-edge); border-top: 1px solid var(--border); }
+.dd-crow { display: grid; grid-template-columns: minmax(0, 1fr) 84px 76px; align-items: center; gap: 12px; padding: 8px 0; }
+.dd-cwhat { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.dd-cwhat .muted { font-family: var(--font-mono); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dd-crow button { padding: 6px 0; font-size: 11px; }
+.dd-crow button.dd-done { color: var(--green); border-color: rgba(55,224,106,0.55); }
+.dd-note { margin: 6px 0 0; font-size: 12px; color: var(--faint); }
+@media (max-width: 720px) {
+  .drive { grid-template-columns: 44px minmax(0, 1fr) auto; }
+  .drive-act { grid-column: 3; grid-row: 1; }
+  .drive-used { grid-column: 2; grid-row: 2; }
+  .drive-btn { padding: 6px 8px; }
+}
