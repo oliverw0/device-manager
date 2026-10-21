@@ -10,6 +10,7 @@ last report first (see terminal._known_container), so they're a safe charset.
 """
 import base64
 import json
+import re
 
 import asyncssh
 
@@ -40,8 +41,13 @@ def _windows_info(device) -> dict:
 
 
 def expected_hostname(device) -> str | None:
-    """The machine name the device reported, to check we SSH'd into the right box."""
-    return (_report(device).get("system") or {}).get("hostname") or None
+    """The machine name the device reported, to check we SSH'd into the right box.
+    None (no check) when it's a Docker container id: older Docker clients without
+    the /etc/hostname mount report that instead of the machine's name."""
+    name = (_report(device).get("system") or {}).get("hostname") or None
+    if name and re.fullmatch(r"[0-9a-f]{12}", name):
+        return None
+    return name
 
 
 class WrongMachine(OSError):
@@ -230,5 +236,9 @@ if __name__ == "__main__":  # ponytail: self-check
         assert await connect("10.0.0.5", 22, "root", "frigate-lxc") is c               # can't tell: allow
         assert await connect("10.0.0.5", 22, "root", None) is c                        # no reported name: allow
         assert isinstance(WrongMachine("x"), OSError)                                  # callers' except catches it
+        # Wiles-NAS: an old Docker client reported its container id as the hostname
+        assert expected_hostname(D({"system": {"hostname": "d6e88e59ca6a"}})) is None
+        assert expected_hostname(D({"system": {"hostname": "Wiles-NAS"}})) == "Wiles-NAS"
+        assert expected_hostname(D({"system": {"hostname": "deadbeef"}})) == "deadbeef"   # 8 hex: a real name
     asyncio.run(check())
     print("ok")
