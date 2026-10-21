@@ -4,7 +4,9 @@ function escapeHtml(str) {
   }[c]));
 }
 
-var TERMINAL_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>';
+// Docker whale: stacked container blocks on a hull (fleet card footer).
+var DOCKER_ICON = '<svg class="docker-ico" viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true"><path d="M4 8h2.6v2.4H4zM7.2 8h2.6v2.4H7.2zM10.4 8H13v2.4h-2.6zM7.2 5h2.6v2.4H7.2zM10.4 5H13v2.4h-2.6zM13.6 8h2.6v2.4h-2.6zM10.4 2h2.6v2.4h-2.6z"/><path d="M1.6 11.2h17.6c.5-1.4.3-2.6-.4-3.4l.6-.4c.9.6 1.5 1.5 1.6 2.4.9-.2 1.7 0 2.4.5-.5 1-1.4 1.5-2.6 1.5-1.4 4.6-5 8-10.2 8-4.9 0-8.1-3-9-8.6z"/></svg>';
+var TERMINAL_ICON ='<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>';
 
 /* ---------- time helpers ---------- */
 // Server timestamps are UTC ISO strings without a timezone suffix; append "Z"
@@ -169,11 +171,12 @@ function deviceCard(d) {
     <svg class="fc-spark" viewBox="0 0 280 36" preserveAspectRatio="none" aria-hidden="true"><polyline points="${sparkPoints(d.cpu_spark)}"></polyline></svg>
     ${chips ? `<div class="fc-issues">${chips}</div>` : ""}
     <div class="fc-foot">
-      ${tailscaleLogo(d.report ? d.report.tailscale : null, !d.is_online)}
-      ${ctrs && ctrs.length ? containerSummary(ctrs, !d.is_online) : ""}
-      <span class="spacer"></span>
-      <span class="fc-seen">${fmtRelative(d.seconds_since_seen)}</span>
-      ${d.ssh_enabled ? `<button class="term-btn" title="Open terminal" aria-label="Open terminal on ${escapeHtml(d.name)}" data-term-id="${d.id}" data-term-name="${escapeHtml(d.name)}" onclick="event.stopPropagation(); openTerminalFromBtn(this)">${TERMINAL_ICON}</button>` : ""}
+      <span class="fc-foot-l">${tailscaleLogo(d.report ? d.report.tailscale : null, !d.is_online)}</span>
+      <span class="fc-foot-c">${ctrs && ctrs.length ? `<span class="fc-ctr" title="Docker containers running">${DOCKER_ICON}${containerSummary(ctrs, !d.is_online)}</span>` : ""}</span>
+      <span class="fc-foot-r">
+        <span class="fc-seen">${fmtRelative(d.seconds_since_seen)}</span>
+        ${d.ssh_enabled ? `<button class="term-btn" title="Open terminal" aria-label="Open terminal on ${escapeHtml(d.name)}" data-term-id="${d.id}" data-term-name="${escapeHtml(d.name)}" onclick="event.stopPropagation(); openTerminalFromBtn(this)">${TERMINAL_ICON}</button>` : ""}
+      </span>
     </div>
   </article>`;
 }
