@@ -98,11 +98,11 @@
           {% if device.ssh_enabled %}
           {% set name = dk.mount.rstrip('\\') or dk.mount or 'Disk' %}
           <span class="drive-act">
-            <button type="button" class="{{ 'secondary drive-btn' if p >= 90 else 'icon-btn icon-btn-sm tip-below tip-end' }}"
-              {% if p < 90 %}data-tip="What's using space?"{% endif %} aria-label="What's using space on {{ name }}"
+            <button type="button" class="icon-btn icon-btn-sm tip-below tip-end{{ ' hot' if p >= 90 }}"
+              data-tip="What's using space?" aria-label="What's using space on {{ name }}"
               data-inspect="{{ dk.mount }}" data-name="{{ name }}" data-pct="{{ p }}"
               data-used="{{ dk.used_bytes or 0 }}" data-total="{{ dk.total_bytes or 0 }}"
-              onclick="openDiskDrawer(this)">{% if p >= 90 %}What's using space?{% else %}<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-4-4"></path></svg>{% endif %}</button>
+              onclick="openDiskDrawer(this)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-4-4"></path></svg></button>
           </span>
           {% endif %}
         </div>

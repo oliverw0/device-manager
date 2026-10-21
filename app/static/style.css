@@ -962,7 +962,9 @@ tr:has(.stat-led.off) .os-icon { opacity: 0.45; }
 /* ---------- "What's using space?" drawer ---------- */
 .drive { grid-template-columns: 52px minmax(0, 1fr) auto auto; }
 .drive-act { display: inline-flex; justify-content: flex-end; }
-.drive-btn { padding: 6px 11px; font-size: 11px; white-space: nowrap; }
+/* every drive gets the same icon; a nearly-full one is tinted red so it still stands out */
+.icon-btn.hot { color: var(--red); border-color: rgba(255,82,48,0.55); background: color-mix(in srgb, var(--red) 10%, var(--panel-2)); }
+.icon-btn.hot:hover { border-color: var(--red); background: color-mix(in srgb, var(--red) 18%, var(--panel-2)); color: var(--red); }
 .icon-btn-sm { width: 30px; height: 30px; }
 .drawer { position: fixed; inset: 0 0 0 auto; width: min(580px, 100vw); max-width: 100vw; height: 100%; max-height: 100%; margin: 0; padding: 0;
   background: var(--panel); color: var(--text); border: 0; border-left: 1px solid var(--border-strong); box-shadow: -12px 0 40px rgba(0,0,0,0.5); }
@@ -1006,5 +1008,4 @@ tr:has(.stat-led.off) .os-icon { opacity: 0.45; }
   .drive { grid-template-columns: 44px minmax(0, 1fr) auto; }
   .drive-act { grid-column: 3; grid-row: 1; }
   .drive-used { grid-column: 2; grid-row: 2; }
-  .drive-btn { padding: 6px 8px; }
 }
