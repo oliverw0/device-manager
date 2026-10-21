@@ -100,7 +100,8 @@ function deviceIssues(d) {
     if (sys.cpu_percent >= 90) out.push({ sev: "bad", text: `CPU ${Math.round(sys.cpu_percent)}%` });
   }
   const apt = d.report && d.report.apt;
-  if (d.apt_needs_update) out.push({ sev: "warn", text: apt && apt.upgradable != null ? `${apt.upgradable} updates` : "Updates pending" });
+  // Flagged with a count of 0 means the apt cache is old, not that packages are pending.
+  if (d.apt_needs_update) out.push({ sev: "warn", text: apt && apt.upgradable ? `${apt.upgradable} updates` : apt && apt.upgradable === 0 ? "Package list stale" : "Updates pending" });
   if (apt && apt.reboot_required) out.push({ sev: "warn", text: "Reboot pending" });
   const ctrs = (d.report && d.report.docker_containers) || [];
   const down = ctrs.filter((c) => c.status !== "running").length;
