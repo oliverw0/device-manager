@@ -115,6 +115,11 @@ def os_key(system: Optional[dict]) -> Optional[str]:
 
 def serialize_device(device: Device) -> dict:
     report = json.loads(device.last_report_json) if device.last_report_json else None
+    system = (report or {}).get("system") or {}
+    if system.get("disks"):
+        # Older Docker clients list the single files Docker bind-mounts into the
+        # container (/etc/resolv.conf, /etc/hostname, /etc/hosts) as drives.
+        system["disks"] = [dk for dk in system["disks"] if not (dk.get("mount") or "").startswith("/etc/")]
     seconds_since_seen: Optional[float] = None
     if device.last_seen_at:
         seconds_since_seen = (datetime.utcnow() - device.last_seen_at).total_seconds()

@@ -128,7 +128,7 @@
           {% endif %}
           {% if sys %}
           {% set worst = disks | sort(attribute='percent', reverse=true) | first %}
-          <li><span class="hdot {{ 'bad' if worst.percent >= 90 else 'warn' if worst.percent >= 70 else 'ok' }}"></span><span>Storage</span><span class="h-detail">Fullest {{ worst.mount.rstrip('\\') or 'disk' }} {{ worst.percent | round | int }}%</span></li>
+          <li><span class="hdot {{ 'bad' if worst.percent >= 90 else 'warn' if worst.percent >= 70 else 'ok' }}"></span><span>Storage</span><span class="h-detail">{{ worst.mount.rstrip('\\') or 'disk' }} {{ worst.percent | round | int }}%</span></li>
           {% endif %}
           {% if containers %}
           <li><span class="hdot {{ 'ok' if ctr_up == containers | length else 'warn' }}"></span><span>Containers</span><span class="h-detail">{{ ctr_up }}/{{ containers | length }} running</span></li>
