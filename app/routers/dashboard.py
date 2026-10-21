@@ -18,6 +18,9 @@ from ..monitor import _project_disk_full_days
 from ..assets import STATIC_VERSION
 
 router = APIRouter()
+
+# "Mute always" is just a mute window that never ends; alerts_muted() needs no special case.
+MUTED_FOREVER = datetime(9999, 1, 1)
 templates = Jinja2Templates(directory="app/templates")
 templates.env.globals["static_version"] = STATIC_VERSION
 
@@ -86,6 +89,22 @@ templates.env.filters["dt"] = _fmt_dt
 templates.env.filters["reltime"] = _fmt_reltime
 
 
+# Distros with their own icon; anything else Linux gets Tux (see .os-* in style.css).
+_DISTROS = ("ubuntu", "debian", "raspbian", "fedora", "arch")
+
+
+def os_key(system: Optional[dict]) -> Optional[str]:
+    if not system or not system.get("os"):
+        return None
+    os_name = system["os"]
+    if os_name != "linux":
+        return {"windows": "windows", "darwin": "macos"}.get(os_name)
+    version = (system.get("os_version") or "").lower()
+    if "raspberry" in version or "raspbian" in version:
+        return "raspbian"
+    return next((d for d in _DISTROS if d in version), "linux")
+
+
 def serialize_device(device: Device) -> dict:
     report = json.loads(device.last_report_json) if device.last_report_json else None
     seconds_since_seen: Optional[float] = None
@@ -106,17 +125,26 @@ def serialize_device(device: Device) -> dict:
         "apt_needs_update": bool(device.apt_needs_update),
         "alerts_muted": device.alerts_muted(),
         "alerts_muted_until": device.alerts_muted_until.isoformat() if device.alerts_muted_until else None,
+        "alerts_muted_forever": device.alerts_muted_until == MUTED_FOREVER,
+        "os_key": os_key(report and report.get("system")),
         "report": report,
     }
 
 
 @router.get("/", response_class=HTMLResponse)
 def index(request: Request, session: Session = Depends(get_session)):
+    return _render_index(request, session)
+
+
+def _render_index(request: Request, session: Session, add_error: str = "", add_name: str = ""):
     devices = session.exec(select(Device).order_by(Device.name)).all()
     serialized = [serialize_device(d) for d in devices]
     apt_alert_count = sum(1 for d in serialized if d["apt_needs_update"])
     return templates.TemplateResponse(
-        "index.html", {"request": request, "devices": serialized, "apt_alert_count": apt_alert_count}
+        "index.html",
+        {"request": request, "devices": serialized, "apt_alert_count": apt_alert_count,
+         "add_error": add_error, "add_name": add_name},
+        status_code=400 if add_error else 200,
     )
 
 
@@ -186,22 +214,42 @@ def alerts_page(request: Request, session: Session = Depends(get_session)):
 
 @router.post("/devices")
 def create_device(
+    request: Request,
     name: str = Form(...),
     notes: str = Form(""),
+    platform: str = Form("docker"),
     report_interval_seconds: int = Form(60),
     offline_after_seconds: int = Form(150),
+    ssh_enabled: bool = Form(False),
+    ssh_host: str = Form(""),
+    ssh_port: int = Form(22),
     session: Session = Depends(get_session),
 ):
+    name = name.strip()
+    error = ""
+    if not name:
+        error = "Name is required."
+    elif session.exec(select(Device).where(Device.name == name)).first():
+        error = f"A device named '{name}' already exists."
+    elif report_interval_seconds < 5 or offline_after_seconds <= report_interval_seconds:
+        error = "Offline after must be longer than the report interval (min 5s)."
+    if error:
+        return _render_index(request, session, add_error=error, add_name=name)
     device = Device(
         name=name,
-        notes=notes,
+        notes=notes.strip(),
         report_interval_seconds=report_interval_seconds,
         offline_after_seconds=offline_after_seconds,
+        ssh_enabled=ssh_enabled,
+        ssh_host=ssh_host.strip() or None,
+        ssh_port=ssh_port or 22,
     )
     session.add(device)
     session.commit()
     session.refresh(device)
-    return RedirectResponse(url=f"/devices/{device.id}", status_code=303)
+    if platform not in ("docker", "native", "windows"):
+        platform = "docker"
+    return RedirectResponse(url=f"/devices/{device.id}?platform={platform}#client-config", status_code=303)
 
 
 @router.get("/devices/{device_id}", response_class=HTMLResponse)
@@ -234,9 +282,13 @@ def device_detail(request: Request, device_id: int, session: Session = Depends(g
 
 @router.post("/devices/{device_id}/mute")
 def mute_device(device_id: int, minutes: int = Form(...), session: Session = Depends(get_session)):
+    """minutes > 0 mutes for that long, -1 mutes until unmuted, 0 unmutes."""
     device = session.get(Device, device_id)
     if device:
-        device.alerts_muted_until = datetime.utcnow() + timedelta(minutes=minutes) if minutes > 0 else None
+        if minutes < 0:
+            device.alerts_muted_until = MUTED_FOREVER
+        else:
+            device.alerts_muted_until = datetime.utcnow() + timedelta(minutes=minutes) if minutes > 0 else None
         session.add(device)
         session.commit()
     return RedirectResponse(url=f"/devices/{device_id}", status_code=303)

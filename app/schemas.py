@@ -3,6 +3,15 @@ from typing import List, Optional
 from pydantic import BaseModel
 
 
+class DiskInfo(BaseModel):
+    mount: str                   # "C:\\" or "/mnt/data"
+    label: Optional[str] = None  # Windows volume label
+    fstype: Optional[str] = None
+    percent: float
+    used_bytes: Optional[int] = None
+    total_bytes: Optional[int] = None
+
+
 class SystemInfo(BaseModel):
     hostname: str
     cpu_percent: float
@@ -13,6 +22,7 @@ class SystemInfo(BaseModel):
     disk_percent: float
     disk_used_bytes: Optional[int] = None
     disk_total_bytes: Optional[int] = None
+    disks: list[DiskInfo] = []   # every drive; disk_* above stays the system drive (alerts, history)
     uptime_seconds: float
     local_ip: Optional[str] = None
     os: Optional[str] = None  # "linux" | "windows"; absent from older clients (= linux)

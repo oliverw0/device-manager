@@ -34,11 +34,24 @@ function fmtRelative(seconds) {
 }
 
 /* ---------- component renderers (mirror _macros.html) ---------- */
-function meter(value) {
+function meter(value, label = "", title = "", extraCls = "") {
   if (value === null || value === undefined) return '<span class="faint">—</span>';
   const p = Math.round(value);
   const cls = p >= 90 ? "crit" : p >= 70 ? "warn" : "ok";
-  return `<div class="meter" title="${p}%"><div class="meter-fill ${cls}" style="width:${Math.min(100, p)}%"></div><span class="meter-label">${p}%</span></div>`;
+  return `<div class="meter ${extraCls}" title="${escapeHtml(title || p + "%")}"><div class="meter-fill ${cls}" style="width:${Math.min(100, p)}%"></div><span class="meter-label">${escapeHtml(label)}${p}%</span></div>`;
+}
+
+const gib = (n) => ((n || 0) / 1073741824).toFixed(1) + " GiB";
+
+function diskCell(sys) {
+  if (!sys || !sys.disks || sys.disks.length < 2) return meter(sys ? sys.disk_percent : null);
+  return '<div class="disk-stack">' + sys.disks.map((dk) => {
+    const full = dk.mount.replace(/\\+$/, "") || dk.mount;
+    const short = full.includes(":") ? full : (full.replace(/\/+$/, "").split("/").pop() || "/");
+    const tip = full + (dk.label ? " " + dk.label : "") +
+      (dk.total_bytes ? ` · ${gib(dk.used_bytes)} / ${gib(dk.total_bytes)}` : "");
+    return meter(dk.percent, short + " ", tip, "mini");
+  }).join("") + "</div>";
 }
 
 function statusDot(isOnline) {
@@ -71,7 +84,7 @@ function renderDeviceRows(devices) {
   if (!tbody) return;
 
   if (devices.length === 0) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="10">No devices yet. Add one below to get an API key.</td></tr>';
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="10">No devices yet. Use <b>+ Add device</b> to get an API key.</td></tr>';
   } else {
     tbody.innerHTML = devices.map((d) => {
       const sys = d.report && d.report.system;
@@ -80,12 +93,14 @@ function renderDeviceRows(devices) {
       const upg = d.report && d.report.apt ? d.report.apt.upgradable : null;
       const aptTip = upg != null ? `${upg} packages need updating` : "Packages need updating";
       const aptFlag = d.apt_needs_update ? `<span class="pkg-badge tip-below" data-tip="${aptTip}"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v8a2 2 0 0 1-1 1.73l-7 4a2 2 0 0 1-2 0l-7-4A2 2 0 0 1 3 16V8a2 2 0 0 1 1-1.73l7-4a2 2 0 0 1 2 0l7 4A2 2 0 0 1 21 8z"/><polyline points="3.3 7 12 12 20.7 7"/><line x1="12" y1="22" x2="12" y2="12"/></svg></span>` : "";
+      const osIcon = d.os_key
+        ? `<span class="os-icon os-${d.os_key} tip-below" data-tip="${escapeHtml(sys.os_version || sys.os)}"></span>` : "";
       return `<tr class="clickable${d.apt_needs_update ? " needs-update" : ""}" onclick="navTo('/devices/${d.id}')">
         <td class="col-status">${statusDot(d.is_online)}</td>
-        <td class="name-cell"><span class="name-line"><span class="name">${escapeHtml(d.name)}</span>${aptFlag}</span>${hostname}</td>
+        <td class="name-cell"><span class="name-line">${osIcon}<span class="name">${escapeHtml(d.name)}</span>${aptFlag}</span>${hostname}</td>
         <td class="col-cpu">${meter(sys ? sys.cpu_percent : null)}</td>
         <td class="col-mem">${meter(sys ? sys.mem_percent : null)}</td>
-        <td class="col-disk">${meter(sys ? sys.disk_percent : null)}</td>
+        <td class="col-disk">${diskCell(sys)}</td>
         <td class="col-ts">${tailscaleLogo(d.report ? d.report.tailscale : null, !d.is_online)}</td>
         <td class="col-ctr">${containerSummary(d.report ? d.report.docker_containers : null, !d.is_online)}</td>
         <td class="col-seen last-seen-cell muted" title="${escapeHtml(fmtAbsolute(d.last_seen_at))}">
@@ -718,20 +733,50 @@ function initSshToggle() {
 
 function initInstallCmd() {
   const cmd = document.getElementById("install-cmd");
-  const win = document.getElementById("install-cmd-win");
   const env = document.getElementById("env-snippet");
-  if (!cmd && !win && !env) return;
-  const key = (cmd || win || env).dataset.key;
+  if (!cmd && !env) return;
+  const key = (cmd || env).dataset.key;
   const host = location.origin;
-  if (cmd) cmd.textContent =
-    "git clone https://github.com/oliverw0/device-manager-client && cd device-manager-client\n" +
-    `sudo HOST_URL=${host} API_KEY=${key} ./install.sh`;
-  // TLS 1.2 line: Windows PowerShell 5.1 on older Server builds can't reach GitHub without it.
-  if (win) win.textContent =
-    `$env:HOST_URL='${host}'; $env:API_KEY='${key}'\n` +
-    "[Net.ServicePointManager]::SecurityProtocol = 'Tls12'\n" +
-    "irm https://raw.githubusercontent.com/oliverw0/device-manager-client/main/install.ps1 | iex";
   if (env) env.textContent = `HOST_URL=${host}\nAPI_KEY=${key}`;
+  if (!cmd) return;
+  const clone = "git clone https://github.com/oliverw0/device-manager-client && cd device-manager-client\n";
+  const platforms = {
+    docker: [clone + `sudo HOST_URL=${host} API_KEY=${key} ./install.sh`,
+      "Run on the machine. Writes .env, auto-enables the Tailscale mount if present, and starts the client in Docker."],
+    native: [clone + `sudo HOST_URL=${host} API_KEY=${key} ./install-native.sh`,
+      "For a Linux box without Docker: installs a venv and a systemd service."],
+    // TLS 1.2 line: Windows PowerShell 5.1 on older Server builds can't reach GitHub without it.
+    windows: [`$env:HOST_URL='${host}'; $env:API_KEY='${key}'\n` +
+      "[Net.ServicePointManager]::SecurityProtocol = 'Tls12'\n" +
+      "irm https://raw.githubusercontent.com/oliverw0/device-manager-client/main/install.ps1 | iex",
+      "Run in an elevated PowerShell (Run as Administrator). Say yes to the SSH step to enable the console."],
+  };
+  const hint = document.getElementById("install-hint");
+  const tabs = document.querySelectorAll(".platform-tabs [data-platform]");
+  const show = (p) => {
+    if (!platforms[p]) p = "docker";
+    [cmd.textContent, hint.textContent] = platforms[p];
+    tabs.forEach((t) => t.classList.toggle("active", t.dataset.platform === p));
+  };
+  tabs.forEach((t) => t.addEventListener("click", () => show(t.dataset.platform)));
+  show(new URLSearchParams(location.search).get("platform") || cmd.dataset.default);
+}
+
+function initAddDeviceDialog(openNow) {
+  const dlg = document.getElementById("add-device-dialog");
+  if (!dlg) return;
+  const ssh = document.getElementById("add-ssh");
+  const fields = document.getElementById("add-ssh-fields");
+  ssh.addEventListener("change", () => { fields.hidden = !ssh.checked; });
+  const form = document.getElementById("add-device-form");
+  const interval = form.elements.report_interval_seconds;
+  const offline = form.elements.offline_after_seconds;
+  const check = () => offline.setCustomValidity(
+    +offline.value > +interval.value ? "" : "Must be longer than the report interval.");
+  interval.addEventListener("input", check);
+  offline.addEventListener("input", check);
+  dlg.addEventListener("click", (e) => { if (e.target === dlg) dlg.close(); });  // backdrop click
+  if (openNow) dlg.showModal();
 }
 
 function initSshProvisionCmd() {

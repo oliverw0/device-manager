@@ -7,6 +7,8 @@
 <div class="page-head">
   <h1>Devices</h1>
   <span class="live"><span class="pulse"></span> Live &middot; auto-refreshing</span>
+  <span class="spacer"></span>
+  <button type="button" onclick="document.getElementById('add-device-dialog').showModal()">+ Add device</button>
 </div>
 
 <div class="tiles">
@@ -42,14 +44,14 @@
         <tr class="clickable {{ 'needs-update' if d.apt_needs_update }}" onclick="navTo('/devices/{{ d.id }}')">
           <td class="col-status">{{ ui.status_dot(d.is_online) }}</td>
           <td class="name-cell">
-            <span class="name-line"><span class="name">{{ d.name }}</span>{% if d.apt_needs_update %}{% set upg = d.report.apt.upgradable if d.report and d.report.apt else none %}<span class="pkg-badge tip-below" data-tip="{{ (upg ~ ' packages need updating') if upg is not none else 'Packages need updating' }}"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v8a2 2 0 0 1-1 1.73l-7 4a2 2 0 0 1-2 0l-7-4A2 2 0 0 1 3 16V8a2 2 0 0 1 1-1.73l7-4a2 2 0 0 1 2 0l7 4A2 2 0 0 1 21 8z"/><polyline points="3.3 7 12 12 20.7 7"/><line x1="12" y1="22" x2="12" y2="12"/></svg></span>{% endif %}</span>
+            <span class="name-line">{% if d.os_key %}<span class="os-icon os-{{ d.os_key }} tip-below" data-tip="{{ d.report.system.os_version or d.report.system.os }}"></span>{% endif %}<span class="name">{{ d.name }}</span>{% if d.apt_needs_update %}{% set upg = d.report.apt.upgradable if d.report and d.report.apt else none %}<span class="pkg-badge tip-below" data-tip="{{ (upg ~ ' packages need updating') if upg is not none else 'Packages need updating' }}"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v8a2 2 0 0 1-1 1.73l-7 4a2 2 0 0 1-2 0l-7-4A2 2 0 0 1 3 16V8a2 2 0 0 1 1-1.73l7-4a2 2 0 0 1 2 0l7 4A2 2 0 0 1 21 8z"/><polyline points="3.3 7 12 12 20.7 7"/><line x1="12" y1="22" x2="12" y2="12"/></svg></span>{% endif %}</span>
             {% if d.report and d.report.system and d.report.system.hostname and d.report.system.hostname != d.name %}
             <span class="sub">{{ d.report.system.hostname }}</span>
             {% endif %}
           </td>
           <td class="col-cpu">{{ ui.meter(d.report.system.cpu_percent if d.report else none, ui.cpu_title(d.report.system) if d.report else '') }}</td>
           <td class="col-mem">{{ ui.meter(d.report.system.mem_percent if d.report else none, ui.mem_title(d.report.system) if d.report else '') }}</td>
-          <td class="col-disk">{{ ui.meter(d.report.system.disk_percent if d.report else none, ui.disk_title(d.report.system) if d.report else '') }}</td>
+          <td class="col-disk">{{ ui.disk_cell(d.report.system if d.report else none) }}</td>
           <td class="col-ts">{{ ui.tailscale_logo(d.report.tailscale if d.report else none, offline=not d.is_online) }}</td>
           <td class="col-ctr">{{ ui.container_summary(d.report.docker_containers if d.report else none, offline=not d.is_online) }}</td>
           <td class="col-seen last-seen-cell muted" title="{{ d.last_seen_at | dt }}">
@@ -61,26 +63,64 @@
           <td class="col-go"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></td>
         </tr>
         {% else %}
-        <tr class="empty-row"><td colspan="10">No devices yet. Add one below to get an API key.</td></tr>
+        <tr class="empty-row"><td colspan="10">No devices yet. Use <b>+ Add device</b> to get an API key.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </section>
 
-<details class="add-device">
-  <summary><span class="plus">+</span> Add a device</summary>
-  <div class="add-body">
-    <p class="muted" style="margin-top:0">Create the device here first, then copy the generated API key into that machine's client config.</p>
-    <form method="post" action="/devices" class="form-grid">
-      <label>Name <input type="text" name="name" placeholder="web-vm-01" required /></label>
-      <label>Notes <input type="text" name="notes" placeholder="optional" /></label>
-      <label>Report interval (s) <input type="number" name="report_interval_seconds" value="60" min="5" /></label>
-      <label>Offline after (s) <input type="number" name="offline_after_seconds" value="150" min="10" /></label>
-      <div class="full-width"><button type="submit">Create device</button></div>
-    </form>
-  </div>
-</details>
+<dialog id="add-device-dialog" class="add-dialog">
+  <form method="post" action="/devices" id="add-device-form">
+    <div class="dialog-head">
+      <h2>Add a device</h2>
+      <span class="spacer"></span>
+      <button type="button" class="secondary" onclick="this.closest('dialog').close()" title="Close">✕</button>
+    </div>
+    <p class="muted dialog-intro">Creates the device and its API key. The next page shows the install command for the platform you pick.</p>
+    {% if add_error %}<p class="form-error">{{ add_error }}</p>{% endif %}
+
+    <fieldset>
+      <legend><span class="step">1</span> Device</legend>
+      <div class="form-grid">
+        <label>Name <input type="text" name="name" placeholder="web-vm-01" required maxlength="64" autofocus value="{{ add_name or '' }}" /></label>
+        <label>Notes <input type="text" name="notes" placeholder="optional" /></label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend><span class="step">2</span> Platform</legend>
+      <div class="choice-row">
+        <label class="choice"><input type="radio" name="platform" value="docker" checked /><span><b>Linux · Docker</b><small>install.sh, runs in a container</small></span></label>
+        <label class="choice"><input type="radio" name="platform" value="native" /><span><b>Linux · native</b><small>install-native.sh, systemd service</small></span></label>
+        <label class="choice"><input type="radio" name="platform" value="windows" /><span><b>Windows</b><small>install.ps1, scheduled task</small></span></label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend><span class="step">3</span> Monitoring</legend>
+      <div class="form-grid">
+        <label>Report every (s) <input type="number" name="report_interval_seconds" value="60" min="5" required /></label>
+        <label>Offline after (s) <input type="number" name="offline_after_seconds" value="150" min="10" required /></label>
+      </div>
+      <p class="muted hint">Offline after should be at least two report intervals, so one missed report doesn't raise an alert.</p>
+    </fieldset>
+
+    <fieldset>
+      <legend><span class="step">4</span> SSH terminal <span class="muted">optional</span></legend>
+      <label class="check-line"><input type="checkbox" name="ssh_enabled" value="true" id="add-ssh" /> Enable the in-browser terminal</label>
+      <div class="form-grid" id="add-ssh-fields" hidden>
+        <label>Host override <input type="text" name="ssh_host" placeholder="auto: Tailscale / last IP" /></label>
+        <label>Port <input type="number" name="ssh_port" value="22" min="1" max="65535" /></label>
+      </div>
+    </fieldset>
+
+    <div class="dialog-actions">
+      <button type="button" class="secondary" onclick="this.closest('dialog').close()">Cancel</button>
+      <button type="submit">Create device</button>
+    </div>
+  </form>
+</dialog>
 {% endblock %}
 
 {% block scripts %}
@@ -91,5 +131,6 @@
     if (b) b.hidden = false;
   }
   startDevicePolling('/devices.json');
+  initAddDeviceDialog({{ 'true' if add_error else 'false' }});
 </script>
 {% endblock %}

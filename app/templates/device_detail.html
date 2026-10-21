@@ -18,11 +18,11 @@
   <div class="mute-row">
     {% if device.alerts_muted %}
     <span class="chip warn">alerts muted</span>
-    <span class="muted" style="font-size:12px">until {{ device.alerts_muted_until | dt }}</span>
+    <span class="muted" style="font-size:12px">{% if device.alerts_muted_forever %}until unmuted{% else %}until {{ device.alerts_muted_until | dt }}{% endif %}</span>
     <form method="post" action="/devices/{{ device.id }}/mute"><input type="hidden" name="minutes" value="0"><button type="submit" class="secondary">Unmute</button></form>
     {% else %}
     <span class="muted" style="font-size:12px">Mute alerts</span>
-    {% for m, l in [(60, '1h'), (240, '4h'), (1440, '24h')] %}
+    {% for m, l in [(60, '1h'), (240, '4h'), (1440, '24h'), (-1, 'Always')] %}
     <form method="post" action="/devices/{{ device.id }}/mute"><input type="hidden" name="minutes" value="{{ m }}"><button type="submit" class="secondary">{{ l }}</button></form>
     {% endfor %}
     {% endif %}
@@ -48,7 +48,13 @@
     <h2>Resources</h2>
     <div class="metric-row"><span class="metric-label">CPU</span>{{ ui.meter(sys.cpu_percent, ui.cpu_title(sys)) }}</div>
     <div class="metric-row"><span class="metric-label">Memory</span>{{ ui.meter(sys.mem_percent, ui.mem_title(sys)) }}</div>
+    {% if sys.disks and sys.disks|length > 1 %}
+    {% for dk in sys.disks %}
+    <div class="metric-row"><span class="metric-label" title="{{ ui.disk_tip(dk) }}">Disk {{ loop.index }}</span>{{ ui.meter(dk.percent, ui.disk_tip(dk)) }}<span class="disk-name">{{ dk.mount.rstrip('\\') or dk.mount }}{% if dk.label %} · {{ dk.label }}{% endif %}</span>{% if loop.first and disk_full_days is not none %}<span class="chip {{ 'bad' if disk_full_days < 14 else 'warn' }}" title="Projected from the system drive's usage trend">{% if disk_full_days < 1 %}&lt;1d to full{% else %}~{{ disk_full_days | round | int }}d to full{% endif %}</span>{% endif %}</div>
+    {% endfor %}
+    {% else %}
     <div class="metric-row"><span class="metric-label">Disk</span>{{ ui.meter(sys.disk_percent, ui.disk_title(sys)) }}{% if disk_full_days is not none %}<span class="chip {{ 'bad' if disk_full_days < 14 else 'warn' }}" style="margin-left:8px" title="Projected from the disk-usage trend">{% if disk_full_days < 1 %}&lt;1d to full{% else %}~{{ disk_full_days | round | int }}d to full{% endif %}</span>{% endif %}</div>
+    {% endif %}
     {% if apt and apt.available %}
     <div class="metric-row"><span class="metric-label">{{ 'Updates' if is_windows else 'Packages' }}</span>{{ ui.apt_chip(apt, device.apt_needs_update) }}{% if apt.reboot_required %}<span class="chip warn" style="margin-left:8px" title="Windows needs a restart to finish installing updates">reboot pending</span>{% endif %}</div>
     {% endif %}
@@ -249,38 +255,24 @@
 </section>
 
 <h2 class="section-head">Configuration</h2>
-<div class="section-grid">
-  <section class="panel">
+<section class="panel" id="client-config">
     <h2>Client configuration</h2>
     <h3>API key</h3>
     <div class="copy-row">
       <code class="key-box" id="api-key">{{ api_key }}</code>
       <button type="button" class="secondary copy-btn" onclick="copyText('{{ api_key }}', this)">Copy</button>
     </div>
-    {% set install_linux %}
-    <h3>Install on Linux</h3>
-    <p class="muted" style="font-size:12px;margin:0 0 6px">
-      Get the client repo onto the machine, then run the installer — it writes <code>.env</code>,
-      auto-enables the Tailscale mount if present, and starts the client. (Docker required;
-      for a box without Docker use <code>install-native.sh</code>.)
-    </p>
+    <h3>Install on the device</h3>
+    <div class="platform-tabs" role="tablist">
+      <button type="button" class="secondary" data-platform="docker">Linux · Docker</button>
+      <button type="button" class="secondary" data-platform="native">Linux · native</button>
+      <button type="button" class="secondary" data-platform="windows">Windows</button>
+    </div>
+    <p class="muted" id="install-hint" style="font-size:12px;margin:0 0 6px"></p>
     <div class="copy-row">
-      <pre class="key-box" id="install-cmd" data-key="{{ api_key }}">loading…</pre>
+      <pre class="key-box" id="install-cmd" data-key="{{ api_key }}" data-default="{{ 'windows' if is_windows else 'docker' }}">loading…</pre>
       <button type="button" class="secondary copy-btn" onclick="copyText(document.getElementById('install-cmd').textContent, this)">Copy</button>
     </div>
-    {% endset %}
-    {% set install_windows %}
-    <h3>Install on Windows (desktop or Server)</h3>
-    <p class="muted" style="font-size:12px;margin:0 0 6px">
-      Paste into an <strong>elevated</strong> PowerShell. Installs Python if needed, runs the client
-      as a SYSTEM scheduled task, and offers to set up OpenSSH for the in-browser PowerShell console.
-    </p>
-    <div class="copy-row">
-      <pre class="key-box" id="install-cmd-win" data-key="{{ api_key }}">loading…</pre>
-      <button type="button" class="secondary copy-btn" onclick="copyText(document.getElementById('install-cmd-win').textContent, this)">Copy</button>
-    </div>
-    {% endset %}
-    {% if is_windows %}{{ install_windows }}{{ install_linux }}{% else %}{{ install_linux }}{{ install_windows }}{% endif %}
     <h3>Or set .env manually</h3>
     <pre class="key-box" id="env-snippet" data-key="{{ api_key }}">loading…</pre>
     <form method="post" action="/devices/{{ device.id }}/rotate-key" onsubmit="return confirm('Rotate API key? The client config must be updated to match or it will be locked out.');" style="margin-top:12px">
@@ -288,14 +280,13 @@
     </form>
   </section>
 
-  <section class="panel">
+  <section class="panel danger-zone">
     <h2>Danger zone</h2>
     <p class="muted" style="margin-top:0">Removes this device and all of its history and alerts. This cannot be undone.</p>
     <form method="post" action="/devices/{{ device.id }}/delete" onsubmit="return confirm('Delete this device and all its history?');">
       <button type="submit" class="danger">Delete device</button>
     </form>
   </section>
-</div>
 {# Mobile slide-in bar for container/stack actions (buttons cloned from the tapped row). #}
 <div id="action-sheet" class="action-sheet" hidden>
   <div class="sheet-backdrop" onclick="closeActionSheet()"></div>

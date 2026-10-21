@@ -42,10 +42,11 @@ NOW = datetime.utcnow()
 
 
 def report(hostname, cpu, mem, disk, cores, mem_total_g, disk_total_g, uptime_s,
-           tailscale=None, ssh_auth=None, containers=None, apt=None, ssh_users=None):
+           tailscale=None, ssh_auth=None, containers=None, apt=None, ssh_users=None,
+           os="linux", os_version="Ubuntu 24.04.1 LTS", disks=None):
     return {
         "system": {
-            "hostname": hostname,
+            "hostname": hostname, "os": os, "os_version": os_version, "disks": disks or [],
             "cpu_percent": cpu, "cpu_cores": cores,
             "mem_percent": mem, "mem_used_bytes": int(mem_total_g * GIB * mem / 100),
             "mem_total_bytes": mem_total_g * GIB,
@@ -60,6 +61,11 @@ def report(hostname, cpu, mem, disk, cores, mem_total_g, disk_total_g, uptime_s,
         "apt": apt,
         "agent_version": "1.0.0",
     }
+
+
+def disk(mount, label, percent, total_g):
+    return {"mount": mount, "label": label, "fstype": "NTFS" if ":" in mount else "ext4", "percent": percent,
+            "used_bytes": int(total_g * GIB * percent / 100), "total_bytes": total_g * GIB}
 
 
 def container(name, image, running=True, cpu=None, mem=None, stack=None):
@@ -99,7 +105,8 @@ DEVICES = [
         name="db-vm-01", notes="Postgres primary", online=True,
         ssh_enabled=True, apt_needs_update=True, tailscale_connected=True,
         report=report(
-            "db-vm-01", 78.0, 84.0, 91.0, 8, 32, 500, 92 * 86400,
+            "db-vm-01", 78.0, 84.0, 91.0, 8, 32, 500, 92 * 86400, os_version="Debian GNU/Linux 12 (bookworm)",
+            disks=[disk("/", None, 91.0, 500), disk("/var/lib/postgresql", None, 58.0, 2000)],
             tailscale={"connected": True, "backend_state": "Running",
                        "ips": ["100.101.102.104"], "dns_name": "db-vm-01.tuna-cod.ts.net",
                        "tailnet": "tuna-cod.ts.net", "exit_node": None},
@@ -115,6 +122,7 @@ DEVICES = [
         ssh_enabled=False, apt_needs_update=False, tailscale_connected=False,
         report=report(
             "homeassistant", 8.0, 39.0, 22.0, 4, 4, 32, 6 * 86400,
+            os_version="Raspbian GNU/Linux 12 (bookworm)",
             tailscale={"connected": False, "backend_state": "Stopped", "ips": [],
                        "dns_name": None, "tailnet": "tuna-cod.ts.net"},
             ssh_auth={"recent_accepted_count": 0, "recent_failed_count": 0,
@@ -131,11 +139,26 @@ DEVICES = [
         ssh_enabled=False, apt_needs_update=False, tailscale_connected=None,
         last_seen_override=NOW - timedelta(hours=6),
         report=report(
-            "backup-nas", 0.0, 12.0, 66.0, 2, 8, 4000, 40 * 86400,
+            "backup-nas", 0.0, 12.0, 66.0, 2, 8, 4000, 40 * 86400, os_version="Arch Linux",
             tailscale={"backend_state": "not_installed", "connected": False, "ips": []},
             ssh_auth={"recent_accepted_count": 0, "recent_failed_count": 0},
             containers=[],
             apt={"available": False},
+        ),
+    ),
+    dict(
+        name="gaming-pc", notes="Windows desktop", online=True,
+        ssh_enabled=True, apt_needs_update=False, tailscale_connected=True,
+        report=report(
+            "OLIVE-PC", 18.0, 47.0, 93.3, 16, 32, 930, 3 * 86400,
+            os="windows", os_version="Windows 11 Home (25H2)",
+            disks=[disk("C:\\", None, 93.3, 930), disk("D:\\", "BIG SSD", 33.8, 1863),
+                   disk("F:\\", "SSD 3", 59.6, 931), disk("S:\\", "SSD", 70.8, 477)],
+            tailscale={"connected": True, "backend_state": "Running",
+                       "ips": ["100.101.102.105"], "dns_name": "olive-pc.tuna-cod.ts.net",
+                       "tailnet": "tuna-cod.ts.net", "exit_node": None},
+            ssh_auth={"recent_accepted_count": 0, "recent_failed_count": 0},
+            apt={"available": False}, ssh_users=["olive"],
         ),
     ),
 ]

@@ -10,6 +10,15 @@
 {% macro _gib(n) -%}{{ '%.1f'|format((n or 0) / 1073741824) }} GiB{%- endmacro %}
 {% macro mem_title(sys) -%}{%- if sys and sys.mem_total_bytes -%}{{ _gib(sys.mem_used_bytes) }} / {{ _gib(sys.mem_total_bytes) }}{%- endif -%}{%- endmacro %}
 {% macro disk_title(sys) -%}{%- if sys and sys.disk_total_bytes -%}{{ _gib(sys.disk_used_bytes) }} / {{ _gib(sys.disk_total_bytes) }}{%- endif -%}{%- endmacro %}
+{# One drive: short name for labels ("C:" or "/mnt/data"), full name for tooltips. #}
+{% macro disk_short(dk) -%}{{ dk.mount.rstrip('\\') if ':' in dk.mount else (dk.mount.rstrip('/').split('/')[-1] or '/') }}{%- endmacro %}
+{% macro disk_tip(dk) -%}{{ dk.mount.rstrip('\\') or dk.mount }}{% if dk.label %} {{ dk.label }}{% endif %}{% if dk.total_bytes %} · {{ _gib(dk.used_bytes) }} / {{ _gib(dk.total_bytes) }}{% endif %}{%- endmacro %}
+{# Table cell: one meter per drive when there are several, else the system-drive meter. #}
+{% macro disk_cell(sys) -%}
+{%- if sys and sys.disks and sys.disks|length > 1 -%}
+<div class="disk-stack">{% for dk in sys.disks %}{% set p = dk.percent|round|int %}<div class="meter mini" title="{{ disk_tip(dk) }}"><div class="meter-fill {{ 'crit' if p>=90 else 'warn' if p>=70 else 'ok' }}" style="width:{{ [p,100]|min }}%"></div><span class="meter-label">{{ disk_short(dk) }} {{ p }}%</span></div>{% endfor %}</div>
+{%- else -%}{{ meter(sys.disk_percent if sys else none, disk_title(sys) if sys else '') }}{%- endif -%}
+{%- endmacro %}
 {% macro cpu_title(sys) -%}{%- if sys and sys.cpu_cores -%}{{ sys.cpu_percent|round|int }}% of {{ sys.cpu_cores }} cores{%- endif -%}{%- endmacro %}
 
 {% macro status_chip(is_online) -%}
