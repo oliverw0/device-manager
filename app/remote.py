@@ -13,7 +13,8 @@ import json
 
 # Where install.ps1 puts the client; "$env:ProgramFiles" expands on the device.
 WIN_CLIENT_DIR = r"$env:ProgramFiles\DeviceManagerClient"
-# The client repo's main branch, raw files (also where the latest version is read).
+# The client repo, and its main branch's raw files (also where the latest version is read).
+CLIENT_REPO = "https://github.com/oliverw0/device-manager-client"
 CLIENT_RAW = "https://raw.githubusercontent.com/oliverw0/device-manager-client/main"
 
 

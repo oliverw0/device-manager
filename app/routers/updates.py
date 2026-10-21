@@ -33,26 +33,72 @@ APT_CMD = (
     "export DEBIAN_FRONTEND=noninteractive; "
     "apt-get update -qq && apt-get -y -o APT::Status-Fd=1 upgrade"
 )
-# set -e: any failed step fails the job (it used to end in an unconditional
-# `echo STAGE:done`, so a failed pull still reported success). safe.directory:
-# root pulls a checkout usually owned by the user who cloned it, which git
-# otherwise refuses as "dubious ownership".
-CLIENT_CMD = (
-    'set -e; '
-    'if docker inspect devicemanager-client >/dev/null 2>&1; then '
-    'wd=$(docker inspect devicemanager-client -f \'{{index .Config.Labels "com.docker.compose.project.working_dir"}}\'); '
-    '[ -n "$wd" ] || { echo "The client container has no compose working directory to update."; exit 1; }; '
-    'echo "STAGE:git"; cd "$wd"; git -c safe.directory="*" pull --ff-only; '
-    'echo "STAGE:build"; docker compose up -d --build --progress plain || docker-compose up -d --build; '
-    'else '
-    'echo "STAGE:git"; cd /opt/devicemanager-client; git -c safe.directory="*" pull --ff-only; '
-    'echo "STAGE:restart"; systemctl restart devicemanager-client; '
-    'fi; echo "STAGE:done"'
-)
+# Linux client update, POSIX sh run as root over SSH. It finds the client however
+# it was installed and fails loudly (set -e) instead of reporting success:
+#  - Docker: the container by name, or by compose service label (older compose
+#    named it <project>-devicemanager-client-1). `git pull` in its compose dir,
+#    with local edits (custom mounts in docker-compose.yml) set aside and put
+#    back; if they clash, everything is restored and the job fails with advice.
+#  - Native (install-native.sh): copies files, it's not a git checkout, so the
+#    latest code is fetched (git clone, else the GitHub tarball) and copied in.
+# safe.directory: root pulls a checkout owned by whoever cloned it.
+CLIENT_CMD = f"""set -e
+G='git -c safe.directory=*'
+REPO='{remote.CLIENT_REPO}'
+pull() {{
+  cd "$1"
+  before=$($G rev-parse HEAD)
+  stashed=
+  if [ -n "$($G status --porcelain --untracked-files=no)" ]; then
+    echo "Keeping your local edits to: $($G status --porcelain --untracked-files=no | cut -c4- | tr '\\n' ' ')"
+    $G stash push -q -m 'devicemanager update' && stashed=1
+  fi
+  $G pull --ff-only
+  if [ -n "$stashed" ] && ! $G stash pop -q; then
+    $G reset -q --hard "$before"
+    $G stash pop -q
+    echo "Your local edits clash with this update, so nothing was changed. Move custom mounts into docker-compose.override.yml (updates never touch it), then update again."
+    exit 1
+  fi
+}}
+cid=$( (docker ps -aq --filter 'name=^devicemanager-client$'; docker ps -aq --filter 'label=com.docker.compose.service=devicemanager-client') 2>/dev/null | head -n 1)
+if [ -n "$cid" ]; then
+  wd=$(docker inspect "$cid" -f '{{{{index .Config.Labels "com.docker.compose.project.working_dir"}}}}')
+  [ -n "$wd" ] || {{ echo "The client container wasn't started with docker compose, so there's no checkout to update."; exit 1; }}
+  echo "STAGE:git"; pull "$wd"
+  echo "STAGE:build"
+  if docker compose --progress plain version >/dev/null 2>&1; then docker compose --progress plain up -d --build
+  elif docker compose version >/dev/null 2>&1; then docker compose up -d --build
+  else docker-compose up -d --build; fi
+elif systemctl cat devicemanager-client >/dev/null 2>&1; then
+  dir=$(systemctl show -p WorkingDirectory --value devicemanager-client 2>/dev/null || true)
+  [ -n "$dir" ] && [ -d "$dir" ] || dir=/opt/devicemanager-client
+  echo "STAGE:git"
+  if [ -d "$dir/.git" ]; then
+    pull "$dir"
+  else
+    tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+    if command -v git >/dev/null 2>&1; then git clone -q --depth 1 "$REPO" "$tmp/src"
+    else
+      mkdir "$tmp/src"
+      {{ curl -fsSL "$REPO/archive/refs/heads/main.tar.gz" 2>/dev/null || wget -qO- "$REPO/archive/refs/heads/main.tar.gz"; }} | tar xz -C "$tmp/src" --strip-components=1
+    fi
+    [ -f "$tmp/src/client/main.py" ] || {{ echo "Downloaded code doesn't contain the client."; exit 1; }}
+    rm -rf "$dir/client"; cp -r "$tmp/src/client" "$dir/"; cp "$tmp/src/requirements.txt" "$dir/"
+    echo "Copied the latest client into $dir"
+  fi
+  echo "STAGE:deps"; "$dir/venv/bin/pip" install -q --disable-pip-version-check -r "$dir/requirements.txt"
+  echo "STAGE:restart"; systemctl restart devicemanager-client
+else
+  echo "Couldn't find the client on this machine: no devicemanager-client Docker container and no devicemanager-client systemd service. Reinstall it with install.sh or install-native.sh."
+  exit 1
+fi
+echo "STAGE:done"
+"""
 CLIENT_STAGES = {
     "git": (5, "Pulling latest code…"),
     "build": (15, "Building image…"),
-    "deps": (40, "Installing dependencies…"),  # Windows install.ps1 -Update
+    "deps": (40, "Installing dependencies…"),  # native Linux and Windows install.ps1 -Update
     "restart": (90, "Restarting client…"),
     "done": (100, "Done"),
 }
