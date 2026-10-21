@@ -82,8 +82,6 @@ DEVICES = [
     dict(
         name="web-vm-01", notes="Primary reverse proxy + app front end", online=True,
         ssh_enabled=True, apt_needs_update=False, tailscale_connected=True,
-        # disk history climbs over 10 days so the "days to full" projection kicks in
-        disk_trend=(52.0, 67.0, 10, 120),
         report=report(
             "web-vm-01", 34.0, 61.0, 67.0, 4, 8, 60, 14 * 86400 + 3 * 3600,
             tailscale={"connected": True, "backend_state": "Running",
@@ -203,27 +201,15 @@ def seed():
             s.refresh(dev)
             by_name[dev.name] = dev
 
-            # history: default 60 points over 5h wandering around the current value;
-            # a disk_trend device instead climbs linearly over N days for the projection.
+            # history: 60 points over 5h wandering around the current value
             sys = rep["system"]
             jit = lambda base: max(0.0, min(100.0, base + random.uniform(-8, 8)))
-            trend = d.get("disk_trend")
-            if trend:
-                start, end, days, points = trend
-                for i in range(points):
-                    ts = NOW - timedelta(days=days * (points - 1 - i) / (points - 1))
-                    disk = start + (end - start) * i / (points - 1) + random.uniform(-0.6, 0.6)
-                    s.add(ReportHistory(device_id=dev.id, timestamp=ts,
-                                        cpu_percent=jit(sys["cpu_percent"]),
-                                        mem_percent=jit(sys["mem_percent"]),
-                                        disk_percent=max(0.0, min(100.0, disk))))
-            else:
-                for i in range(60):
-                    ts = NOW - timedelta(minutes=(60 - i) * 5)
-                    s.add(ReportHistory(device_id=dev.id, timestamp=ts,
-                                        cpu_percent=jit(sys["cpu_percent"]),
-                                        mem_percent=jit(sys["mem_percent"]),
-                                        disk_percent=jit(sys["disk_percent"])))
+            for i in range(60):
+                ts = NOW - timedelta(minutes=(60 - i) * 5)
+                s.add(ReportHistory(device_id=dev.id, timestamp=ts,
+                                    cpu_percent=jit(sys["cpu_percent"]),
+                                    mem_percent=jit(sys["mem_percent"]),
+                                    disk_percent=jit(sys["disk_percent"])))
             for i in range(60):
                 ts = NOW - timedelta(minutes=(60 - i) * 5)
                 for c in rep["docker_containers"]:

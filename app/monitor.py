@@ -91,32 +91,6 @@ def check_thresholds(session: Session) -> None:
     session.commit()
 
 
-def _project_disk_full_days(points: list[tuple[float, float]]):
-    """Least-squares fit of disk% over time -> days until 100%. points are
-    (epoch_seconds, disk_percent) in any order. Returns None when there isn't
-    enough data, the trend is flat/falling, or full is >180 days out (not worth
-    showing). ponytail: linear fit — fine for a slow-filling disk, not bursty I/O."""
-    n = len(points)
-    if n < 5:
-        return None
-    xs = [p[0] for p in points]
-    ys = [p[1] for p in points]
-    mx = sum(xs) / n
-    my = sum(ys) / n
-    denom = sum((x - mx) ** 2 for x in xs)
-    if denom == 0:
-        return None
-    slope_per_sec = sum((xs[i] - mx) * (ys[i] - my) for i in range(n)) / denom
-    per_day = slope_per_sec * 86400
-    if per_day < 0.05:  # essentially flat; ignore measurement noise
-        return None
-    last = max(points, key=lambda p: p[0])[1]
-    if last >= 100:
-        return 0.0
-    days = (100 - last) / per_day
-    return days if days <= 180 else None
-
-
 async def _run_check(kind: str, target: str):
     """Returns (status, latency_ms, error). status is 'up' or 'down'."""
     loop = asyncio.get_event_loop()

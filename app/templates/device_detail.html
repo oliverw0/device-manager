@@ -91,7 +91,7 @@
         <div class="drive">
           <span class="drive-mount">{{ dk.mount.rstrip('\\') or dk.mount or 'Disk' }}</span>
           <div class="drive-mid">
-            <span class="drive-top"><span>{{ dk.label or ('System' if loop.first else '') }}</span>{% if loop.first and disk_full_days is not none %}<span class="{{ 'bad-text' if disk_full_days < 14 else 'warn-text' }}" title="Projected from the usage trend">{% if disk_full_days < 1 %}&lt;1 day to full{% else %}~{{ disk_full_days | round | int }} days to full{% endif %}</span>{% else %}<span class="muted">{{ p }}%</span>{% endif %}</span>
+            <span class="drive-top"><span>{{ dk.label or ('System' if loop.first else '') }}</span><span class="muted">{{ p }}%</span></span>
             <span class="fc-bar"><span class="{{ 'crit' if p >= 90 else 'warn' if p >= 70 else 'ok' }}" style="width:{{ [p, 100] | min }}%"></span></span>
           </div>
           <span class="drive-used">{% if dk.total_bytes %}{{ ui.gib(dk.used_bytes) }} / {{ ui.gib(dk.total_bytes) }}{% endif %}</span>
