@@ -847,7 +847,11 @@ tr:has(.stat-led.off) .os-icon { opacity: 0.45; }
 .fc-foot-l { justify-self: start; display: inline-flex; }
 .fc-foot-r { justify-self: end; display: inline-flex; align-items: center; gap: 10px; }
 .fc-ctr { display: inline-flex; align-items: center; gap: 6px; }
-.docker-ico { color: #2496ed; flex: none; }
+.docker-ico { color: var(--muted); flex: none; }
+/* Coloured and glowing by container state, like the Tailscale logo beside it. */
+.fc-ctr:has(.chip.ok) .docker-ico { color: var(--green); filter: drop-shadow(0 0 4px rgba(55, 224, 106, 0.7)); }
+.fc-ctr:has(.chip.warn) .docker-ico { color: var(--amber); filter: drop-shadow(0 0 4px rgba(255, 176, 56, 0.75)); }
+.fc-ctr:has(.chip.bad) .docker-ico { color: var(--red); filter: drop-shadow(0 0 4px rgba(255, 82, 48, 0.65)); }
 .fc-seen { font-size: 12px; color: var(--muted); white-space: nowrap; }
 .fc-foot .term-btn { padding: 7px 9px; }
 @media (max-width: 720px) {
