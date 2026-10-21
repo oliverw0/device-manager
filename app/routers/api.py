@@ -109,7 +109,9 @@ def submit_report(
         if device.apt_needs_update is not True and needs_update:
             message = f"{device.name}: packages need updating ({label})"
             session.add(AlertEvent(device_id=device.id, device_name=device.name, kind="apt_stale", message=message))
-            _notify(device, message, title="Packages out of date", priority="high", tags="package,warning")
+            # low priority: not urgent like offline/down — no sound/vibration so it
+            # won't wake anyone; still lands in the feed to action in the morning.
+            _notify(device, message, title="Packages out of date", priority="low", tags="package,warning")
         device.apt_needs_update = needs_update
 
     # container running -> exited/dead transitions (only for names in both reports)
