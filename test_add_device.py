@@ -39,7 +39,8 @@ assert os_key({"os": "windows"}) == "windows"
 assert os_key({"os": "linux", "os_version": "Raspbian GNU/Linux 12"}) == "raspbian"
 assert os_key({"os": "linux", "os_version": "Ubuntu 24.04 LTS"}) == "ubuntu"
 assert os_key({"os": "linux", "os_version": "Alpine Linux"}) == "linux"
-assert os_key({"hostname": "old-client"}) is None  # pre-os clients: no icon
+assert os_key({"hostname": "old-client"}) == "linux"  # pre-os clients are Linux: Tux
+assert os_key(None) is None  # never reported: no icon
 sysinfo = SystemInfo(hostname="h", cpu_percent=1, mem_percent=1, disk_percent=1, uptime_seconds=1,
                      os="windows", disks=[{"mount": "D:\\", "label": "BIG SSD", "percent": 33.8}])
 assert sysinfo.disks[0].label == "BIG SSD" and sysinfo.os == "windows"  # not dropped on ingest

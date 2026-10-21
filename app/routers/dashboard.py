@@ -94,9 +94,9 @@ _DISTROS = ("ubuntu", "debian", "raspbian", "fedora", "arch")
 
 
 def os_key(system: Optional[dict]) -> Optional[str]:
-    if not system or not system.get("os"):
+    if not system:
         return None
-    os_name = system["os"]
+    os_name = system.get("os") or "linux"  # clients from before OS reporting are all Linux (see remote.device_os)
     if os_name != "linux":
         return {"windows": "windows", "darwin": "macos"}.get(os_name)
     version = (system.get("os_version") or "").lower()
