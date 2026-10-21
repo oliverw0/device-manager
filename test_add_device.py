@@ -44,6 +44,9 @@ assert os_key({"os": "linux", "os_version": "Fedora Linux Asahi Remix 40 (Forty)
 assert os_key({"os": "linux", "os_version": "Debian GNU/Linux 13 (trixie)", "kernel": "6.17.9+deb13-asahi"}) == "asahi"
 assert os_key({"os": "linux", "os_version": "Debian GNU/Linux 13 (trixie)", "hardware_model": "Apple MacBook Air (M1, 2020)"}) == "asahi"
 assert os_key({"os": "linux", "os_version": "Debian GNU/Linux 13 (trixie)", "kernel": "6.12.48+deb13-amd64"}) == "debian"
+# Wiles-NAS: DSM version from /etc.defaults/VERSION, or just the model from synoinfo.conf
+assert os_key({"os": "linux", "os_version": "DSM 7.3.1-86003 Update 1"}) == "synology"
+assert os_key({"os": "linux", "os_version": "Debian GNU/Linux 12", "hardware_model": "Synology DS916+"}) == "synology"
 assert os_key({"hostname": "old-client"}) == "linux"  # pre-os clients are Linux: Tux
 assert os_key(None) is None  # never reported: no icon
 sysinfo = SystemInfo(hostname="h", cpu_percent=1, mem_percent=1, disk_percent=1, uptime_seconds=1,

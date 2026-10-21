@@ -109,6 +109,8 @@ def os_key(system: Optional[dict]) -> Optional[str]:
     model = (system.get("hardware_model") or "").lower()
     if "asahi" in version or "asahi" in kernel or model.startswith("apple"):
         return "asahi"
+    if version.startswith("dsm") or "synology" in version or model.startswith("synology"):
+        return "synology"
     return next((d for d in _DISTROS if d in version), "linux")
 
 

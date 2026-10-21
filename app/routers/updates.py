@@ -40,12 +40,33 @@ APT_CMD = (
 #    public HTTPS repo) in its compose dir,
 #    with local edits (custom mounts in docker-compose.yml) set aside and put
 #    back; if they clash, everything is restored and the job fails with advice.
-#  - Native (install-native.sh): copies files, it's not a git checkout, so the
-#    latest code is fetched (git clone, else the GitHub tarball) and copied in.
+#  - Native (install-native.sh): copies files, it's not a git checkout.
+#  Any install folder that isn't a git checkout (native, or a Docker project
+#  copied into place, e.g. a Synology Container Manager folder), or a machine
+#  without git (DSM), gets the latest release downloaded and copied in instead;
+#  .env, docker-compose*.yml and the venv are left alone.
 # safe.directory: root pulls a checkout owned by whoever cloned it.
+# PATH: DSM keeps docker in /usr/local/bin, which root's SSH session lacks.
 CLIENT_CMD = f"""set -e
+export PATH="$PATH:/usr/local/bin:/usr/local/sbin"
 G='git -c safe.directory=*'
 REPO='{remote.CLIENT_REPO}'
+fetch_latest() {{
+  tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+  if command -v git >/dev/null 2>&1; then GIT_TERMINAL_PROMPT=0 git clone -q --depth 1 "$REPO" "$tmp/src"
+  else
+    mkdir "$tmp/src"
+    {{ curl -fsSL "$REPO/archive/refs/heads/main.tar.gz" 2>/dev/null || wget -qO- "$REPO/archive/refs/heads/main.tar.gz"; }} | tar xz -C "$tmp/src" --strip-components=1
+  fi
+  [ -f "$tmp/src/client/main.py" ] || {{ echo "Downloaded code doesn't contain the client."; exit 1; }}
+  rm -rf "$1/client"; cp -r "$tmp/src/client" "$1/"
+  for f in requirements.txt Dockerfile; do [ -f "$tmp/src/$f" ] && cp "$tmp/src/$f" "$1/"; done
+  for f in install.sh install-native.sh provision-ssh.sh; do [ -f "$1/$f" ] && cp "$tmp/src/$f" "$1/"; done
+  echo "Copied the latest client into $1"
+}}
+update_code() {{
+  if [ -d "$1/.git" ] && command -v git >/dev/null 2>&1; then pull "$1"; else fetch_latest "$1"; fi
+}}
 pull() {{
   cd "$1"
   before=$($G rev-parse HEAD)
@@ -68,7 +89,7 @@ cid=$( (docker ps -aq --filter 'name=^devicemanager-client$'; docker ps -aq --fi
 if [ -n "$cid" ]; then
   wd=$(docker inspect "$cid" -f '{{{{index .Config.Labels "com.docker.compose.project.working_dir"}}}}')
   [ -n "$wd" ] || {{ echo "The client container wasn't started with docker compose, so there's no checkout to update."; exit 1; }}
-  echo "STAGE:git"; pull "$wd"
+  echo "STAGE:git"; update_code "$wd"
   echo "STAGE:build"
   if docker compose --progress plain version >/dev/null 2>&1; then docker compose --progress plain up -d --build
   elif docker compose version >/dev/null 2>&1; then docker compose up -d --build
@@ -76,20 +97,7 @@ if [ -n "$cid" ]; then
 elif systemctl cat devicemanager-client >/dev/null 2>&1; then
   dir=$(systemctl show -p WorkingDirectory --value devicemanager-client 2>/dev/null || true)
   [ -n "$dir" ] && [ -d "$dir" ] || dir=/opt/devicemanager-client
-  echo "STAGE:git"
-  if [ -d "$dir/.git" ]; then
-    pull "$dir"
-  else
-    tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
-    if command -v git >/dev/null 2>&1; then git clone -q --depth 1 "$REPO" "$tmp/src"
-    else
-      mkdir "$tmp/src"
-      {{ curl -fsSL "$REPO/archive/refs/heads/main.tar.gz" 2>/dev/null || wget -qO- "$REPO/archive/refs/heads/main.tar.gz"; }} | tar xz -C "$tmp/src" --strip-components=1
-    fi
-    [ -f "$tmp/src/client/main.py" ] || {{ echo "Downloaded code doesn't contain the client."; exit 1; }}
-    rm -rf "$dir/client"; cp -r "$tmp/src/client" "$dir/"; cp "$tmp/src/requirements.txt" "$dir/"
-    echo "Copied the latest client into $dir"
-  fi
+  echo "STAGE:git"; update_code "$dir"
   echo "STAGE:deps"; "$dir/venv/bin/pip" install -q --disable-pip-version-check -r "$dir/requirements.txt"
   echo "STAGE:restart"; systemctl restart devicemanager-client
 else
