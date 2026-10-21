@@ -15,6 +15,8 @@ class SystemInfo(BaseModel):
     disk_total_bytes: Optional[int] = None
     uptime_seconds: float
     local_ip: Optional[str] = None
+    os: Optional[str] = None  # "linux" | "windows"; absent from older clients (= linux)
+    os_version: Optional[str] = None  # e.g. "Ubuntu 24.04.1 LTS", "Windows Server 2022 Standard (21H2)"
 
 
 class TailscaleInfo(BaseModel):
@@ -47,9 +49,17 @@ class DockerContainerInfo(BaseModel):
 
 
 class AptInfo(BaseModel):
+    # OS package status. Windows clients report Windows Update in this same shape.
     available: bool = False
     last_update_age_seconds: Optional[float] = None  # since `apt update` last ran
     upgradable: Optional[int] = None  # pending upgrades from the local cache
+    source: Optional[str] = None  # None/"apt" | "windows_update"
+    reboot_required: Optional[bool] = None
+
+
+class WindowsInfo(BaseModel):
+    shell: Optional[str] = None  # "pwsh" | "powershell" - what the terminal opens
+    admin_user: Optional[str] = None  # account the host runs updates as (no root on Windows)
 
 
 class ClientReport(BaseModel):
@@ -59,6 +69,7 @@ class ClientReport(BaseModel):
     docker_containers: List[DockerContainerInfo] = []
     ssh_users: List[str] = []
     apt: Optional[AptInfo] = None
+    windows: Optional[WindowsInfo] = None
     agent_version: str = "1.0.0"
 
 

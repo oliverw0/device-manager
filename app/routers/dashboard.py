@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, delete, select
 
+from .. import remote
 from ..database import get_session
 from ..models import AlertEvent, ContainerHistory, Device, ReportHistory, ServiceCheck, generate_api_key
 from ..monitor import _project_disk_full_days
@@ -101,6 +102,7 @@ def serialize_device(device: Device) -> dict:
         "report_interval_seconds": device.report_interval_seconds,
         "offline_after_seconds": device.offline_after_seconds,
         "ssh_enabled": device.ssh_enabled,
+        "os": remote.device_os(device),
         "apt_needs_update": bool(device.apt_needs_update),
         "alerts_muted": device.alerts_muted(),
         "alerts_muted_until": device.alerts_muted_until.isoformat() if device.alerts_muted_until else None,

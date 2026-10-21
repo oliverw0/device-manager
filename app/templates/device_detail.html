@@ -8,6 +8,7 @@
 {% set ts = device.report.tailscale if device.report else none %}
 {% set containers = device.report.docker_containers if device.report else [] %}
 {% set apt = device.report.apt if device.report else none %}
+{% set is_windows = device.os == 'windows' %}
 
 <section class="panel">
   <div class="page-head" style="margin-bottom:8px">
@@ -31,6 +32,9 @@
     {% if sys and sys.hostname %}
     <li><span class="k">Reported hostname</span><span class="v">{% if sys.hostname != device.name %}<span class="dot-tip" data-tip="Reported hostname differs from the configured device name"></span>{% endif %}{{ sys.hostname }}</span></li>
     {% endif %}
+    {% if sys and sys.os_version %}
+    <li><span class="k">OS</span><span class="v">{{ sys.os_version }}</span></li>
+    {% endif %}
     {% if sys and sys.uptime_seconds is defined %}
     <li><span class="k">Uptime</span><span class="v">{{ sys.uptime_seconds | uptime }}</span></li>
     {% endif %}
@@ -46,12 +50,12 @@
     <div class="metric-row"><span class="metric-label">Memory</span>{{ ui.meter(sys.mem_percent, ui.mem_title(sys)) }}</div>
     <div class="metric-row"><span class="metric-label">Disk</span>{{ ui.meter(sys.disk_percent, ui.disk_title(sys)) }}{% if disk_full_days is not none %}<span class="chip {{ 'bad' if disk_full_days < 14 else 'warn' }}" style="margin-left:8px" title="Projected from the disk-usage trend">{% if disk_full_days < 1 %}&lt;1d to full{% else %}~{{ disk_full_days | round | int }}d to full{% endif %}</span>{% endif %}</div>
     {% if apt and apt.available %}
-    <div class="metric-row"><span class="metric-label">Packages</span>{{ ui.apt_chip(apt, device.apt_needs_update) }}</div>
+    <div class="metric-row"><span class="metric-label">{{ 'Updates' if is_windows else 'Packages' }}</span>{{ ui.apt_chip(apt, device.apt_needs_update) }}{% if apt.reboot_required %}<span class="chip warn" style="margin-left:8px" title="Windows needs a restart to finish installing updates">reboot pending</span>{% endif %}</div>
     {% endif %}
     {% if device.ssh_enabled %}
     <div class="update-actions">
-      <button type="button" class="secondary" onclick='startUpdate({{ device.id }}, {{ device.name | tojson }}, "apt")'>Update packages</button>
-      <button type="button" class="secondary" onclick='startUpdate({{ device.id }}, {{ device.name | tojson }}, "client")'>Update client</button>
+      <button type="button" class="secondary" onclick='startUpdate({{ device.id }}, {{ device.name | tojson }}, "apt", {{ device.os | tojson }})'>{{ 'Install Windows updates' if is_windows else 'Update packages' }}</button>
+      <button type="button" class="secondary" onclick='startUpdate({{ device.id }}, {{ device.name | tojson }}, "client", {{ device.os | tojson }})'>Update client</button>
     </div>
     <div id="update-status" data-device-id="{{ device.id }}"></div>
     {% else %}
@@ -87,6 +91,7 @@
     <p class="muted" style="font-size:12px;margin:12px 0 0">
       Connects over the device's Tailscale address (or the IP it last reported from).
       The machine must authorize this host's key first — see below.
+      {% if is_windows %}Windows devices open a PowerShell console.{% endif %}
     </p>
     <div id="ssh-open-wrap" style="margin-top:14px;{{ '' if device.ssh_enabled else 'display:none' }}">
       <button type="button" class="secondary"
@@ -96,8 +101,9 @@
 
     <details style="margin-top:14px">
       <summary class="muted" style="cursor:pointer;font-size:13px">How to authorize a machine</summary>
+      {% if not is_windows %}
       <p class="muted" style="font-size:12px;margin:8px 0">
-        Run on the target, logged in as the user you'll connect as (the installer's
+        Linux: run on the target, logged in as the user you'll connect as (the installer's
         SSH step does this automatically for native installs; Docker clients need it manually):
       </p>
       <div class="copy-row">
@@ -105,6 +111,18 @@
         <button type="button" class="secondary copy-btn"
                 onclick="copyText(document.getElementById('ssh-provision-cmd').textContent, this)">Copy</button>
       </div>
+      {% endif %}
+      {% if is_windows or not device.report %}
+      <p class="muted" style="font-size:12px;margin:8px 0">
+        Windows: the installer offers this step. To do it later, run in an elevated PowerShell
+        (installs/enables OpenSSH Server, opens port 22, and authorizes the key for the chosen account):
+      </p>
+      <div class="copy-row">
+        <code class="key-box" id="ssh-provision-cmd-win">powershell -ExecutionPolicy Bypass -File "$env:ProgramFiles\DeviceManagerClient\provision-ssh.ps1"</code>
+        <button type="button" class="secondary copy-btn"
+                onclick="copyText(document.getElementById('ssh-provision-cmd-win').textContent, this)">Copy</button>
+      </div>
+      {% endif %}
     </details>
   </section>
 
@@ -239,7 +257,8 @@
       <code class="key-box" id="api-key">{{ api_key }}</code>
       <button type="button" class="secondary copy-btn" onclick="copyText('{{ api_key }}', this)">Copy</button>
     </div>
-    <h3>Install on the device</h3>
+    {% set install_linux %}
+    <h3>Install on Linux</h3>
     <p class="muted" style="font-size:12px;margin:0 0 6px">
       Get the client repo onto the machine, then run the installer — it writes <code>.env</code>,
       auto-enables the Tailscale mount if present, and starts the client. (Docker required;
@@ -249,6 +268,19 @@
       <pre class="key-box" id="install-cmd" data-key="{{ api_key }}">loading…</pre>
       <button type="button" class="secondary copy-btn" onclick="copyText(document.getElementById('install-cmd').textContent, this)">Copy</button>
     </div>
+    {% endset %}
+    {% set install_windows %}
+    <h3>Install on Windows (desktop or Server)</h3>
+    <p class="muted" style="font-size:12px;margin:0 0 6px">
+      Paste into an <strong>elevated</strong> PowerShell. Installs Python if needed, runs the client
+      as a SYSTEM scheduled task, and offers to set up OpenSSH for the in-browser PowerShell console.
+    </p>
+    <div class="copy-row">
+      <pre class="key-box" id="install-cmd-win" data-key="{{ api_key }}">loading…</pre>
+      <button type="button" class="secondary copy-btn" onclick="copyText(document.getElementById('install-cmd-win').textContent, this)">Copy</button>
+    </div>
+    {% endset %}
+    {% if is_windows %}{{ install_windows }}{{ install_linux }}{% else %}{{ install_linux }}{{ install_windows }}{% endif %}
     <h3>Or set .env manually</h3>
     <pre class="key-box" id="env-snippet" data-key="{{ api_key }}">loading…</pre>
     <form method="post" action="/devices/{{ device.id }}/rotate-key" onsubmit="return confirm('Rotate API key? The client config must be updated to match or it will be locked out.');" style="margin-top:12px">

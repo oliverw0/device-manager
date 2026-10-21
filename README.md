@@ -19,6 +19,9 @@ Companion agent: [device-manager-client](https://github.com/oliverw0/device-mana
 - Per-container CPU/memory history sparklines and a per-device history chart.
 - In-browser SSH terminal and Docker container controls (logs, start, stop,
   restart) over the host's own key, tried Tailscale-first then local IP.
+- Linux and Windows clients (desktop and Server). Windows devices get a
+  PowerShell console, Windows Update in place of apt, and the same container
+  controls; the host picks the commands from the OS each client reports.
 
 ## Requirements
 
@@ -61,7 +64,8 @@ commented mount in `docker-compose.yml`).
 
 1. Open the dashboard, add a device — it generates an API key.
 2. On the device's page, copy the install command (host URL and API key are
-   prefilled) and run it on the target machine.
+   prefilled) and run it on the target machine — a shell command for Linux, or
+   a PowerShell one-liner (run as Administrator) for Windows.
 
 ## Behind a reverse proxy
 

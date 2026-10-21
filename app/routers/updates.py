@@ -9,7 +9,7 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from sqlmodel import Session
 
-from .. import ssh_keys
+from .. import remote, ssh_keys
 from ..database import engine
 from ..models import Device
 from .dashboard import ssh_candidates
@@ -44,6 +44,7 @@ CLIENT_CMD = (
 CLIENT_STAGES = {
     "git": (5, "Pulling latest code…"),
     "build": (15, "Building image…"),
+    "deps": (40, "Installing dependencies…"),  # Windows install.ps1 -Update
     "restart": (90, "Restarting client…"),
     "done": (100, "Done"),
 }
@@ -94,6 +95,21 @@ def _parse_line(job: dict, line: str):
             job["stage"] = parts[3] or "Installing…"
         return
 
+    # Windows scripts (windows-update.ps1): "PROGRESS:<pct>:<stage>" and a
+    # "NOTE:<text>" summary shown on the finished card (e.g. reboot required).
+    if line.startswith("PROGRESS:"):
+        parts = line.split(":", 2)
+        try:
+            _set_percent(job, float(parts[1]))
+        except (IndexError, ValueError):
+            return
+        if len(parts) > 2 and parts[2]:
+            job["stage"] = parts[2]
+        return
+    if line.startswith("NOTE:"):
+        job["note"] = line[5:].strip()
+        return
+
     if line.startswith("STAGE:"):
         st = line.split(":", 1)[1].strip()
         if st in CLIENT_STAGES:
@@ -109,20 +125,19 @@ def _parse_line(job: dict, line: str):
             _set_percent(job, 15 + (int(m.group(1)) / int(m.group(2))) * 70)
 
 
-async def _run_job(job: dict, candidates: list[str], port: int):
+async def _run_job(job: dict, candidates: list[str], port: int, user: str, cmd: str):
     key = ssh_keys.private_key_path()
-    cmd = APT_CMD if job["kind"] == "apt" else CLIENT_CMD
-    cmd = f"({cmd}) 2>&1"
     err = "no address"
     for addr in candidates:
         try:
             async with asyncssh.connect(
-                addr, port=port, username="root",
+                addr, port=port, username=user,
                 client_keys=[key], known_hosts=None, connect_timeout=8,
             ) as conn:
                 job["status"] = "running"
                 job["stage"] = "Checking for updates…"
-                proc = await conn.create_process(cmd, encoding="utf-8", errors="replace")
+                # stderr merged in so failures land in the tail (Linux also does 2>&1).
+                proc = await conn.create_process(cmd, encoding="utf-8", errors="replace", stderr=asyncssh.STDOUT)
                 buf = ""
                 while True:
                     chunk = await proc.stdout.read(4096)
@@ -136,7 +151,7 @@ async def _run_job(job: dict, candidates: list[str], port: int):
                     _parse_line(job, buf.rstrip("\r"))
                 await proc.wait()
                 if proc.exit_status == 0:
-                    job.update(status="done", percent=100, stage="Up to date", eta_seconds=None)
+                    job.update(status="done", percent=100, stage=job.get("note") or "Up to date", eta_seconds=None)
                 else:
                     job.update(status="error", stage="Failed",
                                error="\n".join(job["tail"][-4:]) or f"exit {proc.exit_status}")
@@ -144,7 +159,7 @@ async def _run_job(job: dict, candidates: list[str], port: int):
                 return
         except asyncssh.PermissionDenied:
             job.update(status="error", stage="Failed",
-                       error=f"Authentication failed on {addr} — is root authorized for SSH on this device?")
+                       error=f"Authentication failed on {addr} — is {user} authorized for SSH on this device?")
             return
         except (OSError, asyncssh.Error) as exc:
             err = str(exc)
@@ -168,6 +183,11 @@ async def start_update(device_id: int, kind: str):
         candidates = ssh_candidates(device)
         port = device.ssh_port
         device_name = device.name
+        user = remote.update_user(device)
+        if remote.is_windows(device):
+            cmd = remote.windows_update_command(kind)
+        else:
+            cmd = f"({APT_CMD if kind == 'apt' else CLIENT_CMD}) 2>&1"
     if not candidates:
         return JSONResponse({"detail": "No SSH address for this device"}, status_code=400)
 
@@ -177,7 +197,7 @@ async def start_update(device_id: int, kind: str):
         "status": "starting", "percent": None, "stage": "Connecting…",
         "eta_seconds": None, "error": None, "tail": [], "started_at": time.time(),
     }
-    asyncio.create_task(_run_job(job, candidates, port))
+    asyncio.create_task(_run_job(job, candidates, port, user, cmd))
     return {"job_id": jid}
 
 
@@ -217,4 +237,10 @@ if __name__ == "__main__":  # ponytail: progress-parser self-check
     assert c["percent"] == 15
     _parse_line(c, "#7 [ 5/10] RUN pip install")
     assert c["percent"] == round(15 + 0.5 * 70), c["percent"]
+    w = {"kind": "apt", "percent": None, "eta_seconds": None, "stage": "", "tail": [],
+         "started_at": time.time()}
+    _parse_line(w, "PROGRESS:40:Installing 1/3: KB5031364")
+    assert w["percent"] == 40 and w["stage"] == "Installing 1/3: KB5031364", w
+    _parse_line(w, "NOTE:Installed 3 of 3 update(s) - reboot required to finish")
+    assert w["note"].endswith("reboot required to finish")
     print("ok")

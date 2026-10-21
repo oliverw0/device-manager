@@ -8,7 +8,7 @@ from fastapi import APIRouter, File, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlmodel import Session
 
-from .. import ssh_keys
+from .. import remote, ssh_keys
 from ..database import engine
 from ..models import Device
 from .dashboard import ssh_candidates
@@ -56,22 +56,24 @@ def _load_device(device_id: int, name: str):
 
 
 @router.post("/devices/{device_id}/container/{name}/{action}")
-async def container_action(device_id: int, name: str, action: str, user: str = "root"):
+async def container_action(device_id: int, name: str, action: str, user: str = ""):
     if action not in CONTAINER_ACTIONS:
         return JSONResponse({"ok": False, "output": "bad action"}, status_code=400)
     device, err = _load_device(device_id, name)
     if device is None:
         return JSONResponse({"ok": False, "output": err}, status_code=400)
-    code, out = await _ssh_run(device, user, f"docker {action} {name}")
+    user = user or remote.update_user(device)  # root on Linux, the admin account on Windows
+    code, out = await _ssh_run(device, user, remote.container_action_command(device, action, name))
     return JSONResponse({"ok": code == 0, "output": out.strip()})
 
 
 @router.get("/devices/{device_id}/container/{name}/logs", response_class=PlainTextResponse)
-async def container_logs(device_id: int, name: str, user: str = "root"):
+async def container_logs(device_id: int, name: str, user: str = ""):
     device, err = _load_device(device_id, name)
     if device is None:
         return PlainTextResponse(err, status_code=400)
-    code, out = await _ssh_run(device, user, f"docker logs --tail 200 {name} 2>&1")
+    user = user or remote.update_user(device)
+    code, out = await _ssh_run(device, user, remote.container_logs_command(device, name))
     return PlainTextResponse(out or "(no output)")
 
 
@@ -91,7 +93,7 @@ async def _ssh_upload(device: Device, user: str, filename: str, data: bytes):
                     abspath = await sftp.realpath(filename)  # resolve ~ to a full path
                     if isinstance(abspath, bytes):
                         abspath = abspath.decode("utf-8", "replace")
-                return True, abspath
+                return True, remote.display_path(abspath)
         except (OSError, asyncssh.Error) as exc:
             err = str(exc)
             continue
@@ -149,6 +151,10 @@ async def terminal(websocket: WebSocket, device_id: int, user: str = "", contain
         allowed_users = set((report or {}).get("ssh_users", []))
         container_known = _known_container(device.last_report_json, container) if container else False
         device_name = device.name
+        # Resolve the per-OS commands now, while the device is still attached.
+        shell_cmd = remote.shell_command(device)
+        exec_container_cmd = remote.container_exec_command(device, container) if container_known else None
+        windows = remote.is_windows(device)
 
     if not candidates:
         await _send(websocket, "No SSH address for this device (no Tailscale IP or local IP reported, and no override set).")
@@ -199,7 +205,8 @@ async def terminal(websocket: WebSocket, device_id: int, user: str = "", contain
 
     if conn is None:
         if auth_failed:
-            await _send(websocket, "The host's key isn't authorized for this user. Run provision-ssh.sh on the target.")
+            script = "provision-ssh.ps1 (elevated PowerShell)" if windows else "provision-ssh.sh"
+            await _send(websocket, f"The host's key isn't authorized for this user. Run {script} on the target.")
         else:
             await _send(websocket, "All addresses failed. Check the device is reachable and sshd is running.")
         await websocket.close()
@@ -207,13 +214,13 @@ async def terminal(websocket: WebSocket, device_id: int, user: str = "", contain
 
     # container name is whitelisted against the last report above, so it's a safe
     # docker-name charset — no shell-injection risk in the exec command.
-    exec_cmd = None
+    exec_cmd = shell_cmd  # None -> login shell (Linux); Windows -> PowerShell
     if container:
-        exec_cmd = f"docker exec -it {container} /bin/bash 2>/dev/null || docker exec -it {container} /bin/sh"
+        exec_cmd = exec_container_cmd
         await _send(websocket, f"docker exec into {container}…")
     try:
         proc = await conn.create_process(
-            exec_cmd,  # None -> login shell; set -> exec into the container
+            exec_cmd,
             term_type="xterm-256color",
             term_size=(80, 24),
             encoding=None,  # raw bytes both ways

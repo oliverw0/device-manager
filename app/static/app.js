@@ -400,8 +400,18 @@ function openContainerShell(deviceId, deviceName, container) {
    overlay (in base.html, so boosted nav can't destroy it). When a job finishes
    it gets a 5s reverse-bar countdown before auto-dismissing from both places. */
 var UPDATE_META = {
-  apt: { label: "Package update", confirm: (n) => "Update all apt packages on " + n + "?\n\nRuns apt-get upgrade as root, in the background — you can leave this page." },
-  client: { label: "Client update", confirm: (n) => "Update the DeviceManager client on " + n + "?\n\nPulls the latest code and rebuilds/restarts the client, in the background." },
+  apt: {
+    label: "Package update",
+    confirm: (n, os) => os === "windows"
+      ? "Install pending Windows updates on " + n + "?\n\nRuns Windows Update as SYSTEM, in the background — you can leave this page. It never reboots; you'll be told if a restart is needed."
+      : "Update all apt packages on " + n + "?\n\nRuns apt-get upgrade as root, in the background — you can leave this page.",
+  },
+  client: {
+    label: "Client update",
+    confirm: (n, os) => "Update the DeviceManager client on " + n + "?\n\n" + (os === "windows"
+      ? "Downloads the latest client, refreshes its dependencies and restarts the scheduled task, in the background."
+      : "Pulls the latest code and rebuilds/restarts the client, in the background."),
+  },
 };
 var UPD_TRACK = {};                 // key "deviceId:kind" -> tracker
 var UPD_CD_TIMER = null;            // drives the countdown reverse-bars
@@ -414,9 +424,9 @@ function fmtEta(s) {
   return Math.floor(s / 60) + "m " + String(s % 60).padStart(2, "0") + "s";
 }
 
-function startUpdate(deviceId, deviceName, kind) {
+function startUpdate(deviceId, deviceName, kind, os) {
   const meta = UPDATE_META[kind];
-  if (!meta || !confirm(meta.confirm(deviceName))) return;
+  if (!meta || !confirm(meta.confirm(deviceName, os))) return;
   fetch(`/devices/${deviceId}/update/${kind}`, { method: "POST" })
     .then((r) => r.json())
     .then((res) => {
@@ -536,7 +546,8 @@ function updCardHtml(t, inOverlay) {
     return `<div class="upd-card"><div class="upd-head">` +
       `<span class="chip ${ok ? "ok" : "bad"}"><span class="chip-dot"></span>${ok ? "Up to date" : "Failed"}</span>` +
       `<span class="upd-label">${label}</span>${dismiss}</div>` +
-      (ok ? "" : `<div class="upd-stage upd-err">${escapeHtml(job.error || "Update failed")}</div>`) + cd + `</div>`;
+      (ok ? (job.stage && job.stage !== "Up to date" ? `<div class="upd-stage">${escapeHtml(job.stage)}</div>` : "")
+          : `<div class="upd-stage upd-err">${escapeHtml(job.error || "Update failed")}</div>`) + cd + `</div>`;
   }
   const indet = job.percent === null || job.percent === undefined;
   const pct = indet ? 0 : job.percent;
@@ -707,13 +718,19 @@ function initSshToggle() {
 
 function initInstallCmd() {
   const cmd = document.getElementById("install-cmd");
+  const win = document.getElementById("install-cmd-win");
   const env = document.getElementById("env-snippet");
-  if (!cmd && !env) return;
-  const key = (cmd || env).dataset.key;
+  if (!cmd && !win && !env) return;
+  const key = (cmd || win || env).dataset.key;
   const host = location.origin;
   if (cmd) cmd.textContent =
     "git clone https://github.com/oliverw0/device-manager-client && cd device-manager-client\n" +
     `sudo HOST_URL=${host} API_KEY=${key} ./install.sh`;
+  // TLS 1.2 line: Windows PowerShell 5.1 on older Server builds can't reach GitHub without it.
+  if (win) win.textContent =
+    `$env:HOST_URL='${host}'; $env:API_KEY='${key}'\n` +
+    "[Net.ServicePointManager]::SecurityProtocol = 'Tls12'\n" +
+    "irm https://raw.githubusercontent.com/oliverw0/device-manager-client/main/install.ps1 | iex";
   if (env) env.textContent = `HOST_URL=${host}\nAPI_KEY=${key}`;
 }
 

@@ -41,7 +41,8 @@
 {%- elif needs_update -%}
   {%- set n = apt.upgradable -%}
   {%- set d = (apt.last_update_age_seconds // 86400)|int if apt.last_update_age_seconds is not none else none -%}
-  <span class="chip warn" title="{% if d is not none %}apt cache {{ d }}d old{% endif %}">{% if n is not none %}{{ n }} updates{% elif d is not none %}{{ d }}d stale{% else %}update{% endif %}</span>
+  {%- set what = 'last Windows Update' if apt.source == 'windows_update' else 'apt cache' -%}
+  <span class="chip warn" title="{% if d is not none %}{{ what }} {{ d }}d old{% endif %}">{% if n is not none %}{{ n }} updates{% elif d is not none %}{{ d }}d stale{% else %}update{% endif %}</span>
 {%- else -%}<span class="chip ok">up to date</span>{%- endif -%}
 {%- endmacro %}
 
