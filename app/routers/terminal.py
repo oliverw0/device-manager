@@ -29,16 +29,16 @@ def _known_container(last_report_json, name) -> bool:
 
 async def _ssh_run(device: Device, user: str, cmd: str):
     """Run one command over SSH, trying each candidate address. Returns (exit, output)."""
-    err = "no address"
+    tried = []
     for addr in ssh_candidates(device):
         try:
             async with await remote.connect(addr, device.ssh_port, user, remote.expected_hostname(device)) as conn:
                 r = await conn.run(cmd, check=False, timeout=25)
                 return r.exit_status, (r.stdout or "") + (r.stderr or "")
         except (OSError, asyncssh.Error) as exc:
-            err = str(exc)
+            tried.append(f"{addr}: {remote.describe_error(exc)}")
             continue
-    return None, f"could not reach device ({err})"
+    return None, remote.unreachable(tried)
 
 
 def _load_device(device_id: int, name: str):
@@ -75,7 +75,7 @@ async def container_logs(device_id: int, name: str, user: str = ""):
 
 async def _ssh_upload(device: Device, user: str, filename: str, data: bytes):
     """SFTP a blob into the user's home dir, trying each candidate address."""
-    err = "no address"
+    tried = []
     for addr in ssh_candidates(device):
         try:
             async with await remote.connect(addr, device.ssh_port, user, remote.expected_hostname(device)) as conn:
@@ -87,9 +87,9 @@ async def _ssh_upload(device: Device, user: str, filename: str, data: bytes):
                         abspath = abspath.decode("utf-8", "replace")
                 return True, remote.display_path(abspath)
         except (OSError, asyncssh.Error) as exc:
-            err = str(exc)
+            tried.append(f"{addr}: {remote.describe_error(exc)}")
             continue
-    return False, f"could not upload ({err})"
+    return False, "Upload failed. " + remote.unreachable(tried)
 
 
 @router.post("/devices/{device_id}/upload")
@@ -186,7 +186,7 @@ async def terminal(websocket: WebSocket, device_id: int, user: str = "", contain
             auth_failed = True
             break
         except (OSError, asyncssh.Error) as exc:
-            await _send(websocket, f"Could not reach {addr}: {exc} — trying next…")
+            await _send(websocket, f"Could not reach {addr}: {remote.describe_error(exc)} — trying next…")
             continue
 
     if conn is None:

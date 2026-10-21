@@ -87,13 +87,26 @@ pull() {{
 }}
 cid=$( (docker ps -aq --filter 'name=^devicemanager-client$'; docker ps -aq --filter 'label=com.docker.compose.service=devicemanager-client') 2>/dev/null | head -n 1)
 if [ -n "$cid" ]; then
-  wd=$(docker inspect "$cid" -f '{{{{index .Config.Labels "com.docker.compose.project.working_dir"}}}}')
+  label() {{ docker inspect "$cid" -f "{{{{index .Config.Labels \"com.docker.compose.$1\"}}}}"; }}
+  wd=$(label project.working_dir)
   [ -n "$wd" ] || {{ echo "The client container wasn't started with docker compose, so there's no checkout to update."; exit 1; }}
   echo "STAGE:git"; update_code "$wd"
   echo "STAGE:build"
-  if docker compose --progress plain version >/dev/null 2>&1; then docker compose --progress plain up -d --build
-  elif docker compose version >/dev/null 2>&1; then docker compose up -d --build
-  else docker-compose up -d --build; fi
+  # Rebuild as the SAME compose project, with the same compose files. A GUI
+  # (Synology Container Manager, Portainer) names the project itself, and a
+  # plain `docker compose up` from the folder would use the folder's name: a
+  # different project that then clashes on the fixed container_name.
+  proj=$(label project); set --; [ -n "$proj" ] && set -- -p "$proj"
+  oldifs=$IFS; IFS=,
+  for f in $(label project.config_files); do [ -f "$f" ] && set -- "$@" -f "$f"; done
+  IFS=$oldifs
+  case " $* " in *" -f "*)
+    [ -f "$wd/docker-compose.override.yml" ] && case " $* " in *"docker-compose.override.yml"*) ;; *) set -- "$@" -f "$wd/docker-compose.override.yml" ;; esac ;;
+  esac
+  cd "$wd"
+  if docker compose --progress plain version >/dev/null 2>&1; then docker compose --progress plain "$@" up -d --build
+  elif docker compose version >/dev/null 2>&1; then docker compose "$@" up -d --build
+  else docker-compose "$@" up -d --build; fi
 elif systemctl cat devicemanager-client >/dev/null 2>&1; then
   dir=$(systemctl show -p WorkingDirectory --value devicemanager-client 2>/dev/null || true)
   [ -n "$dir" ] && [ -d "$dir" ] || dir=/opt/devicemanager-client
@@ -196,7 +209,7 @@ def _parse_line(job: dict, line: str):
 
 
 async def _run_job(job: dict, candidates: list[str], port: int, user: str, cmd: str, expected: str | None):
-    err = "no address"
+    tried = []
     for addr in candidates:
         try:
             async with await remote.connect(addr, port, user, expected) as conn:
@@ -229,9 +242,9 @@ async def _run_job(job: dict, candidates: list[str], port: int, user: str, cmd: 
                        error=f"Authentication failed on {addr} — is {user} authorized for SSH on this device?")
             return
         except (OSError, asyncssh.Error) as exc:
-            err = str(exc)
+            tried.append(f"{addr}: {remote.describe_error(exc)}")
             continue
-    job.update(status="error", stage="Failed", error=f"Could not reach device ({err})")
+    job.update(status="error", stage="Failed", error=remote.unreachable(tried))
 
 
 @router.post("/devices/{device_id}/update/{kind}")

@@ -49,6 +49,23 @@ class WrongMachine(OSError):
     that belongs to someone else on this network). Callers try the next address."""
 
 
+def describe_error(exc: BaseException) -> str:
+    """Readable reason an SSH attempt failed. Timeouts have an empty str(), which
+    used to show up as "Could not reach device ()"."""
+    if isinstance(exc, asyncssh.PermissionDenied):
+        return "key not authorized for this user"
+    if isinstance(exc, TimeoutError):
+        return "timed out"
+    if isinstance(exc, ConnectionRefusedError):
+        return "connection refused (is SSH enabled?)"
+    return str(exc) or type(exc).__name__
+
+
+def unreachable(tried: list[str]) -> str:
+    """'Could not reach device: 100.64.0.9: timed out; 192.168.50.4: …'"""
+    return "Could not reach device: " + ("; ".join(tried) if tried else "no address to try")
+
+
 def _short(name: str) -> str:
     return name.strip().split(".")[0].lower()
 
