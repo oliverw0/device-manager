@@ -1,13 +1,15 @@
 import asyncio
+import json
 import logging
 import re
 import time
 import uuid
 
 import asyncssh
+import httpx
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from .. import remote, ssh_keys
 from ..database import engine
@@ -201,6 +203,57 @@ async def start_update(device_id: int, kind: str):
     return {"job_id": jid}
 
 
+# --- client release tracking -------------------------------------------------
+# The client's version lives in client/__init__.py on the repo's main branch.
+CLIENT_VERSION_URL = "https://raw.githubusercontent.com/oliverw0/device-manager-client/main/client/__init__.py"
+_latest_cache = {"at": 0.0, "version": None}
+
+
+def _vtuple(v: str) -> tuple:
+    return tuple(int(x) for x in re.findall(r"\d+", v or "0")[:3])
+
+
+def latest_client_version(reported: list) -> str | None:
+    """Newest of: main branch on GitHub (cached for an hour, skipped if offline)
+    and any version a device already reports."""
+    if time.time() - _latest_cache["at"] > 3600:
+        _latest_cache["at"] = time.time()
+        try:
+            m = re.search(r'__version__\s*=\s*"([^"]+)"', httpx.get(CLIENT_VERSION_URL, timeout=3).text)
+            _latest_cache["version"] = m.group(1) if m else None
+        except httpx.HTTPError:
+            pass  # keep the last known value
+    found = [v for v in [_latest_cache["version"], *reported] if v]
+    return max(found, key=_vtuple) if found else None
+
+
+def is_outdated(version: str | None, latest: str | None) -> bool:
+    return bool(latest) and _vtuple(version or "1.0.0") < _vtuple(latest)
+
+
+@router.post("/updates/client-all")
+async def update_all_clients():
+    """Start a client update on every online, SSH-enabled device behind the latest release."""
+    with Session(engine) as s:
+        devices = s.exec(select(Device)).all()
+        versions = {d.id: _agent_version(d) for d in devices}
+        latest = latest_client_version(list(versions.values()))
+        targets = [d.id for d in devices if d.ssh_enabled and d.is_online and is_outdated(versions[d.id], latest)]
+    started = []
+    for device_id in targets:
+        res = await start_update(device_id, "client")
+        if isinstance(res, dict):
+            started.append(res["job_id"])
+    return {"started": len(started), "job_ids": started}
+
+
+def _agent_version(device: Device) -> str | None:
+    try:
+        return json.loads(device.last_report_json or "{}").get("agent_version")
+    except ValueError:
+        return None
+
+
 def _public(job: dict) -> dict:
     return {k: job[k] for k in
             ("id", "device_id", "device_name", "kind", "status", "percent",
@@ -243,4 +296,6 @@ if __name__ == "__main__":  # ponytail: progress-parser self-check
     assert w["percent"] == 40 and w["stage"] == "Installing 1/3: KB5031364", w
     _parse_line(w, "NOTE:Installed 3 of 3 update(s) - reboot required to finish")
     assert w["note"].endswith("reboot required to finish")
+    assert is_outdated(None, "1.1.0") and is_outdated("1.9.0", "1.10.0")
+    assert not is_outdated("1.1.0", "1.1.0") and not is_outdated("1.0.0", None)
     print("ok")

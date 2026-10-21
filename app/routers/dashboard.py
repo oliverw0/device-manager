@@ -127,6 +127,7 @@ def serialize_device(device: Device) -> dict:
         "alerts_muted_until": device.alerts_muted_until.isoformat() if device.alerts_muted_until else None,
         "alerts_muted_forever": device.alerts_muted_until == MUTED_FOREVER,
         "os_key": os_key(report and report.get("system")),
+        "agent_version": report.get("agent_version") if report else None,
         "report": report,
     }
 
@@ -136,22 +137,37 @@ def index(request: Request, session: Session = Depends(get_session)):
     return _render_index(request, session)
 
 
+def _fleet(session: Session) -> list[dict]:
+    """Devices for the front page cards: serialized plus a short CPU sparkline."""
+    out = []
+    for d in session.exec(select(Device).order_by(Device.name)).all():
+        s = serialize_device(d)
+        rows = session.exec(
+            select(ReportHistory.cpu_percent).where(ReportHistory.device_id == d.id)
+            .order_by(ReportHistory.timestamp.desc()).limit(30)
+        ).all()
+        s["cpu_spark"] = list(reversed(rows))
+        out.append(s)
+    return out
+
+
 def _render_index(request: Request, session: Session, add_error: str = "", add_name: str = ""):
-    devices = session.exec(select(Device).order_by(Device.name)).all()
-    serialized = [serialize_device(d) for d in devices]
+    from .updates import latest_client_version  # updates imports this module
+
+    serialized = _fleet(session)
     apt_alert_count = sum(1 for d in serialized if d["apt_needs_update"])
+    latest = latest_client_version([d["agent_version"] for d in serialized if d["report"]])
     return templates.TemplateResponse(
         "index.html",
         {"request": request, "devices": serialized, "apt_alert_count": apt_alert_count,
-         "add_error": add_error, "add_name": add_name},
+         "add_error": add_error, "add_name": add_name, "latest_client": latest},
         status_code=400 if add_error else 200,
     )
 
 
 @router.get("/devices.json")
 def devices_json(session: Session = Depends(get_session)):
-    devices = session.exec(select(Device).order_by(Device.name)).all()
-    return [serialize_device(d) for d in devices]
+    return _fleet(session)
 
 
 def _apt_count(session: Session) -> int:
@@ -249,7 +265,7 @@ def create_device(
     session.refresh(device)
     if platform not in ("docker", "native", "windows"):
         platform = "docker"
-    return RedirectResponse(url=f"/devices/{device.id}?platform={platform}#client-config", status_code=303)
+    return RedirectResponse(url=f"/devices/{device.id}?platform={platform}#settings", status_code=303)
 
 
 @router.get("/devices/{device_id}", response_class=HTMLResponse)

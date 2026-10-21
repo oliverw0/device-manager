@@ -78,70 +78,200 @@ function containerSummary(list, offline) {
   return `<span class="chip ${cls}">${running}/${list.length} up</span>`;
 }
 
-/* ---------- dashboard ---------- */
-function renderDeviceRows(devices) {
-  const tbody = document.querySelector("#device-table tbody");
-  if (!tbody) return;
+/* ---------- dashboard: fleet cards ----------
+   The front page is rendered only here (initial data is embedded in the page,
+   then refreshed by polling), so there's no Jinja twin to keep in sync. */
+var FLEET = { devices: [], filter: "all", query: "" };
 
-  if (devices.length === 0) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="10">No devices yet. Use <b>+ Add device</b> to get an API key.</td></tr>';
-  } else {
-    tbody.innerHTML = devices.map((d) => {
-      const sys = d.report && d.report.system;
-      const hostname = sys && sys.hostname && sys.hostname !== d.name
-        ? `<span class="sub">${escapeHtml(sys.hostname)}</span>` : "";
-      const upg = d.report && d.report.apt ? d.report.apt.upgradable : null;
-      const aptTip = upg != null ? `${upg} packages need updating` : "Packages need updating";
-      const aptFlag = d.apt_needs_update ? `<span class="pkg-badge tip-below" data-tip="${aptTip}"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v8a2 2 0 0 1-1 1.73l-7 4a2 2 0 0 1-2 0l-7-4A2 2 0 0 1 3 16V8a2 2 0 0 1 1-1.73l7-4a2 2 0 0 1 2 0l7 4A2 2 0 0 1 21 8z"/><polyline points="3.3 7 12 12 20.7 7"/><line x1="12" y1="22" x2="12" y2="12"/></svg></span>` : "";
-      const osIcon = d.os_key
-        ? `<span class="os-icon os-${d.os_key} tip-below" data-tip="${escapeHtml(sys.os_version || sys.os)}"></span>` : "";
-      return `<tr class="clickable${d.apt_needs_update ? " needs-update" : ""}" onclick="navTo('/devices/${d.id}')">
-        <td class="col-status">${statusDot(d.is_online)}</td>
-        <td class="name-cell"><span class="name-line">${osIcon}<span class="name">${escapeHtml(d.name)}</span>${aptFlag}</span>${hostname}</td>
-        <td class="col-cpu">${meter(sys ? sys.cpu_percent : null)}</td>
-        <td class="col-mem">${meter(sys ? sys.mem_percent : null)}</td>
-        <td class="col-disk">${diskCell(sys)}</td>
-        <td class="col-ts">${tailscaleLogo(d.report ? d.report.tailscale : null, !d.is_online)}</td>
-        <td class="col-ctr">${containerSummary(d.report ? d.report.docker_containers : null, !d.is_online)}</td>
-        <td class="col-seen last-seen-cell muted" title="${escapeHtml(fmtAbsolute(d.last_seen_at))}">
-          <span>${fmtRelative(d.seconds_since_seen)}</span>
-        </td>
-        <td class="col-ssh term-cell">
-          ${d.ssh_enabled ? `<button class="term-btn" title="Open SSH terminal" data-term-id="${d.id}" data-term-name="${escapeHtml(d.name)}" onclick="event.stopPropagation(); openTerminalFromBtn(this)">${TERMINAL_ICON}</button>` : ""}
-        </td>
-        <td class="col-go"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></td>
-      </tr>`;
+const SEV_RANK = { bad: 0, warn: 1 };
+
+// What's wrong with a device, worst first: [{sev: "bad"|"warn", text}].
+function deviceIssues(d) {
+  const out = [];
+  const sys = d.report && d.report.system;
+  if (!d.is_online) return [{ sev: "bad", text: d.last_seen_at ? `Offline ${fmtRelative(d.seconds_since_seen).replace(" ago", "")}` : "Never reported" }];
+  if (sys) {
+    const disks = sys.disks && sys.disks.length ? sys.disks : [{ mount: "Disk", percent: sys.disk_percent }];
+    disks.forEach((dk) => {
+      const name = (dk.mount || "").replace(/\\+$/, "") || "Disk";
+      if (dk.percent >= 90) out.push({ sev: "bad", text: `${name} ${Math.round(dk.percent)}% full` });
+    });
+    if (sys.mem_percent >= 90) out.push({ sev: "bad", text: `Memory ${Math.round(sys.mem_percent)}%` });
+    if (sys.cpu_percent >= 90) out.push({ sev: "bad", text: `CPU ${Math.round(sys.cpu_percent)}%` });
+  }
+  const apt = d.report && d.report.apt;
+  if (d.apt_needs_update) out.push({ sev: "warn", text: apt && apt.upgradable != null ? `${apt.upgradable} updates` : "Updates pending" });
+  if (apt && apt.reboot_required) out.push({ sev: "warn", text: "Reboot pending" });
+  const ctrs = (d.report && d.report.docker_containers) || [];
+  const down = ctrs.filter((c) => c.status !== "running").length;
+  if (down) out.push({ sev: "warn", text: `${down} container${down > 1 ? "s" : ""} stopped` });
+  return out.sort((a, b) => SEV_RANK[a.sev] - SEV_RANK[b.sev]);
+}
+
+function osFamily(d) { return d.os_key === "windows" ? "windows" : d.os_key ? "linux" : ""; }
+
+const FLEET_FILTERS = [
+  ["all", "All", () => true],
+  ["online", "Online", (d) => d.is_online],
+  ["offline", "Offline", (d) => !d.is_online],
+  ["attention", "Needs attention", (d) => d._issues.length > 0],
+  ["updates", "Updates", (d) => d.apt_needs_update],
+  ["windows", "Windows", (d) => osFamily(d) === "windows"],
+  ["linux", "Linux", (d) => osFamily(d) === "linux"],
+];
+
+function sparkPoints(values, w = 280, h = 36) {
+  if (!values || values.length < 2) return "";
+  const step = w / (values.length - 1);
+  return values.map((v, i) => `${(i * step).toFixed(1)},${(h - 2 - (Math.min(100, v) / 100) * (h - 4)).toFixed(1)}`).join(" ");
+}
+
+function metricBlock(label, value, title) {
+  if (value === null || value === undefined) {
+    return `<div class="fc-metric"><span class="fc-mlabel">${label}</span><span class="fc-mval faint">—</span><span class="fc-bar"></span></div>`;
+  }
+  const p = Math.round(value);
+  const cls = p >= 90 ? "crit" : p >= 70 ? "warn" : "ok";
+  return `<div class="fc-metric" title="${escapeHtml(title || p + "%")}"><span class="fc-mlabel">${label}</span>` +
+    `<span class="fc-mval ${cls}">${p}%</span><span class="fc-bar"><span class="${cls}" style="width:${Math.min(100, p)}%"></span></span></div>`;
+}
+
+function deviceCard(d) {
+  const sys = d.report && d.report.system;
+  const sub = (sys && (sys.os_version || (sys.hostname !== d.name ? sys.hostname : ""))) || (d.report ? "" : "Waiting for first report");
+  // worst disk, labelled with its drive when there are several
+  let disk = sys ? sys.disk_percent : null, diskLabel = "DISK", diskTip = "";
+  if (sys && sys.disks && sys.disks.length > 1) {
+    const worst = sys.disks.reduce((a, b) => (b.percent > a.percent ? b : a));
+    disk = worst.percent;
+    diskLabel = "DISK " + (worst.mount.replace(/\\+$/, "").includes(":") ? worst.mount.replace(/\\+$/, "") : "");
+    diskTip = sys.disks.map((dk) => `${dk.mount.replace(/\\+$/, "") || dk.mount} ${Math.round(dk.percent)}%`).join(" · ");
+  }
+  const issues = d._issues;
+  const chips = issues.slice(0, 2).map((i) => `<span class="chip ${i.sev}">${escapeHtml(i.text)}</span>`).join("") +
+    (issues.length > 2 ? `<span class="chip neutral">+${issues.length - 2}</span>` : "");
+  const ctrs = d.report && d.report.docker_containers;
+  return `<article class="fleet-card${d.is_online ? "" : " offline"}" onclick="navTo('/devices/${d.id}')">
+    <div class="fc-head">
+      <span class="fc-os">${d.os_key ? `<span class="os-icon os-${d.os_key}"></span>` : ""}</span>
+      <span class="fc-title">
+        <a class="fc-name" href="/devices/${d.id}" onclick="event.stopPropagation()">${escapeHtml(d.name)}</a>
+        <span class="fc-sub">${escapeHtml(sub)}</span>
+      </span>
+      <span class="fc-status ${d.is_online ? "on" : "off"}" title="${escapeHtml(fmtAbsolute(d.last_seen_at))}"><span class="dot"></span>${d.is_online ? "Online" : "Offline"}</span>
+    </div>
+    <div class="fc-metrics">
+      ${metricBlock("CPU", sys ? sys.cpu_percent : null, sys && sys.cpu_cores ? `${Math.round(sys.cpu_percent)}% of ${sys.cpu_cores} cores` : "")}
+      ${metricBlock("MEM", sys ? sys.mem_percent : null, sys && sys.mem_total_bytes ? `${gib(sys.mem_used_bytes)} / ${gib(sys.mem_total_bytes)}` : "")}
+      ${metricBlock(diskLabel.trim(), disk, diskTip)}
+    </div>
+    <svg class="fc-spark" viewBox="0 0 280 36" preserveAspectRatio="none" aria-hidden="true"><polyline points="${sparkPoints(d.cpu_spark)}"></polyline></svg>
+    ${chips ? `<div class="fc-issues">${chips}</div>` : ""}
+    <div class="fc-foot">
+      ${tailscaleLogo(d.report ? d.report.tailscale : null, !d.is_online)}
+      ${ctrs && ctrs.length ? containerSummary(ctrs, !d.is_online) : ""}
+      <span class="spacer"></span>
+      <span class="fc-seen">${fmtRelative(d.seconds_since_seen)}</span>
+      ${d.ssh_enabled ? `<button class="term-btn" title="Open terminal" aria-label="Open terminal on ${escapeHtml(d.name)}" data-term-id="${d.id}" data-term-name="${escapeHtml(d.name)}" onclick="event.stopPropagation(); openTerminalFromBtn(this)">${TERMINAL_ICON}</button>` : ""}
+    </div>
+  </article>`;
+}
+
+function renderFleet() {
+  const grid = document.getElementById("device-grid");
+  if (!grid) return;
+  const devs = FLEET.devices;
+
+  const filters = document.getElementById("device-filters");
+  if (filters) {
+    filters.innerHTML = FLEET_FILTERS.map(([key, label, fn]) => {
+      const n = devs.filter(fn).length;
+      if (!n && key !== "all" && key !== FLEET.filter) return "";
+      return `<button type="button" class="filter-chip f-${key}${FLEET.filter === key ? " active" : ""}" aria-pressed="${FLEET.filter === key}" data-filter="${key}">${label} <b>${n}</b></button>`;
     }).join("");
   }
 
-  updateTiles(devices);
+  const attention = document.getElementById("attention");
+  if (attention) {
+    const items = [];
+    devs.forEach((d) => d._issues.forEach((i) => items.push({ d, i })));
+    items.sort((a, b) => SEV_RANK[a.i.sev] - SEV_RANK[b.i.sev]);
+    attention.hidden = items.length === 0;
+    attention.innerHTML = items.slice(0, 6).map(({ d, i }) =>
+      `<a class="attn ${i.sev}" href="/devices/${d.id}"><span class="attn-what">${escapeHtml(i.text)}</span><span class="attn-dev">${escapeHtml(d.name)}</span></a>`).join("");
+  }
+
+  const pred = (FLEET_FILTERS.find(([k]) => k === FLEET.filter) || FLEET_FILTERS[0])[2];
+  const q = FLEET.query.trim().toLowerCase();
+  const shown = devs.filter(pred).filter((d) => {
+    if (!q) return true;
+    const sys = d.report && d.report.system;
+    return [d.name, d.notes, sys && sys.hostname, sys && sys.os_version, sys && sys.local_ip, d.report && d.report.tailscale && (d.report.tailscale.ips || []).join(" ")]
+      .some((s) => s && String(s).toLowerCase().includes(q));
+  });
+  grid.innerHTML = devs.length === 0
+    ? '<p class="muted fleet-empty">No devices yet. Use <b>+ Add device</b> to get an API key.</p>'
+    : shown.length === 0 ? '<p class="muted fleet-empty">No devices match.</p>'
+    : shown.map(deviceCard).join("");
 }
 
-function updateTiles(devices) {
-  const total = devices.length;
-  const online = devices.filter((d) => d.is_online).length;
-  const containers = devices.reduce((sum, d) => {
-    // offline device's report is stale — its containers are counted as down
-    const list = d.is_online && d.report && d.report.docker_containers;
-    return sum + (list ? list.filter((c) => c.status === "running").length : 0);
-  }, 0);
-  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-  set("tile-total", total);
-  set("tile-online", online);
-  set("tile-offline", total - online);
-  set("tile-containers", containers);
+function renderDeviceRows(devices) {
+  // worst first: offline / red issues, then amber, then healthy; name within a group
+  devices.forEach((d) => { d._issues = deviceIssues(d); });
+  const rank = (d) => (d._issues.length ? SEV_RANK[d._issues[0].sev] : 2);
+  FLEET.devices = devices.slice().sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+  renderFleet();
+  renderClientBanner();
 
   const aptCount = devices.filter((d) => d.apt_needs_update).length;
   const aptAlert = document.getElementById("apt-alert");
   if (aptAlert) {
     aptAlert.hidden = aptCount === 0;
-    set("apt-alert-count", aptCount);
+    const n = document.getElementById("apt-alert-count");
+    if (n) n.textContent = aptCount;
   }
+}
+
+const vtuple = (v) => ((v || "1.0.0").match(/\d+/g) || []).slice(0, 3).map(Number);
+const vOlder = (a, b) => { const x = vtuple(a), y = vtuple(b); for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) < (y[i] || 0); return false; };
+
+// "N clients on an old release · Update all"; the host works out the latest version.
+function renderClientBanner() {
+  const el = document.getElementById("client-banner");
+  if (!el) return;
+  const old = FLEET.latest ? FLEET.devices.filter((d) => d.report && vOlder(d.agent_version, FLEET.latest)) : [];
+  el.hidden = old.length === 0;
+  if (!old.length) return;
+  const ready = old.filter((d) => d.ssh_enabled && d.is_online);
+  const names = old.map((d) => `${d.name} (${d.agent_version || "1.0.0"})`).join(", ");
+  el.innerHTML = `<span class="cb-text"><span><b>${old.length} client${old.length > 1 ? "s" : ""}</b> on an old release · latest is ${escapeHtml(FLEET.latest)}</span>` +
+    `<span class="cb-names">${escapeHtml(names)}</span></span>` +
+    (ready.length ? `<button type="button" onclick="updateAllClients(${ready.length})">Update ${ready.length === old.length ? "all" : ready.length}</button>`
+      : `<span class="muted cb-note">Enable SSH on them to update from here</span>`);
+}
+
+function updateAllClients(n) {
+  if (!confirm(`Update the client on ${n} device${n > 1 ? "s" : ""}? Each one pulls the latest code and restarts its client.`)) return;
+  fetch("/updates/client-all", { method: "POST" }).then((r) => r.json())
+    .then((res) => { if (!res.started) alert("No updates started (devices offline or SSH unavailable)."); resumeUpdates(); })
+    .catch(() => alert("Couldn't start the updates."));
+}
+
+function initFleet(devices, latest) {
+  FLEET.latest = latest;
+  if (new URLSearchParams(location.search).has("updates")) FLEET.filter = "updates";
+  const filters = document.getElementById("device-filters");
+  if (filters) filters.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-filter]");
+    if (b) { FLEET.filter = b.dataset.filter; renderFleet(); }
+  });
+  const search = document.getElementById("device-search");
+  if (search) search.addEventListener("input", () => { FLEET.query = search.value; renderFleet(); });
+  renderDeviceRows(devices);
 }
 
 function startDevicePolling(url, intervalMs = 5000) {
   const poll = () => fetch(url).then((r) => r.json()).then(renderDeviceRows).catch(() => {});
-  poll();
   PAGE_TIMERS.push(setInterval(poll, intervalMs));
 }
 
@@ -760,6 +890,33 @@ function initInstallCmd() {
   };
   tabs.forEach((t) => t.addEventListener("click", () => show(t.dataset.platform)));
   show(new URLSearchParams(location.search).get("platform") || cmd.dataset.default);
+}
+
+/* ---------- device page tabs ----------
+   Buttons, not #links: boosted navigation would treat a hash link as a page
+   load. The hash is still kept in the URL so reloads and redirects land on a tab. */
+function showDeviceTab(name) {
+  const panels = document.querySelectorAll(".dtab[data-tab]");
+  if (!panels.length) return;
+  if (![...panels].some((p) => p.dataset.tab === name)) name = "overview";
+  panels.forEach((p) => { p.hidden = p.dataset.tab !== name; });
+  document.querySelectorAll(".device-tabs [data-tab]").forEach((b) => {
+    const on = b.dataset.tab === name;
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-selected", on);
+  });
+  history.replaceState(history.state, "", name === "overview" ? location.pathname + location.search : "#" + name);
+  window.dispatchEvent(new Event("resize"));  // container sparklines skip drawing while hidden
+}
+
+function initDeviceTabs() {
+  const tabs = document.querySelector(".device-tabs");
+  if (!tabs) return;
+  tabs.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-tab]");
+    if (b) showDeviceTab(b.dataset.tab);
+  });
+  showDeviceTab(location.hash.slice(1));
 }
 
 function initAddDeviceDialog(openNow) {

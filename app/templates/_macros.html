@@ -7,17 +7,23 @@
 {%- endmacro %}
 
 {# Tooltip builders: return "used / total" when the client reported bytes, else "" (meter falls back to %). #}
-{% macro _gib(n) -%}{{ '%.1f'|format((n or 0) / 1073741824) }} GiB{%- endmacro %}
-{% macro mem_title(sys) -%}{%- if sys and sys.mem_total_bytes -%}{{ _gib(sys.mem_used_bytes) }} / {{ _gib(sys.mem_total_bytes) }}{%- endif -%}{%- endmacro %}
-{% macro disk_title(sys) -%}{%- if sys and sys.disk_total_bytes -%}{{ _gib(sys.disk_used_bytes) }} / {{ _gib(sys.disk_total_bytes) }}{%- endif -%}{%- endmacro %}
+{% macro gib(n) -%}{{ '%.1f'|format((n or 0) / 1073741824) }} GiB{%- endmacro %}
+{% macro mem_title(sys) -%}{%- if sys and sys.mem_total_bytes -%}{{ gib(sys.mem_used_bytes) }} / {{ gib(sys.mem_total_bytes) }}{%- endif -%}{%- endmacro %}
+{% macro disk_title(sys) -%}{%- if sys and sys.disk_total_bytes -%}{{ gib(sys.disk_used_bytes) }} / {{ gib(sys.disk_total_bytes) }}{%- endif -%}{%- endmacro %}
 {# One drive: short name for labels ("C:" or "/mnt/data"), full name for tooltips. #}
 {% macro disk_short(dk) -%}{{ dk.mount.rstrip('\\') if ':' in dk.mount else (dk.mount.rstrip('/').split('/')[-1] or '/') }}{%- endmacro %}
-{% macro disk_tip(dk) -%}{{ dk.mount.rstrip('\\') or dk.mount }}{% if dk.label %} {{ dk.label }}{% endif %}{% if dk.total_bytes %} · {{ _gib(dk.used_bytes) }} / {{ _gib(dk.total_bytes) }}{% endif %}{%- endmacro %}
+{% macro disk_tip(dk) -%}{{ dk.mount.rstrip('\\') or dk.mount }}{% if dk.label %} {{ dk.label }}{% endif %}{% if dk.total_bytes %} · {{ gib(dk.used_bytes) }} / {{ gib(dk.total_bytes) }}{% endif %}{%- endmacro %}
 {# Table cell: one meter per drive when there are several, else the system-drive meter. #}
 {% macro disk_cell(sys) -%}
 {%- if sys and sys.disks and sys.disks|length > 1 -%}
 <div class="disk-stack">{% for dk in sys.disks %}{% set p = dk.percent|round|int %}<div class="meter mini" title="{{ disk_tip(dk) }}"><div class="meter-fill {{ 'crit' if p>=90 else 'warn' if p>=70 else 'ok' }}" style="width:{{ [p,100]|min }}%"></div><span class="meter-label">{{ disk_short(dk) }} {{ p }}%</span></div>{% endfor %}</div>
 {%- else -%}{{ meter(sys.disk_percent if sys else none, disk_title(sys) if sys else '') }}{%- endif -%}
+{%- endmacro %}
+{# Ring gauge for the device page overview (circumference of r=26 is 163.4). #}
+{% macro ring(value, label, sub='') -%}
+{%- set p = (value or 0)|round|int -%}
+{%- set cls = 'crit' if p>=90 else 'warn' if p>=70 else 'ok' -%}
+<div class="gauge"><svg viewBox="0 0 64 64" width="64" height="64" aria-hidden="true"><circle class="g-track" cx="32" cy="32" r="26"></circle><circle class="g-fill {{ cls }}" cx="32" cy="32" r="26" stroke-dasharray="{{ (163.4 * [p, 100]|min / 100)|round(1) }} 163.4" transform="rotate(-90 32 32)"></circle></svg><div class="g-text"><span class="g-label">{{ label }}</span><span class="g-val">{{ p }}%</span>{% if sub %}<span class="g-sub">{{ sub }}</span>{% endif %}</div></div>
 {%- endmacro %}
 {% macro cpu_title(sys) -%}{%- if sys and sys.cpu_cores -%}{{ sys.cpu_percent|round|int }}% of {{ sys.cpu_cores }} cores{%- endif -%}{%- endmacro %}
 

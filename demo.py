@@ -43,7 +43,7 @@ NOW = datetime.utcnow()
 
 def report(hostname, cpu, mem, disk, cores, mem_total_g, disk_total_g, uptime_s,
            tailscale=None, ssh_auth=None, containers=None, apt=None, ssh_users=None,
-           os="linux", os_version="Ubuntu 24.04.1 LTS", disks=None):
+           os="linux", os_version="Ubuntu 24.04.1 LTS", disks=None, agent_version="1.1.0"):
     return {
         "system": {
             "hostname": hostname, "os": os, "os_version": os_version, "disks": disks or [],
@@ -59,7 +59,7 @@ def report(hostname, cpu, mem, disk, cores, mem_total_g, disk_total_g, uptime_s,
         "docker_containers": containers or [],
         "ssh_users": ssh_users or ["root", "deploy"],
         "apt": apt,
-        "agent_version": "1.0.0",
+        "agent_version": agent_version,
     }
 
 
@@ -105,7 +105,7 @@ DEVICES = [
         name="db-vm-01", notes="Postgres primary", online=True,
         ssh_enabled=True, apt_needs_update=True, tailscale_connected=True,
         report=report(
-            "db-vm-01", 78.0, 84.0, 91.0, 8, 32, 500, 92 * 86400, os_version="Debian GNU/Linux 12 (bookworm)",
+            "db-vm-01", 78.0, 84.0, 91.0, 8, 32, 500, 92 * 86400, os_version="Debian GNU/Linux 12 (bookworm)", agent_version="1.0.0",
             disks=[disk("/", None, 91.0, 500), disk("/var/lib/postgresql", None, 58.0, 2000)],
             tailscale={"connected": True, "backend_state": "Running",
                        "ips": ["100.101.102.104"], "dns_name": "db-vm-01.tuna-cod.ts.net",
@@ -139,7 +139,7 @@ DEVICES = [
         ssh_enabled=False, apt_needs_update=False, tailscale_connected=None,
         last_seen_override=NOW - timedelta(hours=6),
         report=report(
-            "backup-nas", 0.0, 12.0, 66.0, 2, 8, 4000, 40 * 86400, os_version="Arch Linux",
+            "backup-nas", 0.0, 12.0, 66.0, 2, 8, 4000, 40 * 86400, os_version="Arch Linux", agent_version="1.0.0",
             tailscale={"backend_state": "not_installed", "connected": False, "ips": []},
             ssh_auth={"recent_accepted_count": 0, "recent_failed_count": 0},
             containers=[],

@@ -2,89 +2,269 @@
 {% import "_macros.html" as ui %}
 {% block title %}{{ device.name }} - DeviceManager{% endblock %}
 {% block content %}
-<a href="/" class="back-link">&larr; All devices</a>
-
 {% set sys = device.report.system if device.report else none %}
 {% set ts = device.report.tailscale if device.report else none %}
 {% set containers = device.report.docker_containers if device.report else [] %}
 {% set apt = device.report.apt if device.report else none %}
+{% set auth = device.report.ssh_auth if device.report else none %}
 {% set is_windows = device.os == 'windows' %}
+{% set disks = sys.disks if sys and sys.disks else ([{'mount': '', 'label': none, 'percent': sys.disk_percent, 'used_bytes': sys.disk_used_bytes, 'total_bytes': sys.disk_total_bytes}] if sys else []) %}
+{% set ctr_up = containers | selectattr('status', 'equalto', 'running') | list | length %}
+{% set checks_up = checks | selectattr('last_status', 'equalto', 'up') | list | length %}
 
-<section class="panel">
-  <div class="page-head" style="margin-bottom:8px">
-    <h1 style="display:flex;align-items:center;gap:10px">{{ device.name }} {{ ui.status_chip(device.is_online) }}</h1>
+<section class="device-hero">
+  <a href="/" class="back-link">&larr; All devices</a>
+  <div class="hero-row">
+    <span class="hero-os">{% if device.os_key %}<span class="os-icon os-{{ device.os_key }}"></span>{% endif %}</span>
+    <div class="hero-title">
+      <div class="hero-name">
+        <h1>{{ device.name }}</h1>
+        <span class="fc-status {{ 'on' if device.is_online else 'off' }}" title="Last seen {{ device.last_seen_at | dt }}"><span class="dot"></span>{{ 'Online' if device.is_online else 'Offline' }} · {{ device.seconds_since_seen | reltime }}</span>
+        {% if device.alerts_muted %}<span class="chip warn" title="{% if device.alerts_muted_forever %}Until unmuted{% else %}Until {{ device.alerts_muted_until | dt }}{% endif %}">alerts muted</span>{% endif %}
+      </div>
+      {% set facts = [] %}
+      {% if sys and sys.os_version %}{% set _ = facts.append(sys.os_version) %}{% endif %}
+      {% if sys and sys.hostname %}{% set _ = facts.append(sys.hostname) %}{% endif %}
+      {% if ts and ts.ips %}{% set _ = facts.append(ts.ips[0]) %}{% elif sys and sys.local_ip %}{% set _ = facts.append(sys.local_ip) %}{% endif %}
+      {% if sys and sys.uptime_seconds is defined %}{% set _ = facts.append('up ' ~ (sys.uptime_seconds | uptime)) %}{% endif %}
+      {% if sys and sys.cpu_cores %}{% set _ = facts.append(sys.cpu_cores ~ ' cores') %}{% endif %}
+      {% if sys and sys.mem_total_bytes %}{% set _ = facts.append(((sys.mem_total_bytes / 1073741824) | round | int) ~ ' GiB RAM') %}{% endif %}
+      <p class="hero-facts">{{ facts | join(' · ') if facts else 'Waiting for the first report from this device.' }}</p>
+      {% if device.notes %}<p class="hero-notes">{{ device.notes }}</p>{% endif %}
+    </div>
+    <div class="hero-actions" role="toolbar" aria-label="Device actions">
+      {% if device.ssh_enabled %}
+      <button type="button" data-term-id="{{ device.id }}" data-term-name="{{ device.name }}" onclick="openTerminalFromBtn(this)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg> Terminal</button>
+      <button type="button" class="secondary" onclick='startUpdate({{ device.id }}, {{ device.name | tojson }}, "apt", {{ device.os | tojson }})'>{{ 'Windows updates' if is_windows else 'Update packages' }}</button>
+      <button type="button" class="secondary" onclick='startUpdate({{ device.id }}, {{ device.name | tojson }}, "client", {{ device.os | tojson }})'>Update client</button>
+      {% else %}
+      <button type="button" class="secondary" onclick="showDeviceTab('settings')">Set up SSH</button>
+      {% endif %}
+      <details class="menu">
+        <summary class="menu-btn">{{ 'Muted' if device.alerts_muted else 'Mute' }} ▾</summary>
+        <div class="menu-list">
+          {% if device.alerts_muted %}
+          <form method="post" action="/devices/{{ device.id }}/mute"><input type="hidden" name="minutes" value="0"><button type="submit" class="secondary">Unmute</button></form>
+          {% else %}
+          {% for m, l in [(60, 'For 1 hour'), (240, 'For 4 hours'), (1440, 'For 24 hours'), (-1, 'Until unmuted')] %}
+          <form method="post" action="/devices/{{ device.id }}/mute"><input type="hidden" name="minutes" value="{{ m }}"><button type="submit" class="secondary">{{ l }}</button></form>
+          {% endfor %}
+          {% endif %}
+        </div>
+      </details>
+    </div>
   </div>
-  {% if device.notes %}<p class="muted" style="margin-top:0">{{ device.notes }}</p>{% endif %}
-  <div class="mute-row">
-    {% if device.alerts_muted %}
-    <span class="chip warn">alerts muted</span>
-    <span class="muted" style="font-size:12px">{% if device.alerts_muted_forever %}until unmuted{% else %}until {{ device.alerts_muted_until | dt }}{% endif %}</span>
-    <form method="post" action="/devices/{{ device.id }}/mute"><input type="hidden" name="minutes" value="0"><button type="submit" class="secondary">Unmute</button></form>
-    {% else %}
-    <span class="muted" style="font-size:12px">Mute alerts</span>
-    {% for m, l in [(60, '1h'), (240, '4h'), (1440, '24h'), (-1, 'Always')] %}
-    <form method="post" action="/devices/{{ device.id }}/mute"><input type="hidden" name="minutes" value="{{ m }}"><button type="submit" class="secondary">{{ l }}</button></form>
-    {% endfor %}
-    {% endif %}
+  <div id="update-status" data-device-id="{{ device.id }}"></div>
+  <div class="device-tabs" role="tablist" aria-label="Device sections">
+    <button type="button" role="tab" data-tab="overview">Overview</button>
+    <button type="button" role="tab" data-tab="containers">Containers{% if containers %} <span class="tab-count">{{ ctr_up }}/{{ containers | length }}</span>{% endif %}</button>
+    <button type="button" role="tab" data-tab="checks">Checks{% if checks %} <span class="tab-count">{{ checks_up }}/{{ checks | length }}</span>{% endif %}</button>
+    <button type="button" role="tab" data-tab="alerts">Alerts{% if alerts %} <span class="tab-count">{{ alerts | length }}</span>{% endif %}</button>
+    <button type="button" role="tab" data-tab="settings">Settings</button>
   </div>
-  <ul class="kv-grid">
-    <li><span class="k">Last seen</span><span class="v" title="{{ device.last_seen_at | dt }}">{{ device.seconds_since_seen | reltime }}</span></li>
-    {% if sys and sys.hostname %}
-    <li><span class="k">Reported hostname</span><span class="v">{% if sys.hostname != device.name %}<span class="dot-tip" data-tip="Reported hostname differs from the configured device name"></span>{% endif %}{{ sys.hostname }}</span></li>
-    {% endif %}
-    {% if sys and sys.os_version %}
-    <li><span class="k">OS</span><span class="v">{{ sys.os_version }}</span></li>
-    {% endif %}
-    {% if sys and sys.uptime_seconds is defined %}
-    <li><span class="k">Uptime</span><span class="v">{{ sys.uptime_seconds | uptime }}</span></li>
-    {% endif %}
-  </ul>
 </section>
 
-<h2 class="section-head">System</h2>
-<div class="section-grid">
-  {% if sys %}
-  <section class="panel">
-    <h2>Resources</h2>
-    <div class="metric-row"><span class="metric-label">CPU</span>{{ ui.meter(sys.cpu_percent, ui.cpu_title(sys)) }}</div>
-    <div class="metric-row"><span class="metric-label">Memory</span>{{ ui.meter(sys.mem_percent, ui.mem_title(sys)) }}</div>
-    {% if sys.disks and sys.disks|length > 1 %}
-    {% for dk in sys.disks %}
-    <div class="metric-row"><span class="metric-label" title="{{ ui.disk_tip(dk) }}">Disk {{ loop.index }}</span>{{ ui.meter(dk.percent, ui.disk_tip(dk)) }}<span class="disk-name">{{ dk.mount.rstrip('\\') or dk.mount }}{% if dk.label %} · {{ dk.label }}{% endif %}</span>{% if loop.first and disk_full_days is not none %}<span class="chip {{ 'bad' if disk_full_days < 14 else 'warn' }}" title="Projected from the system drive's usage trend">{% if disk_full_days < 1 %}&lt;1d to full{% else %}~{{ disk_full_days | round | int }}d to full{% endif %}</span>{% endif %}</div>
-    {% endfor %}
-    {% else %}
-    <div class="metric-row"><span class="metric-label">Disk</span>{{ ui.meter(sys.disk_percent, ui.disk_title(sys)) }}{% if disk_full_days is not none %}<span class="chip {{ 'bad' if disk_full_days < 14 else 'warn' }}" style="margin-left:8px" title="Projected from the disk-usage trend">{% if disk_full_days < 1 %}&lt;1d to full{% else %}~{{ disk_full_days | round | int }}d to full{% endif %}</span>{% endif %}</div>
-    {% endif %}
-    {% if apt and apt.available %}
-    <div class="metric-row"><span class="metric-label">{{ 'Updates' if is_windows else 'Packages' }}</span>{{ ui.apt_chip(apt, device.apt_needs_update) }}{% if apt.reboot_required %}<span class="chip warn" style="margin-left:8px" title="Windows needs a restart to finish installing updates">reboot pending</span>{% endif %}</div>
-    {% endif %}
-    {% if device.ssh_enabled %}
-    <div class="update-actions">
-      <button type="button" class="secondary" onclick='startUpdate({{ device.id }}, {{ device.name | tojson }}, "apt", {{ device.os | tojson }})'>{{ 'Install Windows updates' if is_windows else 'Update packages' }}</button>
-      <button type="button" class="secondary" onclick='startUpdate({{ device.id }}, {{ device.name | tojson }}, "client", {{ device.os | tojson }})'>Update client</button>
-    </div>
-    <div id="update-status" data-device-id="{{ device.id }}"></div>
-    {% else %}
-    <p class="muted" style="font-size:12px;margin:14px 0 0">Enable SSH (below) to update packages or the client.</p>
-    {% endif %}
-  </section>
-  {% endif %}
+<div class="dtab" data-tab="overview" role="tabpanel">
+  <div class="overview-grid">
+    <div class="overview-main">
+      {% if sys %}
+      {% set sysdrive = disks[0].mount.rstrip('\\') %}
+      <section class="gauges" aria-label="Live usage">
+        {{ ui.ring(sys.cpu_percent, 'CPU', (sys.cpu_cores ~ ' cores') if sys.cpu_cores else '') }}
+        {{ ui.ring(sys.mem_percent, 'Memory', ui.mem_title(sys)) }}
+        {{ ui.ring(disks[0].percent, 'System drive', ((sysdrive ~ ' · ') if sysdrive else '') ~ ui.disk_title(sys)) }}
+      </section>
 
-  <section class="panel">
-    <h2>History (last 500 reports)</h2>
-    <div class="chart-wrap">
-      <canvas id="history-chart" width="1040" height="180" style="max-width:100%"></canvas>
+      <section class="panel storage" aria-label="Storage">
+        <h2>Storage{% if disks | length > 1 %} <span class="muted">· {{ disks | length }} drives</span>{% endif %}</h2>
+        {% for dk in disks %}
+        {% set p = dk.percent | round | int %}
+        <div class="drive">
+          <span class="drive-mount">{{ dk.mount.rstrip('\\') or dk.mount or 'Disk' }}</span>
+          <div class="drive-mid">
+            <span class="drive-top"><span>{{ dk.label or ('System' if loop.first else '') }}</span>{% if loop.first and disk_full_days is not none %}<span class="{{ 'bad-text' if disk_full_days < 14 else 'warn-text' }}" title="Projected from the usage trend">{% if disk_full_days < 1 %}&lt;1 day to full{% else %}~{{ disk_full_days | round | int }} days to full{% endif %}</span>{% else %}<span class="muted">{{ p }}%</span>{% endif %}</span>
+            <span class="fc-bar"><span class="{{ 'crit' if p >= 90 else 'warn' if p >= 70 else 'ok' }}" style="width:{{ [p, 100] | min }}%"></span></span>
+          </div>
+          <span class="drive-used">{% if dk.total_bytes %}{{ ui.gib(dk.used_bytes) }} / {{ ui.gib(dk.total_bytes) }}{% endif %}</span>
+        </div>
+        {% endfor %}
+      </section>
+      {% endif %}
+
+      <section class="panel">
+        <h2>History <span class="muted">· last 500 reports</span></h2>
+        <div class="chart-wrap">
+          <canvas id="history-chart" width="1040" height="180" style="max-width:100%"></canvas>
+        </div>
+        <p class="muted" style="font-size:12px;margin:8px 0 0">
+          <span style="color:var(--red)">■</span> CPU &nbsp;
+          <span style="color:var(--green)">■</span> Memory &nbsp;
+          <span style="color:var(--amber)">■</span> Disk
+        </p>
+      </section>
     </div>
-    <p class="muted" style="font-size:12px;margin:8px 0 0">
-      <span style="color:var(--red)">■</span> CPU &nbsp;
-      <span style="color:var(--green)">■</span> Memory &nbsp;
-      <span style="color:var(--amber)">■</span> Disk
-    </p>
+
+    <aside class="overview-side">
+      <section class="panel" aria-label="Health">
+        <h2>Health</h2>
+        <ul class="health-list">
+          {% if ts and ts.backend_state != 'not_installed' %}
+          <li><span class="hdot {{ 'ok' if ts.connected and device.is_online else 'bad' }}"></span><span>Tailscale</span><span class="h-detail">{{ 'Connected' if ts.connected else (ts.backend_state or 'Down') }}</span></li>
+          {% endif %}
+          {% if auth %}
+          <li><span class="hdot {{ 'warn' if auth.recent_failed_count else 'ok' }}"></span><span>SSH logins</span><span class="h-detail">{{ auth.recent_failed_count or 0 }} failed · {{ auth.recent_accepted_count or 0 }} ok</span></li>
+          {% endif %}
+          {% if apt and apt.available %}
+          <li><span class="hdot {{ 'warn' if device.apt_needs_update or apt.reboot_required else 'ok' }}"></span><span>{{ 'Windows Update' if is_windows else 'Packages' }}</span><span class="h-detail">{% if apt.upgradable %}{{ apt.upgradable }} pending{% else %}Up to date{% endif %}{% if apt.reboot_required %} · reboot{% endif %}</span></li>
+          {% endif %}
+          {% if sys %}
+          {% set worst = disks | sort(attribute='percent', reverse=true) | first %}
+          <li><span class="hdot {{ 'bad' if worst.percent >= 90 else 'warn' if worst.percent >= 70 else 'ok' }}"></span><span>Storage</span><span class="h-detail">Fullest {{ worst.mount.rstrip('\\') or 'disk' }} {{ worst.percent | round | int }}%</span></li>
+          {% endif %}
+          {% if containers %}
+          <li><span class="hdot {{ 'ok' if ctr_up == containers | length else 'warn' }}"></span><span>Containers</span><span class="h-detail">{{ ctr_up }}/{{ containers | length }} running</span></li>
+          {% endif %}
+          <li><span class="hdot {{ 'neutral' if not checks else 'ok' if checks_up == checks | length else 'bad' }}"></span><span>Service checks</span><span class="h-detail">{% if checks %}{{ checks_up }}/{{ checks | length }} up{% else %}None set up{% endif %}</span></li>
+        </ul>
+      </section>
+
+      <section class="panel" aria-label="Recent alerts">
+        <h2>Recent alerts</h2>
+        {% for a in alerts[:4] %}
+        <div class="mini-alert"><span class="ma-msg">{{ a.message }}</span><span class="ma-time">{{ a.created_at | dt }}</span></div>
+        {% else %}
+        <p class="muted" style="margin:0">No alerts yet.</p>
+        {% endfor %}
+        {% if alerts | length > 4 %}<button type="button" class="linkish" onclick="showDeviceTab('alerts')">All alerts →</button>{% endif %}
+      </section>
+
+  <section class="panel" aria-label="Tailscale">
+    <h2>Tailscale</h2>
+    {% if ts and ts.backend_state == 'not_installed' %}
+    <p class="muted">No Tailscale client on this device.</p>
+    {% elif ts %}
+    <ul class="kv">
+      <li><span class="k">Status</span><span class="v">{{ ui.tailscale_logo(ts, label=true, offline=not device.is_online) }}</span></li>
+      <li><span class="k">Backend state</span><span class="v">{{ ts.backend_state or '—' }}</span></li>
+      {% if ts.dns_name %}
+      <li><span class="k">MagicDNS name</span><span class="v"><span class="copyable" onclick="copyText('{{ ts.dns_name }}', this)" title="Click to copy">{{ ts.dns_name }}</span></span></li>
+      {% endif %}
+      <li>
+        <span class="k">IPs</span>
+        <span class="v">
+          {% if ts.ips %}
+            {% for ip in ts.ips %}
+            <span class="copyable" onclick="copyText('{{ ip }}', this)" title="Click to copy">{{ ip }}</span>{% if not loop.last %} {% endif %}
+            {% endfor %}
+          {% else %}—{% endif %}
+        </span>
+      </li>
+      <li><span class="k">Tailnet</span><span class="v">{{ ts.tailnet or '—' }}</span></li>
+      {% if ts.exit_node %}<li><span class="k">Exit node</span><span class="v">{{ ts.exit_node }}</span></li>{% endif %}
+    </ul>
+    {% else %}<p class="muted">No data yet.</p>{% endif %}
+  </section>
+    </aside>
+  </div>
+</div>
+
+<div class="dtab" data-tab="containers" role="tabpanel" hidden>
+  <section class="panel" id="containers-panel">
+    <div class="panel-head">
+      <h2 style="margin:0">Docker containers {% if containers %}<span class="chip neutral">{{ containers | length }}</span>{% endif %}</h2>
+      {% if containers %}
+      <div class="spark-toggle" id="spark-toggle" title="Background graph metric">
+        <button type="button" class="active" data-metric="cpu"><svg class="st-ico" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="7" y="7" width="10" height="10" rx="1"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg><span class="st-txt">CPU</span></button>
+        <button type="button" data-metric="mem"><svg class="st-ico" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="7" width="20" height="10" rx="1"/><path d="M6 7v10M10 7v10M14 7v10M18 7v10"/></svg><span class="st-txt">Mem</span></button>
+      </div>
+      {% endif %}
+    </div>
+    {% if containers %}
+      {# real (multi-container) stacks pinned to the top #}
+      {% for stack in containers | map(attribute='stack') | select | unique | list %}
+      {% set members = containers | selectattr('stack', 'equalto', stack) | list %}
+      {% if members | length > 1 %}
+      <details class="stack-item">
+        <summary>
+          <span class="chip info">STACK</span>
+          <span class="c-name">{{ stack }}</span>
+          <span class="spacer"></span>
+          {% if device.ssh_enabled %}
+          <span class="c-actions" onclick="event.stopPropagation()">
+            <button class="term-btn" title="Start all" onclick='stackAction({{ device.id }}, {{ members|map(attribute="name")|list|tojson }}, "start", this)'><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><polygon points="6 4 20 12 6 20"/></svg></button>
+            <button class="term-btn" title="Stop all" onclick='stackAction({{ device.id }}, {{ members|map(attribute="name")|list|tojson }}, "stop", this)'><svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="1"/></svg></button>
+            <button class="term-btn" title="Restart all" onclick='stackAction({{ device.id }}, {{ members|map(attribute="name")|list|tojson }}, "restart", this)'><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 3 21 9 15 9"/><path d="M20.5 14a8.5 8.5 0 1 1-2-8.9L21 9"/></svg></button>
+          </span>
+          {% endif %}
+          <span class="chip neutral">{{ members | length }}</span>
+        </summary>
+        <div class="c-body stack-body">
+          {% for c in members %}{{ ui.container_card(c, device, offline=not device.is_online) }}{% endfor %}
+        </div>
+      </details>
+      {% endif %}
+      {% endfor %}
+      {# then every standalone container (no stack, or a stack of one), below the stacks #}
+      {% for c in containers %}
+      {% set st = c.get('stack') %}
+      {% if not st or (containers | selectattr('stack', 'equalto', st) | list | length == 1) %}
+      {{ ui.container_card(c, device, offline=not device.is_online) }}
+      {% endif %}
+      {% endfor %}
+    {% else %}<p class="muted">No containers reported.</p>{% endif %}
   </section>
 </div>
 
-<h2 class="section-head">Access &amp; checks</h2>
-<div class="section-grid">
+<div class="dtab" data-tab="checks" role="tabpanel" hidden>
+  <section class="panel">
+    <h2>Service checks {% if checks %}<span class="chip neutral">{{ checks | length }}</span>{% endif %}</h2>
+    {% for c in checks %}
+    <div class="check-item">
+      <span class="chip {{ 'ok' if c.last_status == 'up' else 'bad' if c.last_status == 'down' else 'neutral' }}">{{ c.last_status }}</span>
+      <span class="c-name">{{ c.name }}{% if not c.enabled %} <span class="chip neutral">paused</span>{% endif %}</span>
+      <span class="check-target">{{ c.kind }} · {{ c.target }}</span>
+      {% if c.last_status == 'up' and c.last_latency_ms is not none %}<span class="muted" style="font-size:12px">{{ c.last_latency_ms | round | int }}ms</span>{% endif %}
+      <span class="spacer"></span>
+      <form method="post" action="/checks/{{ c.id }}/toggle"><button type="submit" class="term-btn" title="{{ 'Pause' if c.enabled else 'Resume' }}">{% if c.enabled %}❚❚{% else %}▶{% endif %}</button></form>
+      <form method="post" action="/checks/{{ c.id }}/delete" onsubmit="return confirm('Delete this check?')"><button type="submit" class="term-btn" title="Delete">✕</button></form>
+    </div>
+    {% if c.last_status == 'down' and c.last_error %}<div class="check-err">{{ c.last_error }}</div>{% endif %}
+    {% else %}
+    <p class="muted">No checks yet. Add an HTTP or TCP check to watch a service on this device.</p>
+    {% endfor %}
+    <details style="margin-top:12px">
+      <summary class="muted" style="cursor:pointer;font-size:13px">+ Add check</summary>
+      <form method="post" action="/devices/{{ device.id }}/checks" class="form-grid" style="margin-top:10px">
+        <label>Name <input type="text" name="name" placeholder="nginx" required /></label>
+        <label>Type
+          <select name="kind">
+            <option value="http">HTTP</option>
+            <option value="tcp">TCP</option>
+          </select>
+        </label>
+        <label>Target <input type="text" name="target" placeholder="http://100.x:8080  or  100.x:5432" required /></label>
+        <label>Interval (s) <input type="number" name="interval_seconds" value="60" min="10" /></label>
+        <div class="full-width"><button type="submit">Add check</button></div>
+      </form>
+    </details>
+  </section>
+</div>
+
+<div class="dtab" data-tab="alerts" role="tabpanel" hidden>
+<section class="panel">
+  {% for a in alerts %}
+  <div class="alert-item">
+    <span class="alert-time">{{ a.created_at | dt }}</span>
+    <span class="chip {{ 'bad' if a.kind in ['offline','tailscale_down','container_down','service_down'] else 'ok' if a.kind in ['online','tailscale_up','service_up'] else 'warn' if a.kind in ['apt_stale','cpu_high','mem_high','disk_high'] else 'neutral' }}">{{ a.kind }}</span>
+    <span class="alert-msg">{{ a.message }}</span>
+  </div>
+  {% else %}
+  <p class="muted">No alerts yet.</p>
+  {% endfor %}
+</section>
+</div>
+
+<div class="dtab" data-tab="settings" role="tabpanel" hidden>
   <section class="panel">
     <h2>SSH terminal</h2>
     <div class="switch-row">
@@ -132,129 +312,6 @@
     </details>
   </section>
 
-  <section class="panel">
-    <h2>Service checks {% if checks %}<span class="chip neutral">{{ checks | length }}</span>{% endif %}</h2>
-    {% for c in checks %}
-    <div class="check-item">
-      <span class="chip {{ 'ok' if c.last_status == 'up' else 'bad' if c.last_status == 'down' else 'neutral' }}">{{ c.last_status }}</span>
-      <span class="c-name">{{ c.name }}{% if not c.enabled %} <span class="chip neutral">paused</span>{% endif %}</span>
-      <span class="check-target">{{ c.kind }} · {{ c.target }}</span>
-      {% if c.last_status == 'up' and c.last_latency_ms is not none %}<span class="muted" style="font-size:12px">{{ c.last_latency_ms | round | int }}ms</span>{% endif %}
-      <span class="spacer"></span>
-      <form method="post" action="/checks/{{ c.id }}/toggle"><button type="submit" class="term-btn" title="{{ 'Pause' if c.enabled else 'Resume' }}">{% if c.enabled %}❚❚{% else %}▶{% endif %}</button></form>
-      <form method="post" action="/checks/{{ c.id }}/delete" onsubmit="return confirm('Delete this check?')"><button type="submit" class="term-btn" title="Delete">✕</button></form>
-    </div>
-    {% if c.last_status == 'down' and c.last_error %}<div class="check-err">{{ c.last_error }}</div>{% endif %}
-    {% else %}
-    <p class="muted">No checks yet. Add an HTTP or TCP check to watch a service on this device.</p>
-    {% endfor %}
-    <details style="margin-top:12px">
-      <summary class="muted" style="cursor:pointer;font-size:13px">+ Add check</summary>
-      <form method="post" action="/devices/{{ device.id }}/checks" class="form-grid" style="margin-top:10px">
-        <label>Name <input type="text" name="name" placeholder="nginx" required /></label>
-        <label>Type
-          <select name="kind">
-            <option value="http">HTTP</option>
-            <option value="tcp">TCP</option>
-          </select>
-        </label>
-        <label>Target <input type="text" name="target" placeholder="http://100.x:8080  or  100.x:5432" required /></label>
-        <label>Interval (s) <input type="number" name="interval_seconds" value="60" min="10" /></label>
-        <div class="full-width"><button type="submit">Add check</button></div>
-      </form>
-    </details>
-  </section>
-</div>
-
-<h2 class="section-head">Containers &amp; network</h2>
-<div class="section-grid">
-  <section class="panel" id="containers-panel">
-    <div class="panel-head">
-      <h2 style="margin:0">Docker containers {% if containers %}<span class="chip neutral">{{ containers | length }}</span>{% endif %}</h2>
-      {% if containers %}
-      <div class="spark-toggle" id="spark-toggle" title="Background graph metric">
-        <button type="button" class="active" data-metric="cpu"><svg class="st-ico" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="7" y="7" width="10" height="10" rx="1"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg><span class="st-txt">CPU</span></button>
-        <button type="button" data-metric="mem"><svg class="st-ico" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="7" width="20" height="10" rx="1"/><path d="M6 7v10M10 7v10M14 7v10M18 7v10"/></svg><span class="st-txt">Mem</span></button>
-      </div>
-      {% endif %}
-    </div>
-    {% if containers %}
-      {# real (multi-container) stacks pinned to the top #}
-      {% for stack in containers | map(attribute='stack') | select | unique | list %}
-      {% set members = containers | selectattr('stack', 'equalto', stack) | list %}
-      {% if members | length > 1 %}
-      <details class="stack-item">
-        <summary>
-          <span class="chip info">STACK</span>
-          <span class="c-name">{{ stack }}</span>
-          <span class="spacer"></span>
-          {% if device.ssh_enabled %}
-          <span class="c-actions" onclick="event.stopPropagation()">
-            <button class="term-btn" title="Start all" onclick='stackAction({{ device.id }}, {{ members|map(attribute="name")|list|tojson }}, "start", this)'><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><polygon points="6 4 20 12 6 20"/></svg></button>
-            <button class="term-btn" title="Stop all" onclick='stackAction({{ device.id }}, {{ members|map(attribute="name")|list|tojson }}, "stop", this)'><svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="1"/></svg></button>
-            <button class="term-btn" title="Restart all" onclick='stackAction({{ device.id }}, {{ members|map(attribute="name")|list|tojson }}, "restart", this)'><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 3 21 9 15 9"/><path d="M20.5 14a8.5 8.5 0 1 1-2-8.9L21 9"/></svg></button>
-          </span>
-          {% endif %}
-          <span class="chip neutral">{{ members | length }}</span>
-        </summary>
-        <div class="c-body stack-body">
-          {% for c in members %}{{ ui.container_card(c, device, offline=not device.is_online) }}{% endfor %}
-        </div>
-      </details>
-      {% endif %}
-      {% endfor %}
-      {# then every standalone container (no stack, or a stack of one), below the stacks #}
-      {% for c in containers %}
-      {% set st = c.get('stack') %}
-      {% if not st or (containers | selectattr('stack', 'equalto', st) | list | length == 1) %}
-      {{ ui.container_card(c, device, offline=not device.is_online) }}
-      {% endif %}
-      {% endfor %}
-    {% else %}<p class="muted">No containers reported.</p>{% endif %}
-  </section>
-
-  <section class="panel">
-    <h2>Tailscale</h2>
-    {% if ts and ts.backend_state == 'not_installed' %}
-    <p class="muted">No Tailscale client on this device.</p>
-    {% elif ts %}
-    <ul class="kv">
-      <li><span class="k">Status</span><span class="v">{{ ui.tailscale_logo(ts, label=true, offline=not device.is_online) }}</span></li>
-      <li><span class="k">Backend state</span><span class="v">{{ ts.backend_state or '—' }}</span></li>
-      {% if ts.dns_name %}
-      <li><span class="k">MagicDNS name</span><span class="v"><span class="copyable" onclick="copyText('{{ ts.dns_name }}', this)" title="Click to copy">{{ ts.dns_name }}</span></span></li>
-      {% endif %}
-      <li>
-        <span class="k">IPs</span>
-        <span class="v">
-          {% if ts.ips %}
-            {% for ip in ts.ips %}
-            <span class="copyable" onclick="copyText('{{ ip }}', this)" title="Click to copy">{{ ip }}</span>{% if not loop.last %} {% endif %}
-            {% endfor %}
-          {% else %}—{% endif %}
-        </span>
-      </li>
-      <li><span class="k">Tailnet</span><span class="v">{{ ts.tailnet or '—' }}</span></li>
-      {% if ts.exit_node %}<li><span class="k">Exit node</span><span class="v">{{ ts.exit_node }}</span></li>{% endif %}
-    </ul>
-    {% else %}<p class="muted">No data yet.</p>{% endif %}
-  </section>
-</div>
-
-<h2 class="section-head">Activity</h2>
-<section class="panel">
-  {% for a in alerts %}
-  <div class="alert-item">
-    <span class="alert-time">{{ a.created_at | dt }}</span>
-    <span class="chip {{ 'bad' if a.kind in ['offline','tailscale_down','container_down','service_down'] else 'ok' if a.kind in ['online','tailscale_up','service_up'] else 'warn' if a.kind in ['apt_stale','cpu_high','mem_high','disk_high'] else 'neutral' }}">{{ a.kind }}</span>
-    <span class="alert-msg">{{ a.message }}</span>
-  </div>
-  {% else %}
-  <p class="muted">No alerts yet.</p>
-  {% endfor %}
-</section>
-
-<h2 class="section-head">Configuration</h2>
 <section class="panel" id="client-config">
     <h2>Client configuration</h2>
     <h3>API key</h3>
@@ -287,6 +344,8 @@
       <button type="submit" class="danger">Delete device</button>
     </form>
   </section>
+</div>
+
 {# Mobile slide-in bar for container/stack actions (buttons cloned from the tapped row). #}
 <div id="action-sheet" class="action-sheet" hidden>
   <div class="sheet-backdrop" onclick="closeActionSheet()"></div>
@@ -305,6 +364,7 @@
   loadHistoryChart('/devices/{{ device.id }}/history.json', 'history-chart');
   loadContainerSparks('/devices/{{ device.id }}/containers/history.json');
   initContainerActionSheet();
+  initDeviceTabs();
   renderUpdaters();  {# paint any in-flight update into this device's panel #}
 </script>
 {% endblock %}
