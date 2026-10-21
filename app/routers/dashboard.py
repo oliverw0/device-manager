@@ -102,6 +102,8 @@ def os_key(system: Optional[dict]) -> Optional[str]:
     version = (system.get("os_version") or "").lower()
     if "raspberry" in version or "raspbian" in version:
         return "raspbian"
+    if "asahi" in version:  # before fedora/arch: "Fedora Linux Asahi Remix 40"
+        return "asahi"
     return next((d for d in _DISTROS if d in version), "linux")
 
 
