@@ -36,7 +36,8 @@ APT_CMD = (
 # Linux client update, POSIX sh run as root over SSH. It finds the client however
 # it was installed and fails loudly (set -e) instead of reporting success:
 #  - Docker: the container by name, or by compose service label (older compose
-#    named it <project>-devicemanager-client-1). `git pull` in its compose dir,
+#    named it <project>-devicemanager-client-1). `git pull` (always from the
+#    public HTTPS repo) in its compose dir,
 #    with local edits (custom mounts in docker-compose.yml) set aside and put
 #    back; if they clash, everything is restored and the job fails with advice.
 #  - Native (install-native.sh): copies files, it's not a git checkout, so the
@@ -53,7 +54,9 @@ pull() {{
     echo "Keeping your local edits to: $($G status --porcelain --untracked-files=no | cut -c4- | tr '\\n' ' ')"
     $G stash push -q -m 'devicemanager update' && stashed=1
   fi
-  $G pull --ff-only
+  # From the public HTTPS repo, not the checkout's origin: that's often an SSH
+  # URL (git@github.com:…) that root on the device has no key or host key for.
+  GIT_TERMINAL_PROMPT=0 $G pull --ff-only "$REPO" main
   if [ -n "$stashed" ] && ! $G stash pop -q; then
     $G reset -q --hard "$before"
     $G stash pop -q
