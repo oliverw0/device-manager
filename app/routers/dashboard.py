@@ -287,10 +287,15 @@ def device_detail(request: Request, device_id: int, session: Session = Depends(g
     checks = session.exec(
         select(ServiceCheck).where(ServiceCheck.device_id == device_id).order_by(ServiceCheck.name)
     ).all()
-    disk_rows = session.exec(
-        select(ReportHistory).where(ReportHistory.device_id == device_id).order_by(ReportHistory.timestamp)
-    ).all()
-    disk_full_days = _project_disk_full_days([(r.timestamp.timestamp(), r.disk_percent) for r in disk_rows])
+    # "~N days to full": a Linux server's disk fills steadily, but a Windows
+    # system drive swings with updates, temp files and the page file, so a trend
+    # projected from it is just noise. Not shown for Windows.
+    disk_full_days = None
+    if not remote.is_windows(device):
+        disk_rows = session.exec(
+            select(ReportHistory).where(ReportHistory.device_id == device_id).order_by(ReportHistory.timestamp)
+        ).all()
+        disk_full_days = _project_disk_full_days([(r.timestamp.timestamp(), r.disk_percent) for r in disk_rows])
     from .updates import is_outdated, latest_client_version  # updates imports this module
 
     serialized = serialize_device(device)
