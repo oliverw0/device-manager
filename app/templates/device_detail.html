@@ -24,7 +24,8 @@
       </div>
       {% if device.report %}
       <ul class="hero-facts" aria-label="Device facts">
-        {% if sys and sys.os_version %}<li class="fact"><span class="fact-k">OS</span>{{ sys.os_version }}</li>{% endif %}
+        {% if sys and sys.os_version %}<li class="fact{{ ' tip-below' if sys.kernel }}"{% if sys.kernel %} data-tip="Kernel {{ sys.kernel }}"{% endif %}><span class="fact-k">OS</span>{{ sys.os_version }}</li>{% endif %}
+        {% if sys and sys.hardware_model %}<li class="fact"><span class="fact-k">Hardware</span>{{ sys.hardware_model }}</li>{% endif %}
         {% if sys and sys.hostname %}<li class="fact"><span class="fact-k">Host</span>{{ sys.hostname }}</li>{% endif %}
         {% set ip = ts.ips[0] if ts and ts.ips else (sys.local_ip if sys else none) %}
         {% if ip %}<li><button type="button" class="fact copyable-fact" onclick="copyText('{{ ip }}', this)" title="Copy IP"><span class="fact-k">{{ 'Tailscale' if ts and ts.ips else 'IP' }}</span>{{ ip }}</button></li>{% endif %}
@@ -40,14 +41,16 @@
     </div>
     <div class="hero-actions" role="toolbar" aria-label="Device actions">
       {% if device.ssh_enabled %}
-      <button type="button" data-term-id="{{ device.id }}" data-term-name="{{ device.name }}" onclick="openTerminalFromBtn(this)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg> Terminal</button>
-      <button type="button" class="secondary" onclick='startUpdate({{ device.id }}, {{ device.name | tojson }}, "apt", {{ device.os | tojson }})'>{{ 'Windows updates' if is_windows else 'Update packages' }}</button>
-      <button type="button" class="secondary" onclick='startUpdate({{ device.id }}, {{ device.name | tojson }}, "client", {{ device.os | tojson }})'>Update client</button>
+      <button type="button" class="icon-btn primary tip-below" data-tip="Open terminal" aria-label="Open terminal" data-term-id="{{ device.id }}" data-term-name="{{ device.name }}" onclick="openTerminalFromBtn(this)"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg></button>
+      {% set pkg_label = 'Install Windows updates' if is_windows else 'Update packages' %}
+      <button type="button" class="icon-btn tip-below" data-tip="{{ pkg_label }}" aria-label="{{ pkg_label }}" onclick='startUpdate({{ device.id }}, {{ device.name | tojson }}, "apt", {{ device.os | tojson }})'><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v11"></path><polyline points="7 10 12 15 17 10"></polyline><path d="M4 17v3h16v-3"></path></svg></button>
+      <button type="button" class="icon-btn tip-below" data-tip="Update client" aria-label="Update client" onclick='startUpdate({{ device.id }}, {{ device.name | tojson }}, "client", {{ device.os | tojson }})'><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.4"></path><polyline points="21 3 21 9 15 9"></polyline></svg></button>
       {% else %}
-      <button type="button" class="secondary" onclick="showDeviceTab('settings')">Set up SSH</button>
+      <button type="button" class="icon-btn tip-below" data-tip="Set up SSH (Settings)" aria-label="Set up SSH" onclick="showDeviceTab('settings')"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4.5"></circle><path d="M10.7 12.3L20 3"></path><path d="M16 7l3 3"></path></svg></button>
       {% endif %}
       <details class="menu">
-        <summary class="menu-btn">{{ 'Muted' if device.alerts_muted else 'Mute' }} ▾</summary>
+        {% set mute_tip = ('Alerts muted until unmuted' if device.alerts_muted_forever else 'Alerts muted until ' ~ (device.alerts_muted_until | dt)) if device.alerts_muted else 'Mute alerts' %}
+        <summary class="icon-btn tip-below tip-end{{ ' active' if device.alerts_muted }}" data-tip="{{ mute_tip }}" aria-label="{{ mute_tip }}">{% if device.alerts_muted %}<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.7 21a2 2 0 0 1-3.4 0"></path><path d="M18.6 13A17.9 17.9 0 0 1 18 8"></path><path d="M6.3 6.3A6 6 0 0 0 6 8c0 7-3 9-3 9h14"></path><path d="M18 8a6 6 0 0 0-9.3-5"></path><line x1="2" y1="2" x2="22" y2="22"></line></svg>{% else %}<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"></path></svg>{% endif %}</summary>
         <div class="menu-list">
           {% if device.alerts_muted %}
           <form method="post" action="/devices/{{ device.id }}/mute"><input type="hidden" name="minutes" value="0"><button type="submit" class="secondary">Unmute</button></form>

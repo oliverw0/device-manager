@@ -102,7 +102,12 @@ def os_key(system: Optional[dict]) -> Optional[str]:
     version = (system.get("os_version") or "").lower()
     if "raspberry" in version or "raspbian" in version:
         return "raspbian"
-    if "asahi" in version:  # before fedora/arch: "Fedora Linux Asahi Remix 40"
+    # Asahi before fedora/debian/arch: "Fedora Linux Asahi Remix 40", or any distro
+    # on Apple Silicon ("Debian 13" with kernel 6.17.9+deb13-asahi). The kernel is
+    # the reliable tell for Docker clients, which can't read the hardware model.
+    kernel = (system.get("kernel") or "").lower()
+    model = (system.get("hardware_model") or "").lower()
+    if "asahi" in version or "asahi" in kernel or model.startswith("apple"):
         return "asahi"
     return next((d for d in _DISTROS if d in version), "linux")
 
@@ -369,11 +374,13 @@ def container_history(device_id: int, session: Session = Depends(get_session)):
 
 def ssh_candidates(device: Device) -> list[str]:
     """Ordered SSH targets to try: Tailscale first, then local addresses.
-    The terminal attempts each until one connects.
+    The terminal attempts each until one connects (and is the right machine,
+    see remote.connect).
       1. explicit override (if set) — used alone
       2. Tailscale IPs (100.x…), then the MagicDNS name
-      3. the device's reported LAN IP
-      4. the address its last report came from
+      3. the address its last report came from — what the host actually sees
+      4. the device's self-reported LAN IP (older Docker clients report their
+         container's bridge IP here, which can belong to another machine)
     """
     if device.ssh_host:
         return [device.ssh_host]
@@ -385,11 +392,11 @@ def ssh_candidates(device: Device) -> list[str]:
     out.extend(ts.get("ips") or [])
     if ts.get("dns_name"):
         out.append(ts["dns_name"])
+    if device.last_report_ip:
+        out.append(device.last_report_ip)
     system = report.get("system") or {}
     if system.get("local_ip"):
         out.append(system["local_ip"])
-    if device.last_report_ip:
-        out.append(device.last_report_ip)
 
     seen = set()
     ordered = []

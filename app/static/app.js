@@ -89,23 +89,23 @@ const SEV_RANK = { bad: 0, warn: 1 };
 function deviceIssues(d) {
   const out = [];
   const sys = d.report && d.report.system;
-  if (!d.is_online) return [{ sev: "bad", text: d.last_seen_at ? `Offline ${fmtRelative(d.seconds_since_seen).replace(" ago", "")}` : "Never reported" }];
+  if (!d.is_online) return [{ id: "offline", sev: "bad", text: d.last_seen_at ? `Offline ${fmtRelative(d.seconds_since_seen).replace(" ago", "")}` : "Never reported" }];
   if (sys) {
     const disks = sys.disks && sys.disks.length ? sys.disks : [{ mount: "Disk", percent: sys.disk_percent }];
     disks.forEach((dk) => {
       const name = (dk.mount || "").replace(/\\+$/, "") || "Disk";
-      if (dk.percent >= 90) out.push({ sev: "bad", text: `${name} ${Math.round(dk.percent)}% full` });
+      if (dk.percent >= 90) out.push({ id: "disk:" + name, sev: "bad", text: `${name} ${Math.round(dk.percent)}% full` });
     });
-    if (sys.mem_percent >= 90) out.push({ sev: "bad", text: `Memory ${Math.round(sys.mem_percent)}%` });
-    if (sys.cpu_percent >= 90) out.push({ sev: "bad", text: `CPU ${Math.round(sys.cpu_percent)}%` });
+    if (sys.mem_percent >= 90) out.push({ id: "mem", sev: "bad", text: `Memory ${Math.round(sys.mem_percent)}%` });
+    if (sys.cpu_percent >= 90) out.push({ id: "cpu", sev: "bad", text: `CPU ${Math.round(sys.cpu_percent)}%` });
   }
   const apt = d.report && d.report.apt;
   // Flagged with a count of 0 means the apt cache is old, not that packages are pending.
-  if (d.apt_needs_update) out.push({ sev: "warn", text: apt && apt.upgradable ? `${apt.upgradable} updates` : apt && apt.upgradable === 0 ? "Package list stale" : "Updates pending" });
-  if (apt && apt.reboot_required) out.push({ sev: "warn", text: "Reboot pending" });
+  if (d.apt_needs_update) out.push({ id: "updates", sev: "warn", text: apt && apt.upgradable ? `${apt.upgradable} updates` : apt && apt.upgradable === 0 ? "Package list stale" : "Updates pending" });
+  if (apt && apt.reboot_required) out.push({ id: "reboot", sev: "warn", text: "Reboot pending" });
   const ctrs = (d.report && d.report.docker_containers) || [];
   const down = ctrs.filter((c) => c.status !== "running").length;
-  if (down) out.push({ sev: "warn", text: `${down} container${down > 1 ? "s" : ""} stopped` });
+  if (down) out.push({ id: "containers", sev: "warn", text: `${down} container${down > 1 ? "s" : ""} stopped` });
   return out.sort((a, b) => SEV_RANK[a.sev] - SEV_RANK[b.sev]);
 }
 
@@ -195,11 +195,21 @@ function renderFleet() {
   const attention = document.getElementById("attention");
   if (attention) {
     const items = [];
-    devs.forEach((d) => d._issues.forEach((i) => items.push({ d, i })));
+    devs.forEach((d) => d._issues.forEach((i) => items.push({ d, i, key: `${d.id}:${i.id}` })));
     items.sort((a, b) => SEV_RANK[a.i.sev] - SEV_RANK[b.i.sev]);
+    // A dismissal lasts until that problem clears, so if it comes back it shows again.
+    if (devs.length) {
+      const live = new Set(items.map((x) => x.key));
+      Object.keys(DISMISSED).forEach((k) => { if (/^\d+:/.test(k) && !live.has(k)) delete DISMISSED[k]; });
+      saveDismissed();
+    }
+    const shown = items.filter((x) => !DISMISSED[x.key]);
+    const hiddenCount = items.length - shown.length;
     attention.hidden = items.length === 0;
-    attention.innerHTML = items.slice(0, 6).map(({ d, i }) =>
-      `<a class="attn ${i.sev}" href="/devices/${d.id}"><span class="attn-what">${escapeHtml(i.text)}</span><span class="attn-dev">${escapeHtml(d.name)}</span></a>`).join("");
+    attention.innerHTML = shown.slice(0, 6).map(({ d, i, key }) =>
+      `<div class="attn ${i.sev}"><a class="attn-link" href="/devices/${d.id}"><span class="attn-what">${escapeHtml(i.text)}</span><span class="attn-dev">${escapeHtml(d.name)}</span></a>` +
+      `<button type="button" class="attn-x tip-below tip-end" data-dismiss="${key}" data-tip="Dismiss" aria-label="Dismiss: ${escapeHtml(i.text)} on ${escapeHtml(d.name)}">✕</button></div>`).join("") +
+      (hiddenCount ? `<button type="button" class="attn-restore" data-restore="1">Show ${hiddenCount} dismissed</button>` : "");
   }
 
   const pred = (FLEET_FILTERS.find(([k]) => k === FLEET.filter) || FLEET_FILTERS[0])[2];
@@ -240,13 +250,16 @@ const vOlder = (a, b) => { const x = vtuple(a), y = vtuple(b); for (let i = 0; i
 function renderClientBanner() {
   const el = document.getElementById("client-banner");
   if (!el) return;
+  const bannerKey = "banner:" + (FLEET.latest || "unknown");
+  const bannerX = `<button type="button" class="attn-x tip-below tip-end" data-dismiss="${bannerKey}" data-tip="Dismiss until the next release" aria-label="Dismiss">✕</button>`;
+  if (DISMISSED[bannerKey]) { el.hidden = true; return; }
   if (!FLEET.latest) {
     // GitHub lookup failed: we can't tell who's behind, so offer to update everyone reachable.
     const ready = FLEET.devices.filter((d) => d.report && d.ssh_enabled && d.is_online);
     el.hidden = ready.length === 0;
     el.innerHTML = `<span class="cb-text"><span>Couldn't check for the latest client release</span>` +
       `<span class="cb-names">The host couldn't read it from GitHub; it retries every 5 minutes.</span></span>` +
-      `<button type="button" class="secondary" onclick="updateAllClients(${ready.length})">Update all ${ready.length}</button>`;
+      `<button type="button" class="secondary" onclick="updateAllClients(${ready.length})">Update all ${ready.length}</button>` + bannerX;
     return;
   }
   const old = FLEET.devices.filter((d) => d.report && vOlder(d.agent_version, FLEET.latest));
@@ -257,7 +270,7 @@ function renderClientBanner() {
   el.innerHTML = `<span class="cb-text"><span><b>${old.length} client${old.length > 1 ? "s" : ""}</b> on an old release · latest is ${escapeHtml(FLEET.latest)}</span>` +
     `<span class="cb-names">${escapeHtml(names)}</span></span>` +
     (ready.length ? `<button type="button" onclick="updateAllClients(${ready.length})">Update ${ready.length === old.length ? "all" : ready.length}</button>`
-      : `<span class="muted cb-note">Enable SSH on them to update from here</span>`);
+      : `<span class="muted cb-note">Enable SSH on them to update from here</span>`) + bannerX;
 }
 
 // force: update every online, SSH-enabled device whatever version it reports.
@@ -269,8 +282,26 @@ function updateAllClients(n, force) {
     .catch(() => alert("Couldn't start the updates."));
 }
 
+// Dismissed front-page alerts, per browser: { "<deviceId>:<issueId>": 1, "banner:<version>": 1 }.
+var DISMISSED = (() => { try { return JSON.parse(localStorage.getItem("dm-dismissed")) || {}; } catch (_) { return {}; } })();
+function saveDismissed() { try { localStorage.setItem("dm-dismissed", JSON.stringify(DISMISSED)); } catch (_) {} }
+
 function initFleet(devices, latest) {
   FLEET.latest = latest;
+  const attention = document.getElementById("attention");
+  if (attention) attention.addEventListener("click", (e) => {
+    const x = e.target.closest("[data-dismiss]");
+    if (x) { DISMISSED[x.dataset.dismiss] = 1; saveDismissed(); renderFleet(); return; }
+    if (e.target.closest("[data-restore]")) {
+      Object.keys(DISMISSED).forEach((k) => { if (/^\d+:/.test(k)) delete DISMISSED[k]; });
+      saveDismissed(); renderFleet();
+    }
+  });
+  const banner = document.getElementById("client-banner");
+  if (banner) banner.addEventListener("click", (e) => {
+    const x = e.target.closest("[data-dismiss]");
+    if (x) { DISMISSED[x.dataset.dismiss] = 1; saveDismissed(); renderClientBanner(); }
+  });
   if (new URLSearchParams(location.search).has("updates")) FLEET.filter = "updates";
   const filters = document.getElementById("device-filters");
   if (filters) filters.addEventListener("click", (e) => {

@@ -11,7 +11,7 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from sqlmodel import Session, select
 
-from .. import remote, ssh_keys
+from .. import remote
 from ..database import engine
 from ..models import Device
 from .dashboard import ssh_candidates
@@ -187,15 +187,11 @@ def _parse_line(job: dict, line: str):
             _set_percent(job, 15 + (int(m.group(1)) / int(m.group(2))) * 70)
 
 
-async def _run_job(job: dict, candidates: list[str], port: int, user: str, cmd: str):
-    key = ssh_keys.private_key_path()
+async def _run_job(job: dict, candidates: list[str], port: int, user: str, cmd: str, expected: str | None):
     err = "no address"
     for addr in candidates:
         try:
-            async with asyncssh.connect(
-                addr, port=port, username=user,
-                client_keys=[key], known_hosts=None, connect_timeout=8,
-            ) as conn:
+            async with await remote.connect(addr, port, user, expected) as conn:
                 job["status"] = "running"
                 job["stage"] = "Checking for updates…"
                 # stderr merged in so failures land in the tail (Linux also does 2>&1).
@@ -244,6 +240,7 @@ async def start_update(device_id: int, kind: str):
         if device is None or not device.ssh_enabled:
             return JSONResponse({"detail": "SSH is not enabled for this device"}, status_code=400)
         candidates = ssh_candidates(device)
+        expected = remote.expected_hostname(device)
         port = device.ssh_port
         device_name = device.name
         user = remote.update_user(device)
@@ -260,7 +257,7 @@ async def start_update(device_id: int, kind: str):
         "status": "starting", "percent": None, "stage": "Connecting…",
         "eta_seconds": None, "error": None, "tail": [], "started_at": time.time(),
     }
-    asyncio.create_task(_run_job(job, candidates, port, user, cmd))
+    asyncio.create_task(_run_job(job, candidates, port, user, cmd, expected))
     return {"job_id": jid}
 
 

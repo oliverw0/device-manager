@@ -40,6 +40,10 @@ assert os_key({"os": "linux", "os_version": "Raspbian GNU/Linux 12"}) == "raspbi
 assert os_key({"os": "linux", "os_version": "Ubuntu 24.04 LTS"}) == "ubuntu"
 assert os_key({"os": "linux", "os_version": "Alpine Linux"}) == "linux"
 assert os_key({"os": "linux", "os_version": "Fedora Linux Asahi Remix 40 (Forty)"}) == "asahi"
+# mac-deb: Debian on an M1, seen by the Docker client (kernel only) and natively (model too)
+assert os_key({"os": "linux", "os_version": "Debian GNU/Linux 13 (trixie)", "kernel": "6.17.9+deb13-asahi"}) == "asahi"
+assert os_key({"os": "linux", "os_version": "Debian GNU/Linux 13 (trixie)", "hardware_model": "Apple MacBook Air (M1, 2020)"}) == "asahi"
+assert os_key({"os": "linux", "os_version": "Debian GNU/Linux 13 (trixie)", "kernel": "6.12.48+deb13-amd64"}) == "debian"
 assert os_key({"hostname": "old-client"}) == "linux"  # pre-os clients are Linux: Tux
 assert os_key(None) is None  # never reported: no icon
 sysinfo = SystemInfo(hostname="h", cpu_percent=1, mem_percent=1, disk_percent=1, uptime_seconds=1,

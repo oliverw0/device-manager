@@ -11,6 +11,10 @@ last report first (see terminal._known_container), so they're a safe charset.
 import base64
 import json
 
+import asyncssh
+
+from . import ssh_keys
+
 # Where install.ps1 puts the client; "$env:ProgramFiles" expands on the device.
 WIN_CLIENT_DIR = r"$env:ProgramFiles\DeviceManagerClient"
 # The client repo, and its main branch's raw files (also where the latest version is read).
@@ -33,6 +37,41 @@ def is_windows(device) -> bool:
 
 def _windows_info(device) -> dict:
     return _report(device).get("windows") or {}
+
+
+def expected_hostname(device) -> str | None:
+    """The machine name the device reported, to check we SSH'd into the right box."""
+    return (_report(device).get("system") or {}).get("hostname") or None
+
+
+class WrongMachine(OSError):
+    """Connected, but to a different machine than the device (e.g. an address
+    that belongs to someone else on this network). Callers try the next address."""
+
+
+def _short(name: str) -> str:
+    return name.strip().split(".")[0].lower()
+
+
+async def connect(addr: str, port: int, user: str, expected: str | None):
+    """asyncssh.connect, then confirm the machine is the device by hostname.
+    Host keys aren't pinned (no known_hosts yet), so without this an address
+    that now points at another machine (a Docker bridge IP, a reused DHCP lease)
+    silently opens a shell — or runs an update — on the wrong box."""
+    conn = await asyncssh.connect(
+        addr, port=port, username=user,
+        client_keys=[ssh_keys.private_key_path()], known_hosts=None, connect_timeout=8,
+    )
+    if expected:
+        try:
+            r = await conn.run("hostname", check=False, timeout=10)
+            actual = (r.stdout or "").strip() if r.exit_status == 0 else ""
+        except (OSError, asyncssh.Error):
+            actual = ""  # couldn't ask: don't block a working connection on it
+        if actual and _short(actual) != _short(expected):
+            conn.close()
+            raise WrongMachine(f"{addr} is {actual}, not {expected}")
+    return conn
 
 
 def powershell(script: str, exe: str = "powershell", interactive: bool = False) -> str:
@@ -142,4 +181,37 @@ if __name__ == "__main__":  # ponytail: self-check
     assert '& "$env:ProgramFiles\\DeviceManagerClient\\windows-update.ps1"; exit $LASTEXITCODE' in apt, apt
     assert display_path("/C:/Users/oliver/a.txt") == "C:\\Users\\oliver\\a.txt"
     assert display_path("/root/a.txt") == "/root/a.txt"
+
+    import asyncio
+    from types import SimpleNamespace
+
+    class FakeConn:
+        def __init__(self, name, code=0):
+            self.name, self.code, self.closed = name, code, False
+        async def run(self, cmd, **kw):
+            return SimpleNamespace(stdout=self.name + "\r\n", exit_status=self.code)
+        def close(self):
+            self.closed = True
+
+    def with_box(conn):
+        async def fake_connect(*a, **kw):
+            return conn
+        asyncssh.connect = fake_connect
+        ssh_keys.private_key_path = lambda: "k"
+        return conn
+
+    async def check():
+        c = with_box(FakeConn("frigate-lxc"))
+        assert await connect("10.0.0.5", 22, "root", "frigate-lxc.lan") is c          # right box (FQDN vs short)
+        c = with_box(FakeConn("MAC-DEB"))
+        try:
+            await connect("172.17.0.2", 22, "root", "frigate-lxc")
+            raise AssertionError("connected to the wrong machine")
+        except WrongMachine as exc:
+            assert c.closed and "is MAC-DEB, not frigate-lxc" in str(exc)
+        c = with_box(FakeConn("", code=1))
+        assert await connect("10.0.0.5", 22, "root", "frigate-lxc") is c               # can't tell: allow
+        assert await connect("10.0.0.5", 22, "root", None) is c                        # no reported name: allow
+        assert isinstance(WrongMachine("x"), OSError)                                  # callers' except catches it
+    asyncio.run(check())
     print("ok")

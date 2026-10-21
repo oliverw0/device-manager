@@ -22,6 +22,8 @@ class SystemInfo(BaseModel):
     disk_percent: float
     disk_used_bytes: Optional[int] = None
     disk_total_bytes: Optional[int] = None
+    kernel: Optional[str] = None          # Linux kernel release, e.g. "6.17.9+deb13-asahi"
+    hardware_model: Optional[str] = None  # e.g. "Apple MacBook Air (M1, 2020)"
     disks: list[DiskInfo] = []   # every drive; disk_* above stays the system drive (alerts, history)
     uptime_seconds: float
     local_ip: Optional[str] = None

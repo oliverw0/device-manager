@@ -8,7 +8,7 @@ from fastapi import APIRouter, File, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlmodel import Session
 
-from .. import remote, ssh_keys
+from .. import remote
 from ..database import engine
 from ..models import Device
 from .dashboard import ssh_candidates
@@ -29,14 +29,10 @@ def _known_container(last_report_json, name) -> bool:
 
 async def _ssh_run(device: Device, user: str, cmd: str):
     """Run one command over SSH, trying each candidate address. Returns (exit, output)."""
-    key = ssh_keys.private_key_path()
     err = "no address"
     for addr in ssh_candidates(device):
         try:
-            async with asyncssh.connect(
-                addr, port=device.ssh_port, username=user,
-                client_keys=[key], known_hosts=None, connect_timeout=8,
-            ) as conn:
+            async with await remote.connect(addr, device.ssh_port, user, remote.expected_hostname(device)) as conn:
                 r = await conn.run(cmd, check=False, timeout=25)
                 return r.exit_status, (r.stdout or "") + (r.stderr or "")
         except (OSError, asyncssh.Error) as exc:
@@ -79,14 +75,10 @@ async def container_logs(device_id: int, name: str, user: str = ""):
 
 async def _ssh_upload(device: Device, user: str, filename: str, data: bytes):
     """SFTP a blob into the user's home dir, trying each candidate address."""
-    key = ssh_keys.private_key_path()
     err = "no address"
     for addr in ssh_candidates(device):
         try:
-            async with asyncssh.connect(
-                addr, port=device.ssh_port, username=user,
-                client_keys=[key], known_hosts=None, connect_timeout=8,
-            ) as conn:
+            async with await remote.connect(addr, device.ssh_port, user, remote.expected_hostname(device)) as conn:
                 async with conn.start_sftp_client() as sftp:
                     async with sftp.open(filename, "wb") as f:
                         await f.write(data)
@@ -146,6 +138,7 @@ async def terminal(websocket: WebSocket, device_id: int, user: str = "", contain
             await websocket.close()
             return
         candidates = ssh_candidates(device)
+        expected = remote.expected_hostname(device)
         port = device.ssh_port
         report = json.loads(device.last_report_json) if device.last_report_json else {}
         allowed_users = set((report or {}).get("ssh_users", []))
@@ -185,14 +178,7 @@ async def terminal(websocket: WebSocket, device_id: int, user: str = "", contain
     for addr in candidates:
         logger.info("terminal connect attempt: device=%s user=%s target=%s:%s", device_name, user, addr, port)
         try:
-            conn = await asyncssh.connect(
-                addr,
-                port=port,
-                username=user,
-                client_keys=[ssh_keys.private_key_path()],
-                known_hosts=None,  # trusted Tailscale network; TOFU hardening is a follow-up
-                connect_timeout=8,
-            )
+            conn = await remote.connect(addr, port, user, expected)
             await _send(websocket, f"Connected to {addr}.")
             break
         except asyncssh.PermissionDenied as exc:
