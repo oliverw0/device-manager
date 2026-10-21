@@ -502,7 +502,7 @@ input:focus { outline: none; border-color: var(--green); box-shadow: 0 0 0 1px r
 
 button {
   cursor: pointer;
-  background: rgba(55, 224, 106, 0.12);
+  background: color-mix(in srgb, var(--green) 12%, var(--panel));  /* solid: the background pattern mustn't show through */
   border: 1px solid rgba(55, 224, 106, 0.55);
   color: var(--green);
   border-radius: var(--radius);
@@ -511,9 +511,9 @@ button {
   text-transform: uppercase; letter-spacing: 0.08em;
   transition: background 0.1s, box-shadow 0.1s;
 }
-button:hover { background: rgba(55, 224, 106, 0.22); box-shadow: var(--glow-green); }
-button.secondary { background: transparent; border-color: var(--border-strong); color: var(--text); }
-button.secondary:hover { background: var(--panel-2); border-color: var(--muted); box-shadow: none; }
+button:hover { background: color-mix(in srgb, var(--green) 22%, var(--panel)); box-shadow: var(--glow-green); }
+button.secondary { background: var(--panel-2); border-color: var(--border-strong); color: var(--text); }
+button.secondary:hover { background: var(--border); border-color: var(--muted); box-shadow: none; }
 button.danger { background: rgba(255,82,48,0.14); border-color: rgba(255,82,48,0.55); color: var(--red); }
 button.danger:hover { background: rgba(255,82,48,0.24); box-shadow: var(--glow-red); }
 
@@ -591,7 +591,9 @@ a.alert-link:hover .alert-msg { color: var(--green); }
   border: 1px solid var(--border); cursor: pointer; position: relative;
   transition: border-color 0.1s, background 0.1s;
 }
-.copyable:hover { border-color: var(--green); background: rgba(55,224,106,0.10); }
+.copyable:hover { border-color: var(--green); background: color-mix(in srgb, var(--green) 10%, var(--panel-2)); }
+.kv li .v:has(.copyable) { flex: 1 1 0; min-width: 0; }
+.kv .copyable { max-width: 100%; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
 .copyable::before { content: "⧉"; margin-right: 5px; color: var(--faint); font-size: 11px; }
 .copy-btn { position: relative; }
 .copied::after {
@@ -797,7 +799,7 @@ tr:has(.stat-led.off) .os-icon { opacity: 0.45; }
 .fleet-head .fleet-search:focus-within { border-color: var(--green); }
 .fleet-head .fleet-search input { border: 0; background: transparent; padding: 9px 0; box-shadow: none; min-width: 0; }
 .filter-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
-.filter-chip { background: transparent; border: 1px solid var(--border); color: var(--text); font-family: var(--font-sans); font-weight: 500; font-size: 13px; text-transform: none; letter-spacing: 0; padding: 7px 12px; min-height: 36px; }
+.filter-chip { background: var(--panel); border: 1px solid var(--border); color: var(--text); font-family: var(--font-sans); font-weight: 500; font-size: 13px; text-transform: none; letter-spacing: 0; padding: 7px 12px; min-height: 36px; }
 .filter-chip:hover { background: var(--panel-2); box-shadow: none; }
 .filter-chip.active { background: var(--panel-2); border-color: var(--border-strong); color: #e6e9ec; }
 .filter-chip b { margin-left: 5px; font-family: var(--font-mono); }
@@ -882,17 +884,17 @@ tr:has(.stat-led.off) .os-icon { opacity: 0.45; }
 .hero-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .menu { position: relative; }
 .icon-btn { width: 38px; height: 38px; padding: 0; display: inline-grid; place-items: center; list-style: none; cursor: pointer;
-  background: transparent; border: 1px solid var(--border-strong); border-radius: var(--radius); color: var(--text); box-shadow: none; }
+  background: var(--panel-2); border: 1px solid var(--border-strong); border-radius: var(--radius); color: var(--text); box-shadow: none; }
 .icon-btn::-webkit-details-marker { display: none; }
 .icon-btn svg { display: block; }
-.icon-btn:hover, .menu[open] > .icon-btn { background: var(--panel-2); border-color: var(--muted); color: #e6e9ec; box-shadow: none; }
-.icon-btn.primary { color: var(--green); border-color: rgba(55,224,106,0.55); background: rgba(55,224,106,0.10); }
-.icon-btn.primary:hover { background: rgba(55,224,106,0.2); border-color: var(--green); box-shadow: var(--glow-green); color: var(--green); }
-.icon-btn.active { color: var(--amber); border-color: rgba(255,176,56,0.5); background: rgba(255,176,56,0.08); }
+.icon-btn:hover, .menu[open] > .icon-btn { background: var(--border); border-color: var(--muted); color: #e6e9ec; box-shadow: none; }
+.icon-btn.primary { color: var(--green); border-color: rgba(55,224,106,0.55); background: color-mix(in srgb, var(--green) 10%, var(--panel)); }
+.icon-btn.primary:hover { background: color-mix(in srgb, var(--green) 20%, var(--panel)); border-color: var(--green); box-shadow: var(--glow-green); color: var(--green); }
+.icon-btn.active { color: var(--amber); border-color: rgba(255,176,56,0.5); background: color-mix(in srgb, var(--amber) 8%, var(--panel)); }
 .menu[open] > .icon-btn::after, .menu[open] > .icon-btn::before { display: none; }  /* no tooltip over the open menu */
 .menu-list { position: absolute; right: 0; top: calc(100% + 4px); z-index: 30; min-width: 180px; background: var(--panel); border: 1px solid var(--border-strong); padding: 6px; display: flex; flex-direction: column; gap: 4px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
 .menu-list button { width: 100%; text-align: left; border: 0; text-transform: none; letter-spacing: 0; font-family: var(--font-sans); font-weight: 500; font-size: 14px; min-height: 40px; }
-.device-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; }
+.device-tabs { background: var(--bg); display: flex; gap: 2px; border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; }
 .device-tabs button { background: transparent; border: 0; border-bottom: 2px solid transparent; color: var(--muted); font-family: var(--font-sans); font-weight: 500; font-size: 14px; text-transform: none; letter-spacing: 0; padding: 11px 14px; white-space: nowrap; min-height: 44px; }
 .device-tabs button:hover { color: var(--text); background: transparent; box-shadow: none; }
 .device-tabs button.active { color: #e6e9ec; border-bottom-color: var(--green); }

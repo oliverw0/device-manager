@@ -156,7 +156,7 @@
       <li><span class="k">Status</span><span class="v">{{ ui.tailscale_logo(ts, label=true, offline=not device.is_online) }}</span></li>
       <li><span class="k">Backend state</span><span class="v">{{ ts.backend_state or '—' }}</span></li>
       {% if ts.dns_name %}
-      <li><span class="k">MagicDNS name</span><span class="v"><span class="copyable" onclick="copyText('{{ ts.dns_name }}', this)" title="Click to copy">{{ ts.dns_name }}</span></span></li>
+      <li><span class="k">MagicDNS name</span><span class="v"><span class="copyable" onclick="copyText('{{ ts.dns_name }}', this)" title="{{ ts.dns_name }} (click to copy)">{{ ts.dns_name }}</span></span></li>
       {% endif %}
       <li>
         <span class="k">IPs</span>
