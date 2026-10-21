@@ -77,7 +77,9 @@ def _set_percent(job: dict, p: float):
 
 
 def _parse_line(job: dict, line: str):
-    if not line:
+    # Windows PowerShell started with -EncodedCommand also serializes Write-Host
+    # output to stderr as CLIXML; -OutputFormat Text already put it on stdout.
+    if not line or line.startswith(("#< CLIXML", "<Objs ")):
         return
     job["tail"] = (job["tail"] + [line])[-8:]
 
@@ -205,7 +207,7 @@ async def start_update(device_id: int, kind: str):
 
 # --- client release tracking -------------------------------------------------
 # The client's version lives in client/__init__.py on the repo's main branch.
-CLIENT_VERSION_URL = "https://raw.githubusercontent.com/oliverw0/device-manager-client/main/client/__init__.py"
+CLIENT_VERSION_URL = f"{remote.CLIENT_RAW}/client/__init__.py"
 _latest_cache = {"at": 0.0, "version": None, "ttl": 0}
 
 
@@ -238,13 +240,14 @@ def is_outdated(version: str | None, latest: str | None) -> bool:
 
 
 @router.post("/updates/client-all")
-async def update_all_clients():
+async def update_all_clients(force: bool = False):
     """Start a client update on every online, SSH-enabled device behind the latest
-    release, or on all of them when the latest release can't be looked up."""
+    release, or on all of them when the latest release can't be looked up or
+    force is set (the Settings tab's "Update all clients")."""
     with Session(engine) as s:
         devices = s.exec(select(Device)).all()
         versions = {d.id: _agent_version(d) for d in devices}
-        latest = latest_client_version(list(versions.values()))
+        latest = None if force else latest_client_version(list(versions.values()))
         targets = [d.id for d in devices if d.ssh_enabled and d.is_online
                    and (latest is None or is_outdated(versions[d.id], latest))]
     started = []
@@ -304,6 +307,9 @@ if __name__ == "__main__":  # ponytail: progress-parser self-check
     assert w["percent"] == 40 and w["stage"] == "Installing 1/3: KB5031364", w
     _parse_line(w, "NOTE:Installed 3 of 3 update(s) - reboot required to finish")
     assert w["note"].endswith("reboot required to finish")
+    _parse_line(w, "#< CLIXML")
+    _parse_line(w, '<Objs Version="1.1.0.1" xmlns="http://schemas.microsoft.com/powershell/2004/04"><Obj S="information">')
+    assert not any(t.startswith(("#<", "<Objs")) for t in w["tail"]), w["tail"]
     assert is_outdated(None, "1.1.0") and is_outdated("1.9.0", "1.10.0")
     assert not is_outdated("1.1.0", "1.1.0") and not is_outdated("1.0.0", None)
     print("ok")

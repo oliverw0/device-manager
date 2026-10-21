@@ -313,6 +313,18 @@
     </details>
   </section>
 
+<section class="panel" aria-label="Client updates">
+  <h2>Client updates</h2>
+  <p class="muted" style="margin:0 0 12px;font-size:13px">This device runs client {{ device.agent_version or '1.0.0' }}. Updating pulls the latest client code and restarts it; it needs SSH enabled above.</p>
+  <div class="update-actions" style="margin-top:0;padding-top:0;border-top:0">
+    {% if device.ssh_enabled %}
+    <button type="button" class="secondary" onclick='startUpdate({{ device.id }}, {{ device.name | tojson }}, "client", {{ device.os | tojson }})'>Update this client</button>
+    {% endif %}
+    <button type="button" class="secondary" onclick="updateAllClients(0, true)">Update all clients</button>
+  </div>
+  <p class="muted" style="margin:10px 0 0;font-size:12px">"Update all clients" updates every online device with SSH enabled, whatever version it reports.</p>
+</section>
+
 <section class="panel" id="client-config">
     <h2>Client configuration</h2>
     <h3>API key</h3>

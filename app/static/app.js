@@ -259,9 +259,11 @@ function renderClientBanner() {
       : `<span class="muted cb-note">Enable SSH on them to update from here</span>`);
 }
 
-function updateAllClients(n) {
-  if (!confirm(`Update the client on ${n} device${n > 1 ? "s" : ""}? Each one pulls the latest code and restarts its client.`)) return;
-  fetch("/updates/client-all", { method: "POST" }).then((r) => r.json())
+// force: update every online, SSH-enabled device whatever version it reports.
+function updateAllClients(n, force) {
+  const who = force ? "every online device with SSH enabled" : `${n} device${n > 1 ? "s" : ""}`;
+  if (!confirm(`Update the client on ${who}? Each one pulls the latest code and restarts its client.`)) return;
+  fetch("/updates/client-all" + (force ? "?force=1" : ""), { method: "POST" }).then((r) => r.json())
     .then((res) => { if (!res.started) alert("No updates started (devices offline or SSH unavailable)."); resumeUpdates(); })
     .catch(() => alert("Couldn't start the updates."));
 }

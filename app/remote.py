@@ -13,6 +13,8 @@ import json
 
 # Where install.ps1 puts the client; "$env:ProgramFiles" expands on the device.
 WIN_CLIENT_DIR = r"$env:ProgramFiles\DeviceManagerClient"
+# The client repo's main branch, raw files (also where the latest version is read).
+CLIENT_RAW = "https://raw.githubusercontent.com/oliverw0/device-manager-client/main"
 
 
 def _report(device) -> dict:
@@ -37,7 +39,7 @@ def powershell(script: str, exe: str = "powershell", interactive: bool = False) 
     $LASTEXITCODE-aware status."""
     prelude = "$ProgressPreference='SilentlyContinue'; [Console]::OutputEncoding=[Text.Encoding]::UTF8\n"
     encoded = base64.b64encode((prelude + script).encode("utf-16-le")).decode("ascii")
-    flags = "-NoLogo -NoProfile -ExecutionPolicy Bypass" + ("" if interactive else " -NonInteractive")
+    flags = "-NoLogo -NoProfile -ExecutionPolicy Bypass -OutputFormat Text" + ("" if interactive else " -NonInteractive")
     return f"{exe} {flags} -EncodedCommand {encoded}"
 
 
@@ -88,10 +90,20 @@ def container_logs_command(device, name: str) -> str:
 
 
 def windows_update_command(kind: str) -> str:
-    """kind "apt" (OS packages -> Windows Update) or "client"."""
-    script = "windows-update.ps1" if kind == "apt" else "install.ps1"
-    args = "" if kind == "apt" else " -Update"
-    return powershell(f'& "{WIN_CLIENT_DIR}\\{script}"{args}; exit $LASTEXITCODE')
+    """kind "apt" (OS packages -> Windows Update) or "client".
+
+    A client update runs the LATEST install.ps1 from GitHub, not the installed
+    copy, so fixes to the updater itself apply on the first update; the
+    installed copy is the fallback when GitHub can't be reached."""
+    if kind == "apt":
+        return powershell(f'& "{WIN_CLIENT_DIR}\\windows-update.ps1"; exit $LASTEXITCODE')
+    return powershell(
+        "[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 'Tls12'\n"
+        "$p = Join-Path $env:TEMP 'dm-install-latest.ps1'\n"
+        f"try {{ Invoke-WebRequest -UseBasicParsing -Uri '{CLIENT_RAW}/install.ps1' -OutFile $p }}\n"
+        f'catch {{ Write-Output "Using the installed updater ($($_.Exception.Message))"; $p = "{WIN_CLIENT_DIR}\\install.ps1" }}\n'
+        "& $p -Update; exit $LASTEXITCODE"
+    )
 
 
 def display_path(path: str) -> str:
@@ -123,7 +135,10 @@ if __name__ == "__main__":  # ponytail: self-check
     assert "cmd /c 'docker logs --tail 200 plex 2>&1'; exit $LASTEXITCODE" in decoded
     assert "-NonInteractive" not in container_exec_command(win, "plex")
     upd = base64.b64decode(windows_update_command("client").split()[-1]).decode("utf-16-le")
-    assert '& "$env:ProgramFiles\\DeviceManagerClient\\install.ps1" -Update' in upd, upd
+    assert f"-Uri '{CLIENT_RAW}/install.ps1'" in upd and "& $p -Update; exit $LASTEXITCODE" in upd, upd
+    assert '$p = "$env:ProgramFiles\\DeviceManagerClient\\install.ps1"' in upd, upd  # offline fallback
+    apt = base64.b64decode(windows_update_command("apt").split()[-1]).decode("utf-16-le")
+    assert '& "$env:ProgramFiles\\DeviceManagerClient\\windows-update.ps1"; exit $LASTEXITCODE' in apt, apt
     assert display_path("/C:/Users/oliver/a.txt") == "C:\\Users\\oliver\\a.txt"
     assert display_path("/root/a.txt") == "/root/a.txt"
     print("ok")
