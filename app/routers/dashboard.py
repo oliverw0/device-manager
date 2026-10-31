@@ -295,11 +295,14 @@ def device_detail(request: Request, device_id: int, session: Session = Depends(g
 
     serialized = serialize_device(device)
     latest = latest_client_version([serialized["agent_version"]])
+    guest_links, power_share = _power_links(session, device)
     return templates.TemplateResponse(
         "device_detail.html",
         {
             "request": request,
             "device": serialized,
+            "guest_links": guest_links,
+            "power_share": power_share,
             "latest_client": latest,
             "client_outdated": bool(device.last_report_json) and is_outdated(serialized["agent_version"], latest),
             "api_key": device.api_key,
@@ -308,6 +311,31 @@ def device_detail(request: Request, device_id: int, session: Session = Depends(g
             "checks": checks,
         },
     )
+
+
+def _power_links(session: Session, device: Device):
+    """Tie Proxmox guests in power reports to devices, by name.
+    Returns ({guest name lowercased: device id} for linking a host's guest list,
+    and this device's own share {host_id, host_name, cpu_w} if it's a guest)."""
+    devices = session.exec(select(Device)).all()
+    names: dict[str, int] = {}
+    reports = {}
+    for d in devices:
+        rep = json.loads(d.last_report_json) if d.last_report_json else {}
+        reports[d.id] = rep or {}
+        names[d.name.lower()] = d.id
+        host = ((rep or {}).get("system") or {}).get("hostname")
+        if host:
+            names.setdefault(host.lower(), d.id)
+    mine = {n for n, i in names.items() if i == device.id}
+    share = None
+    for d in devices:
+        if d.id == device.id:
+            continue
+        for g in ((reports[d.id].get("power") or {}).get("guests") or []):
+            if (g.get("name") or "").lower() in mine and g.get("cpu_w") is not None:
+                share = {"host_id": d.id, "host_name": d.name, "cpu_w": g["cpu_w"]}
+    return names, share
 
 
 @router.post("/devices/{device_id}/mute")
@@ -339,6 +367,7 @@ def device_history(device_id: int, session: Session = Depends(get_session)):
             "cpu_percent": r.cpu_percent,
             "mem_percent": r.mem_percent,
             "disk_percent": r.disk_percent,
+            "power_w": r.power_w,
         }
         for r in rows
     ]

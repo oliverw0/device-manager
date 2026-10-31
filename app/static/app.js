@@ -172,7 +172,7 @@ function deviceCard(d) {
     <svg class="fc-spark" viewBox="0 0 280 36" preserveAspectRatio="none" aria-hidden="true"><polyline points="${sparkPoints(d.cpu_spark)}"></polyline></svg>
     ${chips ? `<div class="fc-issues">${chips}</div>` : ""}
     <div class="fc-foot">
-      <span class="fc-foot-l">${tailscaleLogo(d.report ? d.report.tailscale : null, !d.is_online)}</span>
+      <span class="fc-foot-l">${tailscaleLogo(d.report ? d.report.tailscale : null, !d.is_online)}${d.report && d.report.power ? `<span class="fc-power" title="Estimated wall power"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg>${Math.round(d.report.power.wall_w)} W</span>` : ""}</span>
       <span class="fc-foot-c">${ctrs && ctrs.length ? `<span class="fc-ctr" title="Docker containers running">${DOCKER_ICON}${containerSummary(ctrs, !d.is_online)}</span>` : ""}</span>
       <span class="fc-foot-r">
         <span class="fc-seen">${fmtRelative(d.seconds_since_seen)}</span>
@@ -1094,6 +1094,44 @@ function initDiskDrawer() {
     const btn = [...document.querySelectorAll("[data-inspect]")].find((b) => b.dataset.inspect === want || b.dataset.name === want);
     if (btn) openDiskDrawer(btn);
   }
+}
+
+/* ---------- power tracking ---------- */
+// Sparkline of wall watts from the device's report history (power_w).
+function loadPowerSpark() {
+  const panel = document.querySelector(".panel.power[data-history]");
+  const svg = document.getElementById("power-spark");
+  if (!panel || !svg) return;
+  fetch(panel.dataset.history).then((r) => r.json()).then((rows) => {
+    const pts = rows.filter((r) => r.power_w != null);
+    if (pts.length < 2) return;
+    const vals = pts.map((r) => r.power_w);
+    const lo = Math.min(...vals), hi = Math.max(...vals), span = Math.max(1, hi - lo);
+    const xy = vals.map((v, i) => `${((i / (vals.length - 1)) * 300).toFixed(1)},${(56 - ((v - lo) / span) * 52).toFixed(1)}`).join(" ");
+    svg.innerHTML = `<polyline points="${xy}"></polyline>`;
+    const first = parseUtc(pts[0].timestamp);
+    document.getElementById("power-range").textContent =
+      `${Math.round(lo)}–${Math.round(hi)} W` + (first ? ` since ${first.toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })}` : "");
+  }).catch(() => {});
+}
+
+function setPowerTracking(deviceId, action, btn) {
+  const msg = action === "enable"
+    ? "Turn on power tracking?\n\nInstalls the pve-power exporter (a small Python service on port 9105) as root and starts it. Readings appear within a minute."
+    : "Turn off power tracking?\n\nStops and removes the pve-power service. Its script and kWh total stay on the machine.";
+  if (!confirm(msg)) return;
+  btn.disabled = true;
+  btn.textContent = action === "enable" ? "Installing…" : "Stopping…";
+  fetch(`/devices/${deviceId}/power/${action}`, { method: "POST" })
+    .then((r) => r.json().then((j) => ({ ok: r.ok, j })))
+    .then(({ ok, j }) => {
+      btn.disabled = false;
+      if (!ok) { btn.textContent = action === "enable" ? "Turn on" : "Turn off"; alert(j.detail || "Failed."); return; }
+      btn.textContent = j.message || "Done";
+      // the client picks it up on its next report; reload then to show the readings
+      setTimeout(() => location.reload(), action === "enable" ? 65000 : 2000);
+    })
+    .catch(() => { btn.disabled = false; btn.textContent = "Retry"; });
 }
 
 /* ---------- device page tabs ----------

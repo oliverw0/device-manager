@@ -23,6 +23,9 @@ _COLUMN_MIGRATIONS = {
         "alerts_muted_until": "ALTER TABLE device ADD COLUMN alerts_muted_until DATETIME",
         "alert_state": "ALTER TABLE device ADD COLUMN alert_state VARCHAR",
     },
+    "reporthistory": {
+        "power_w": "ALTER TABLE reporthistory ADD COLUMN power_w FLOAT",
+    },
 }
 
 

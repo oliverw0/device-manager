@@ -74,6 +74,7 @@ class ReportHistory(SQLModel, table=True):
     cpu_percent: float = 0.0
     mem_percent: float = 0.0
     disk_percent: float = 0.0
+    power_w: Optional[float] = None  # wall watts, when power tracking is on
 
 
 class ContainerHistory(SQLModel, table=True):

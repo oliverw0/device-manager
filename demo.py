@@ -43,7 +43,7 @@ NOW = datetime.utcnow()
 
 def report(hostname, cpu, mem, disk, cores, mem_total_g, disk_total_g, uptime_s,
            tailscale=None, ssh_auth=None, containers=None, apt=None, ssh_users=None,
-           os="linux", os_version="Ubuntu 24.04.1 LTS", disks=None, agent_version="1.1.0"):
+           os="linux", os_version="Ubuntu 24.04.1 LTS", disks=None, agent_version="1.1.0", power=None):
     return {
         "system": {
             "hostname": hostname, "os": os, "os_version": os_version, "disks": disks or [],
@@ -60,6 +60,7 @@ def report(hostname, cpu, mem, disk, cores, mem_total_g, disk_total_g, uptime_s,
         "ssh_users": ssh_users or ["root", "deploy"],
         "apt": apt,
         "agent_version": agent_version,
+        "power": power,
     }
 
 
@@ -145,6 +146,24 @@ DEVICES = [
         ),
     ),
     dict(
+        name="proxmox-host", notes="Proxmox VE, i5-12600K", online=True,
+        ssh_enabled=True, apt_needs_update=False, tailscale_connected=True,
+        report=report(
+            "pve", 5.0, 41.0, 38.0, 16, 32, 238, 21 * 86400, os_version="Debian GNU/Linux 12 (bookworm)",
+            ssh_users=["root"], agent_version="1.1.9",
+            # a real pve-power reading; web-vm-01 and db-vm-01 stand in as its LXCs
+            power={"wall_w": 50.4, "energy_kwh": 12.84, "dc_load_w": 41.8, "psu_efficiency": 0.829,
+                   "components": {"cpu_package": 17.15, "vrm_loss": 2.34, "ram": 3.93, "drive_nvme0n1": 0.5, "drive_sda": 5.48,
+                                  "motherboard": 6.0, "nic_2_5gbe": 1.0, "wifi": 0.3, "cpu_cooler_fan": 1.5, "case_fans": 3.6,
+                                  "extras": 0.0, "psu_loss": 8.63},
+                   "guests": [{"name": "web-vm-01", "type": "lxc", "vmid": "110", "cpu_w": 17.31},
+                              {"name": "db-vm-01", "type": "lxc", "vmid": "103", "cpu_w": 1.89},
+                              {"name": "servarr", "type": "lxc", "vmid": "114", "cpu_w": 1.01}]},
+            tailscale={"connected": True, "backend_state": "Running", "ips": ["100.101.102.106"],
+                       "dns_name": "pve.tuna-cod.ts.net", "tailnet": "tuna-cod.ts.net", "exit_node": None},
+        ),
+    ),
+    dict(
         name="gaming-pc", notes="Windows desktop", online=True,
         ssh_enabled=True, apt_needs_update=False, tailscale_connected=True,
         report=report(
@@ -209,7 +228,8 @@ def seed():
                 s.add(ReportHistory(device_id=dev.id, timestamp=ts,
                                     cpu_percent=jit(sys["cpu_percent"]),
                                     mem_percent=jit(sys["mem_percent"]),
-                                    disk_percent=jit(sys["disk_percent"])))
+                                    disk_percent=jit(sys["disk_percent"]),
+                                    power_w=(rep["power"]["wall_w"] + random.uniform(-6, 14)) if rep.get("power") else None))
             for i in range(60):
                 ts = NOW - timedelta(minutes=(60 - i) * 5)
                 for c in rep["docker_containers"]:

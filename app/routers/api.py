@@ -129,6 +129,7 @@ def submit_report(
             cpu_percent=report.system.cpu_percent,
             mem_percent=report.system.mem_percent,
             disk_percent=report.system.disk_percent,
+            power_w=report.power.wall_w if report.power else None,
         )
     )
 

@@ -1009,3 +1009,20 @@ tr:has(.stat-led.off) .os-icon { opacity: 0.45; }
   .drive-act { grid-column: 3; grid-row: 1; }
   .drive-used { grid-column: 2; grid-row: 2; }
 }
+
+/* ---------- power tracking ---------- */
+.fc-foot-l { align-items: center; gap: 10px; }
+.fc-power { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); font-size: 12px; color: var(--amber); }
+.power .pw-now { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
+.pw-watts { font-family: var(--font-mono); font-size: 30px; font-weight: 700; color: #e6e9ec; line-height: 1.1; }
+.pw-watts small { font-size: 15px; color: var(--muted); font-weight: 500; }
+.pw-meta { font-size: 12.5px; color: var(--muted); }
+.pw-spark { width: 100%; height: 60px; display: block; background: var(--bg-edge); border: 1px solid var(--border); }
+.pw-spark polyline { fill: none; stroke: var(--amber); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.pw-range { margin: 6px 0 0; font-size: 12px; font-family: var(--font-mono); }
+.pw-h { margin: 16px 0 6px; font-family: var(--font-mono); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
+.pw-h .muted { text-transform: none; letter-spacing: 0; font-family: var(--font-sans); font-weight: 400; }
+.pw-list { list-style: none; margin: 0; padding: 0; }
+.pw-list li { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-top: 1px solid var(--border); font-size: 13px; }
+.pw-list li:first-child { border-top: 0; }
+.pw-w { font-family: var(--font-mono); color: #e6e9ec; white-space: nowrap; }

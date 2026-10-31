@@ -74,6 +74,16 @@ class WindowsInfo(BaseModel):
     admin_user: Optional[str] = None  # account the host runs updates as (no root on Windows)
 
 
+class PowerInfo(BaseModel):
+    # from the pve-power exporter (client/power/pve_power.py) when power tracking is on
+    wall_w: float
+    energy_kwh: Optional[float] = None
+    dc_load_w: Optional[float] = None
+    psu_efficiency: Optional[float] = None
+    components: dict = {}
+    guests: List[dict] = []  # Proxmox guests' share: {name, type, vmid, cpu_w}
+
+
 class ClientReport(BaseModel):
     system: SystemInfo
     tailscale: Optional[TailscaleInfo] = None
@@ -82,6 +92,7 @@ class ClientReport(BaseModel):
     ssh_users: List[str] = []
     apt: Optional[AptInfo] = None
     windows: Optional[WindowsInfo] = None
+    power: Optional[PowerInfo] = None
     agent_version: str = "1.0.0"
 
 
