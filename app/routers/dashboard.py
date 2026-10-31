@@ -156,10 +156,11 @@ def _fleet(session: Session) -> list[dict]:
     for d in session.exec(select(Device).order_by(Device.name)).all():
         s = serialize_device(d)
         rows = session.exec(
-            select(ReportHistory.cpu_percent).where(ReportHistory.device_id == d.id)
+            select(ReportHistory.timestamp, ReportHistory.cpu_percent).where(ReportHistory.device_id == d.id)
             .order_by(ReportHistory.timestamp.desc()).limit(30)
         ).all()
-        s["cpu_spark"] = list(reversed(rows))
+        # timestamped, so the sparkline shows a gap where the device stopped reporting
+        s["cpu_spark"] = [{"t": t.isoformat(), "v": v} for t, v in reversed(rows)]
         out.append(s)
     return out
 

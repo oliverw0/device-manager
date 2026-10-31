@@ -220,10 +220,13 @@ def seed():
             s.refresh(dev)
             by_name[dev.name] = dev
 
-            # history: 60 points over 5h wandering around the current value
+            # history: 60 points over 5h wandering around the current value;
+            # proxmox-host was off for 40 minutes, so its graphs show a gap
             sys = rep["system"]
             jit = lambda base: max(0.0, min(100.0, base + random.uniform(-8, 8)))
             for i in range(60):
+                if rep.get("power") and 44 <= i < 52:
+                    continue
                 ts = NOW - timedelta(minutes=(60 - i) * 5)
                 s.add(ReportHistory(device_id=dev.id, timestamp=ts,
                                     cpu_percent=jit(sys["cpu_percent"]),

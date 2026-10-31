@@ -114,7 +114,7 @@
       {% endif %}
 
       <section class="panel">
-        <h2>History <span class="muted">· last 500 reports</span></h2>
+        <h2>Hardware usage</h2>
         <div class="chart-wrap">
           <canvas id="history-chart" width="1040" height="180" style="max-width:100%"></canvas>
         </div>
@@ -124,6 +124,41 @@
           <span style="color:var(--amber)">■</span> Disk
         </p>
       </section>
+
+{% set power_names = {'cpu_package': 'CPU package', 'vrm_loss': 'VRM loss', 'ram': 'RAM', 'psu_loss': 'PSU loss', 'motherboard': 'Motherboard', 'nic_2_5gbe': 'Network', 'wifi': 'Wi-Fi', 'cpu_cooler_fan': 'CPU fan', 'case_fans': 'Case fans', 'extras': 'Extras'} %}
+      {% if pw %}
+      <section class="panel power power-main" aria-label="Power" data-history="/devices/{{ device.id }}/history.json">
+        <div class="pw-head">
+          <h2>Power</h2>
+          <span class="pw-watts">{{ '%.1f' | format(pw.wall_w) }}<small> W</small></span>
+          <span class="pw-meta">{% if pw.energy_kwh is not none %}{{ '%.2f' | format(pw.energy_kwh) }} kWh so far{% endif %}{% if pw.psu_efficiency %} · PSU {{ (pw.psu_efficiency * 100) | round | int }}% efficient{% endif %}</span>
+        </div>
+        <div class="chart-wrap"><canvas id="power-chart" width="1040" height="150" style="max-width:100%" aria-label="Power over time" role="img"></canvas></div>
+        <p class="pw-range muted" id="power-range"></p>
+        <div class="pw-cols">
+          {% set comps = pw.components | dictsort(by='value', reverse=true) %}
+          {% if comps %}
+          <div>
+            <h3 class="pw-h">Breakdown</h3>
+            <ul class="pw-list">
+              {% for k, v in comps[:6] %}<li><span>{{ power_names.get(k, k.replace('drive_', 'Drive ').replace('_', ' ')) }}</span><span class="pw-w">{{ '%.1f' | format(v) }} W</span></li>{% endfor %}
+              {% if comps | length > 6 %}<li class="muted"><span>Other</span><span class="pw-w">{{ '%.1f' | format(comps[6:] | map(attribute=1) | sum) }} W</span></li>{% endif %}
+            </ul>
+          </div>
+          {% endif %}
+          {% if pw.guests %}
+          <div>
+            <h3 class="pw-h">By guest <span class="muted">· CPU share</span></h3>
+            <ul class="pw-list">
+              {% for g in pw.guests[:8] %}{% set gid = guest_links.get((g.name or '') | lower) %}
+              <li><span>{% if gid %}<a href="/devices/{{ gid }}">{{ g.name }}</a>{% else %}{{ g.name or (g.type ~ '-' ~ g.vmid) }}{% endif %}</span><span class="pw-w">{{ '%.1f' | format(g.cpu_w or 0) }} W</span></li>
+              {% endfor %}
+            </ul>
+          </div>
+          {% endif %}
+        </div>
+      </section>
+      {% endif %}
     </div>
 
     <aside class="overview-side">
@@ -150,32 +185,6 @@
         </ul>
       </section>
 
-{% set power_names = {'cpu_package': 'CPU package', 'vrm_loss': 'VRM loss', 'ram': 'RAM', 'psu_loss': 'PSU loss', 'motherboard': 'Motherboard', 'nic_2_5gbe': 'Network', 'wifi': 'Wi-Fi', 'cpu_cooler_fan': 'CPU fan', 'case_fans': 'Case fans', 'extras': 'Extras'} %}
-      {% if pw %}
-      <section class="panel power" aria-label="Power" data-history="/devices/{{ device.id }}/history.json">
-        <h2>Power <span class="muted">· estimated</span></h2>
-        <div class="pw-now"><span class="pw-watts">{{ '%.1f' | format(pw.wall_w) }}<small> W</small></span>
-          <span class="pw-meta">{% if pw.energy_kwh is not none %}{{ '%.2f' | format(pw.energy_kwh) }} kWh so far{% endif %}{% if pw.psu_efficiency %} · PSU {{ (pw.psu_efficiency * 100) | round | int }}% efficient{% endif %}</span></div>
-        <svg id="power-spark" class="pw-spark" viewBox="0 0 300 60" preserveAspectRatio="none" aria-label="Power over recent reports" role="img"></svg>
-        <p class="pw-range muted" id="power-range"></p>
-        {% set comps = pw.components | dictsort(by='value', reverse=true) %}
-        {% if comps %}
-        <h3 class="pw-h">Breakdown</h3>
-        <ul class="pw-list">
-          {% for k, v in comps[:6] %}<li><span>{{ power_names.get(k, k.replace('drive_', 'Drive ').replace('_', ' ')) }}</span><span class="pw-w">{{ '%.1f' | format(v) }} W</span></li>{% endfor %}
-          {% if comps | length > 6 %}<li class="muted"><span>Other</span><span class="pw-w">{{ '%.1f' | format(comps[6:] | map(attribute=1) | sum) }} W</span></li>{% endif %}
-        </ul>
-        {% endif %}
-        {% if pw.guests %}
-        <h3 class="pw-h">By guest <span class="muted">· CPU share</span></h3>
-        <ul class="pw-list">
-          {% for g in pw.guests[:8] %}{% set gid = guest_links.get((g.name or '') | lower) %}
-          <li><span>{% if gid %}<a href="/devices/{{ gid }}">{{ g.name }}</a>{% else %}{{ g.name or (g.type ~ '-' ~ g.vmid) }}{% endif %}</span><span class="pw-w">{{ '%.1f' | format(g.cpu_w or 0) }} W</span></li>
-          {% endfor %}
-        </ul>
-        {% endif %}
-      </section>
-      {% endif %}
 
       <section class="panel" aria-label="Recent alerts">
         <h2>Recent alerts</h2>
@@ -362,18 +371,24 @@
   </section>
 
 {% if not is_windows %}
-<section class="panel" aria-label="Power tracking">
-  <h2>Power tracking</h2>
-  {% if pw %}
-  <p class="muted" style="margin:0 0 12px;font-size:13px">On · {{ '%.1f' | format(pw.wall_w) }} W now. The pve-power exporter estimates wall draw from the CPU's power counters plus each component.</p>
-  {% else %}
-  <p class="muted" style="margin:0 0 12px;font-size:13px">Off. Installs a small exporter (pve-power, port 9105) that estimates wall power from the CPU's RAPL counters. Bare-metal Linux only: an LXC can't read them, but turning this on for its Proxmox host shows each guest's share.</p>
-  {% endif %}
-  {% if device.ssh_enabled %}
-  <button type="button" class="secondary" onclick="setPowerTracking({{ device.id }}, '{{ 'disable' if pw else 'enable' }}', this)">{{ 'Turn off' if pw else 'Turn on' }}</button>
-  {% else %}
-  <p class="muted" style="margin:0;font-size:12px">Enable SSH above to turn this on.</p>
-  {% endif %}
+<section class="panel power-toggle{{ ' open' if pw }}" aria-label="Power tracking" data-device-id="{{ device.id }}">
+  <div class="switch-row">
+    <span class="pt-title">Power tracking
+      <span class="muted">{% if power_share and not pw %}Runs on {{ power_share.host_name }}, not here: this guest's share (≈{{ '%.1f' | format(power_share.cpu_w) }} W) comes from its report{% elif device.ssh_enabled %}Estimates wall power from the CPU's power counters (bare metal only){% else %}Enable SSH above to turn this on{% endif %}</span></span>
+    <label class="switch" aria-label="Power tracking">
+      <input type="checkbox" id="power-toggle" {{ 'checked' if pw }} {{ 'disabled' if not device.ssh_enabled or (power_share and not pw) }} />
+      <span class="slider"></span>
+    </label>
+  </div>
+  <div class="pt-expand"><div class="pt-inner">
+    <div class="pt-status" id="pt-status">{% if pw %}<span class="hdot ok"></span>Running · pve-power on port 9105{% endif %}</div>
+    <div class="pt-stats">
+      <div><span class="pt-k">Now</span><span class="pt-v" id="pt-watts">{{ '%.1f' | format(pw.wall_w) ~ ' W' if pw else '—' }}</span></div>
+      <div><span class="pt-k">So far</span><span class="pt-v" id="pt-kwh">{{ '%.2f' | format(pw.energy_kwh) ~ ' kWh' if pw and pw.energy_kwh is not none else '—' }}</span></div>
+      <div><span class="pt-k">PSU efficiency</span><span class="pt-v" id="pt-eff">{{ ((pw.psu_efficiency * 100) | round | int) ~ '%' if pw and pw.psu_efficiency else '—' }}</span></div>
+    </div>
+    <p class="pt-note">The exporter (/usr/local/bin/pve_power.py, service <code>pve-power</code>) runs as root and serves readings on port 9105; the client reports them with each update. History, the breakdown and each guest's share are on the Overview tab.</p>
+  </div></div>
 </section>
 
 {% endif %}
@@ -454,6 +469,7 @@
   initDeviceTabs();
   initDiskDrawer();
   loadPowerSpark();
+  initPowerToggle();
   renderUpdaters();  {# paint any in-flight update into this device's panel #}
 </script>
 {% endblock %}

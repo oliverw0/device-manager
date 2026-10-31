@@ -124,10 +124,41 @@ const FLEET_FILTERS = [
   ["linux", "Linux", (d) => osFamily(d) === "linux"],
 ];
 
-function sparkPoints(values, w = 280, h = 36) {
-  if (!values || values.length < 2) return "";
-  const step = w / (values.length - 1);
-  return values.map((v, i) => `${(i * step).toFixed(1)},${(h - 2 - (Math.min(100, v) / 100) * (h - 4)).toFixed(1)}`).join(" ");
+/* ---------- time axis for every graph ----------
+   Samples sit at their real time, not evenly by index, and a pause longer than
+   3 typical report intervals (at least 2.5 min) is a gap: the line breaks there
+   instead of joining the last reading before an outage to the first after it,
+   leaving that stretch blank. */
+function toMs(iso) { const d = parseUtc(iso); return d ? d.getTime() : 0; }
+
+function timeAxis(times, x0, x1) {
+  const n = times.length;
+  const t0 = times[0], span = Math.max(1, times[n - 1] - t0);
+  const xs = times.map((t) => x0 + ((t - t0) / span) * (x1 - x0));
+  const d = times.slice(1).map((t, i) => t - times[i]).sort((a, b) => a - b);
+  const limit = Math.max((d[Math.floor(d.length / 2)] || 60000) * 3, 150000);
+  const gaps = [];  // i where a gap sits between sample i-1 and i
+  for (let i = 1; i < n; i++) if (times[i] - times[i - 1] > limit) gaps.push(i);
+  return { xs, gaps, breaks: new Set(gaps) };
+}
+
+// Split points into unbroken runs (for polylines / filled areas).
+function timeRuns(xs, ys, breaks) {
+  const runs = [[]];
+  xs.forEach((x, i) => {
+    if (breaks.has(i)) runs.push([]);
+    runs[runs.length - 1].push([x, ys[i]]);
+  });
+  return runs.filter((r) => r.length);
+}
+
+// Fleet card CPU sparkline: [{t, v}] -> SVG polylines, broken at gaps.
+function sparkSvg(points, w = 280, h = 36) {
+  if (!points || points.length < 2) return "";
+  const ax = timeAxis(points.map((p) => toMs(p.t)), 0, w);
+  const ys = points.map((p) => h - 2 - (Math.min(100, p.v) / 100) * (h - 4));
+  return timeRuns(ax.xs, ys, ax.breaks)
+    .map((run) => `<polyline points="${run.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ")}"></polyline>`).join("");
 }
 
 function metricBlock(label, value, title) {
@@ -169,7 +200,7 @@ function deviceCard(d) {
       ${metricBlock("MEM", sys ? sys.mem_percent : null, sys && sys.mem_total_bytes ? `${gib(sys.mem_used_bytes)} / ${gib(sys.mem_total_bytes)}` : "")}
       ${metricBlock(diskLabel.trim(), disk, diskTip)}
     </div>
-    <svg class="fc-spark" viewBox="0 0 280 36" preserveAspectRatio="none" aria-hidden="true"><polyline points="${sparkPoints(d.cpu_spark)}"></polyline></svg>
+    <svg class="fc-spark" viewBox="0 0 280 36" preserveAspectRatio="none" aria-hidden="true">${sparkSvg(d.cpu_spark)}</svg>
     ${chips ? `<div class="fc-issues">${chips}</div>` : ""}
     <div class="fc-foot">
       <span class="fc-foot-l">${tailscaleLogo(d.report ? d.report.tailscale : null, !d.is_online)}${d.report && d.report.power ? `<span class="fc-power" title="Estimated wall power"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg>${Math.round(d.report.power.wall_w)} W</span>` : ""}</span>
@@ -368,50 +399,76 @@ var CHART_SERIES = [
   { key: "disk_percent", label: "Disk", color: "#ffb038" },
 ];
 
-function chartX(i, count, w) { return count < 2 ? 4 : (i / (count - 1)) * (w - 8) + 4; }
-function chartY(v, h) { return h - 4 - (v / 100) * (h - 8); }
+function chartY(v, h, max = 100) { return h - 4 - (Math.min(v, max) / max) * (h - 8); }
 
-function drawChart(canvas, rows, hoverIndex) {
+// A round top for a watts axis, so its quarter lines land on tidy numbers.
+function niceMax(v) {
+  const step = [5, 10, 20, 25, 50, 100, 200, 250, 500].find((s) => s * 4 >= v * 1.1) || Math.ceil(v / 400) * 100;
+  return step * 4;
+}
+
+// opts: { series, max } — defaults are the CPU / memory / disk percent chart.
+function drawChart(canvas, rows, hoverIndex, opts = {}) {
+  const series = opts.series || CHART_SERIES, max = opts.max || 100;
   const ctx = canvas.getContext("2d");
   const w = canvas.width, h = canvas.height;
   ctx.clearRect(0, 0, w, h);
 
-  // gridlines at 25/50/75%
-  ctx.strokeStyle = "rgba(255,255,255,0.05)";
+  // reference lines at 1/4, 1/2 and 3/4 of the scale, on the same y as the data
+  // (snapped to the pixel grid so they're crisp, not a blurred half-pixel)
+  ctx.strokeStyle = "rgba(255,255,255,0.09)";
   ctx.lineWidth = 1;
   for (let i = 1; i < 4; i++) {
-    const y = (i / 4) * h;
+    const y = Math.round(chartY((max * i) / 4, h, max)) + 0.5;
     ctx.beginPath();
     ctx.moveTo(0, y);
     ctx.lineTo(w, y);
     ctx.stroke();
   }
 
-  if (rows.length < 2) return;
+  if (rows.length < 2) return null;
+  const ax = timeAxis(rows.map((r) => toMs(r.timestamp)), 4, w - 4);
 
-  CHART_SERIES.forEach((s) => {
+  // a gap (no reports) is left empty, edged by dotted grey lines where data
+  // stopped and where it resumed
+  ctx.save();
+  ctx.strokeStyle = "rgba(255,255,255,0.22)";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 4]);
+  ax.gaps.forEach((i) => {
+    [ax.xs[i - 1], ax.xs[i]].forEach((x) => {
+      const px = Math.round(x) + 0.5;
+      ctx.beginPath();
+      ctx.moveTo(px, 0);
+      ctx.lineTo(px, h);
+      ctx.stroke();
+    });
+  });
+  ctx.restore();
+
+  series.forEach((s) => {
     ctx.beginPath();
     ctx.strokeStyle = s.color;
     ctx.lineWidth = 1.8;
     rows.forEach((r, i) => {
-      const x = chartX(i, rows.length, w);
-      const y = chartY(r[s.key], h);
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      const x = ax.xs[i];
+      const y = chartY(r[s.key], h, max);
+      if (i === 0 || ax.breaks.has(i)) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     });
     ctx.stroke();
   });
 
   // hover guide line + highlight dots
   if (hoverIndex != null && rows[hoverIndex]) {
-    const x = chartX(hoverIndex, rows.length, w);
+    const x = ax.xs[hoverIndex];
     ctx.strokeStyle = "rgba(255,255,255,0.25)";
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(x, 0);
     ctx.lineTo(x, h);
     ctx.stroke();
-    CHART_SERIES.forEach((s) => {
-      const y = chartY(rows[hoverIndex][s.key], h);
+    series.forEach((s) => {
+      const y = chartY(rows[hoverIndex][s.key], h, max);
       ctx.beginPath();
       ctx.fillStyle = s.color;
       ctx.arc(x, y, 3.5, 0, Math.PI * 2);
@@ -421,11 +478,14 @@ function drawChart(canvas, rows, hoverIndex) {
       ctx.stroke();
     });
   }
+  return ax;
 }
 
-function loadHistoryChart(url, canvasId) {
+// opts: { series, unit, scale(rows) -> max, onData(rows, max) }
+function loadHistoryChart(url, canvasId, opts = {}) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
+  const series = opts.series || CHART_SERIES, unit = opts.unit || "%";
   const wrap = canvas.parentElement;
   wrap.style.position = wrap.style.position || "relative";
 
@@ -434,24 +494,27 @@ function loadHistoryChart(url, canvasId) {
   tip.style.display = "none";
   wrap.appendChild(tip);
 
-  const state = { rows: [], hoverIndex: null };
-  const draw = () => drawChart(canvas, state.rows, state.hoverIndex);
+  const state = { rows: [], hoverIndex: null, ax: null, max: 100 };
+  const draw = () => { state.ax = drawChart(canvas, state.rows, state.hoverIndex, { series, max: state.max }); };
 
   function indexFromEvent(e) {
     const rect = canvas.getBoundingClientRect();
     // The canvas renders at a fixed internal width but is displayed scaled
     // (max-width:100%), so map the pointer using the displayed rect width.
-    const ratio = (e.clientX - rect.left) / rect.width;
-    const idx = Math.round(ratio * (state.rows.length - 1));
-    return Math.max(0, Math.min(state.rows.length - 1, idx));
+    const px = ((e.clientX - rect.left) / rect.width) * canvas.width;
+    if (!state.ax) return 0;
+    // nearest sample in time (x is time-based, so not simply ratio * count)
+    let best = 0;
+    state.ax.xs.forEach((x, i) => { if (Math.abs(x - px) < Math.abs(state.ax.xs[best] - px)) best = i; });
+    return best;
   }
 
   function showTip(e, idx) {
     const row = state.rows[idx];
     if (!row) return;
     const when = parseUtc(row.timestamp);
-    const rowsHtml = CHART_SERIES.map((s) =>
-      `<div class="tip-row"><span class="tip-dot" style="background:${s.color}"></span>${s.label}<b>${Math.round(row[s.key])}%</b></div>`
+    const rowsHtml = series.map((s) =>
+      `<div class="tip-row"><span class="tip-dot" style="background:${s.color}"></span>${s.label}<b>${Math.round(row[s.key])}${unit}</b></div>`
     ).join("");
     const whenStr = when ? when.toLocaleString("en-AU", { timeZone: "Australia/Sydney" }) : "";
     tip.innerHTML = `<div class="tip-time">${whenStr}</div>${rowsHtml}`;
@@ -480,7 +543,9 @@ function loadHistoryChart(url, canvasId) {
   });
 
   const render = () => fetch(url).then((r) => r.json()).then((rows) => {
-    state.rows = rows;
+    state.rows = rows.filter((r) => series.every((s) => r[s.key] != null));
+    state.max = opts.scale ? opts.scale(state.rows) : 100;
+    if (opts.onData) opts.onData(state.rows, state.max);
     draw();
   }).catch(() => {});
   render();
@@ -490,34 +555,36 @@ function loadHistoryChart(url, canvasId) {
 /* ---------- per-container background sparklines ---------- */
 var CONTAINER_SPARK_COLORS = { cpu: "255,82,48", mem: "55,224,106" };
 
-function drawContainerSpark(canvas, values, metric) {
+// points: [{t (ms), v}]; areas and lines break where reports stopped.
+function drawContainerSpark(canvas, points, metric) {
   const ctx = canvas.getContext("2d");
   const w = canvas.width, h = canvas.height;
   ctx.clearRect(0, 0, w, h);
-  if (values.length < 2) return;
+  if (points.length < 2) return;
 
   const rgb = CONTAINER_SPARK_COLORS[metric] || CONTAINER_SPARK_COLORS.cpu;
-  const xAt = (i) => (i / (values.length - 1)) * w;
-  const yAt = (v) => h - (Math.max(0, Math.min(100, v)) / 100) * (h - 3) - 1;
-
-  // filled area
-  ctx.beginPath();
-  ctx.moveTo(0, h);
-  values.forEach((v, i) => ctx.lineTo(xAt(i), yAt(v)));
-  ctx.lineTo(w, h);
-  ctx.closePath();
+  const ax = timeAxis(points.map((p) => p.t), 0, w);
+  const ys = points.map((p) => h - (Math.max(0, Math.min(100, p.v)) / 100) * (h - 3) - 1);
   const grad = ctx.createLinearGradient(0, 0, 0, h);
   grad.addColorStop(0, `rgba(${rgb},0.38)`);
   grad.addColorStop(1, `rgba(${rgb},0.03)`);
-  ctx.fillStyle = grad;
-  ctx.fill();
 
-  // line
-  ctx.beginPath();
-  values.forEach((v, i) => (i === 0 ? ctx.moveTo(xAt(i), yAt(v)) : ctx.lineTo(xAt(i), yAt(v))));
-  ctx.strokeStyle = `rgba(${rgb},0.6)`;
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
+  timeRuns(ax.xs, ys, ax.breaks).forEach((run) => {
+    // filled area
+    ctx.beginPath();
+    ctx.moveTo(run[0][0], h);
+    run.forEach(([x, y]) => ctx.lineTo(x, y));
+    ctx.lineTo(run[run.length - 1][0], h);
+    ctx.closePath();
+    ctx.fillStyle = grad;
+    ctx.fill();
+    // line
+    ctx.beginPath();
+    run.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+    ctx.strokeStyle = `rgba(${rgb},0.6)`;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  });
 }
 
 function loadContainerSparks(url) {
@@ -537,8 +604,8 @@ function loadContainerSparks(url) {
       if (canvas.width !== w) canvas.width = w;
       if (canvas.height !== h) canvas.height = h;
       const series = (state.data[name] || [])
-        .map((p) => (state.metric === "cpu" ? p.cpu_percent : p.mem_percent))
-        .filter((v) => v != null);
+        .map((p) => ({ t: toMs(p.timestamp), v: state.metric === "cpu" ? p.cpu_percent : p.mem_percent }))
+        .filter((p) => p.v != null);
       drawContainerSpark(canvas, series, state.metric);
 
       // update the inline current-usage figure to match the selected metric
@@ -1097,41 +1164,96 @@ function initDiskDrawer() {
 }
 
 /* ---------- power tracking ---------- */
-// Sparkline of wall watts from the device's report history (power_w).
+// Wall watts over time: the same chart as History, on a watts scale.
 function loadPowerSpark() {
   const panel = document.querySelector(".panel.power[data-history]");
-  const svg = document.getElementById("power-spark");
-  if (!panel || !svg) return;
-  fetch(panel.dataset.history).then((r) => r.json()).then((rows) => {
-    const pts = rows.filter((r) => r.power_w != null);
-    if (pts.length < 2) return;
-    const vals = pts.map((r) => r.power_w);
-    const lo = Math.min(...vals), hi = Math.max(...vals), span = Math.max(1, hi - lo);
-    const xy = vals.map((v, i) => `${((i / (vals.length - 1)) * 300).toFixed(1)},${(56 - ((v - lo) / span) * 52).toFixed(1)}`).join(" ");
-    svg.innerHTML = `<polyline points="${xy}"></polyline>`;
-    const first = parseUtc(pts[0].timestamp);
-    document.getElementById("power-range").textContent =
-      `${Math.round(lo)}–${Math.round(hi)} W` + (first ? ` since ${first.toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })}` : "");
-  }).catch(() => {});
+  if (!panel || !document.getElementById("power-chart")) return;
+  loadHistoryChart(panel.dataset.history, "power-chart", {
+    series: [{ key: "power_w", label: "Power", color: "#ffb038" }],
+    unit: " W",
+    scale: (rows) => niceMax(Math.max(1, ...rows.map((r) => r.power_w))),
+    onData: (rows, max) => {
+      const el = document.getElementById("power-range");
+      if (!el || !rows.length) return;
+      const vals = rows.map((r) => r.power_w);
+      el.textContent = `${Math.round(Math.min(...vals))}–${Math.round(Math.max(...vals))} W · lines every ${max / 4} W`;
+    },
+  });
 }
 
-function setPowerTracking(deviceId, action, btn) {
-  const msg = action === "enable"
-    ? "Turn on power tracking?\n\nInstalls the pve-power exporter (a small Python service on port 9105) as root and starts it. Readings appear within a minute."
-    : "Turn off power tracking?\n\nStops and removes the pve-power service. Its script and kWh total stay on the machine.";
-  if (!confirm(msg)) return;
-  btn.disabled = true;
-  btn.textContent = action === "enable" ? "Installing…" : "Stopping…";
-  fetch(`/devices/${deviceId}/power/${action}`, { method: "POST" })
-    .then((r) => r.json().then((j) => ({ ok: r.ok, j })))
-    .then(({ ok, j }) => {
-      btn.disabled = false;
-      if (!ok) { btn.textContent = action === "enable" ? "Turn on" : "Turn off"; alert(j.detail || "Failed."); return; }
-      btn.textContent = j.message || "Done";
-      // the client picks it up on its next report; reload then to show the readings
-      setTimeout(() => location.reload(), action === "enable" ? 65000 : 2000);
-    })
-    .catch(() => { btn.disabled = false; btn.textContent = "Retry"; });
+// Settings › Power tracking: a switch; on expands the card with live status.
+function initPowerToggle() {
+  const card = document.querySelector(".power-toggle[data-device-id]");
+  const sw = document.getElementById("power-toggle");
+  if (!card || !sw || sw.dataset.bound) return;
+  sw.dataset.bound = "1";
+  const id = card.dataset.deviceId;
+  const status = (html, bad) => {
+    const el = document.getElementById("pt-status");
+    el.innerHTML = html;
+    el.classList.toggle("bad", !!bad);
+  };
+  const fill = (p) => {
+    const set = (k, v) => { document.getElementById(k).textContent = v; };
+    set("pt-watts", p ? `${p.wall_w.toFixed(1)} W` : "—");
+    set("pt-kwh", p && p.energy_kwh != null ? `${p.energy_kwh.toFixed(2)} kWh` : "—");
+    set("pt-eff", p && p.psu_efficiency ? `${Math.round(p.psu_efficiency * 100)}%` : "—");
+  };
+  const post = (action) => fetch(`/devices/${id}/power/${action}`, { method: "POST" })
+    .then((r) => r.json().then((j) => ({ ok: r.ok, j })));
+
+  // after installing, watch for the client's next report to carry the readings
+  const waitForReading = () => {
+    let tries = 0;
+    const timer = setInterval(() => {
+      tries += 1;
+      fetch("/devices.json").then((r) => r.json()).then((devs) => {
+        const d = devs.find((x) => String(x.id) === id);
+        const p = d && d.report && d.report.power;
+        if (p) {
+          clearInterval(timer);
+          fill(p);
+          status('<span class="hdot ok"></span>Running · pve-power on port 9105');
+        } else if (tries >= 36) {
+          clearInterval(timer);
+          status("Installed, but no reading yet. The client may be older than 1.1.9: update it, and readings will appear.", true);
+        }
+      }).catch(() => {});
+    }, 5000);
+    PAGE_TIMERS.push(timer);
+  };
+
+  sw.addEventListener("change", () => {
+    const on = sw.checked;
+    const msg = on
+      ? "Turn on power tracking?\n\nInstalls the pve-power exporter (a small Python service on port 9105) as root and starts it. Readings appear within a minute."
+      : "Turn off power tracking?\n\nStops and removes the pve-power service. Its script and kWh total stay on the machine.";
+    if (!confirm(msg)) { sw.checked = !on; return; }
+    sw.disabled = true;
+    if (on) {
+      fill(null);
+      card.classList.add("open");
+      status('<span class="upd-spin"></span>Installing the exporter…');
+    } else {
+      status('<span class="upd-spin"></span>Stopping…');
+    }
+    post(on ? "enable" : "disable").then(({ ok, j }) => {
+      sw.disabled = false;
+      if (!ok) {
+        sw.checked = !on;
+        card.classList.add("open");  // keep the reason on screen
+        status(escapeHtml(j.detail || "Failed."), true);
+        return;
+      }
+      if (on) {
+        status('<span class="upd-spin"></span>Installed. Waiting for the first reading…');
+        waitForReading();
+      } else {
+        card.classList.remove("open");
+        status("");
+      }
+    }).catch(() => { sw.disabled = false; sw.checked = !on; status("Couldn't reach the host.", true); });
+  });
 }
 
 /* ---------- device page tabs ----------

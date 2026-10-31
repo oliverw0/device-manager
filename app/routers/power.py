@@ -16,11 +16,23 @@ from .terminal import _ssh_run
 
 router = APIRouter()
 
-NO_RAPL_EXIT = 3
+NO_RAPL_EXIT = 3  # not supported here: a guest, or no RAPL counters
 # An existing /usr/local/bin/pve_power.py is kept: it may hold local calibration
 # (CAL_SCALE, fan counts, drive specs).
+# Bare metal only. A guest can't measure the wall: a privileged LXC may even see
+# the host's RAPL counters, but estimating with the host's PSU there would count
+# the same watts twice. Guests get their share from the host's report instead.
 ENABLE_CMD = f"""set -e
 export PATH="$PATH:/usr/local/bin:/usr/local/sbin"
+virt=$(systemd-detect-virt 2>/dev/null || true)
+if [ -z "$virt" ]; then
+  if grep -qa 'container=' /proc/1/environ 2>/dev/null || [ -f /.dockerenv ]; then virt=container
+  elif grep -qw hypervisor /proc/cpuinfo 2>/dev/null; then virt=vm; fi
+fi
+if [ -n "$virt" ] && [ "$virt" != none ]; then
+  echo "This is a virtual machine or container ($virt), not bare metal, so it can't measure wall power. Turn power tracking on for the physical host (e.g. your Proxmox host): its report includes each guest's share, which shows on this device's page."
+  exit {NO_RAPL_EXIT}
+fi
 if [ ! -r /sys/class/powercap/intel-rapl:0/energy_uj ]; then
   echo "No CPU power counters here (RAPL at /sys/class/powercap/intel-rapl:0). LXCs and VMs can't read them: turn power tracking on for the Proxmox host instead, whose readings include each guest's share."
   exit {NO_RAPL_EXIT}
