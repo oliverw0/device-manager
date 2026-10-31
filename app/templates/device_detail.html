@@ -125,7 +125,7 @@
         </p>
       </section>
 
-{% set power_names = {'cpu_package': 'CPU package', 'vrm_loss': 'VRM loss', 'ram': 'RAM', 'psu_loss': 'PSU loss', 'motherboard': 'Motherboard', 'nic_2_5gbe': 'Network', 'wifi': 'Wi-Fi', 'cpu_cooler_fan': 'CPU fan', 'case_fans': 'Case fans', 'extras': 'Extras'} %}
+{% set power_names = {'cpu_package': 'CPU package', 'vrm_loss': 'VRM loss', 'ram': 'RAM', 'psu_loss': 'PSU loss', 'motherboard': 'Motherboard', 'nic_2_5gbe': 'Network', 'wifi': 'Wi-Fi', 'cpu_cooler_fan': 'CPU fan', 'case_fans': 'Case fans', 'extras': 'Extras', 'soc': 'SoC (CPU + GPU)', 'rest_of_system': 'Display, RAM, rest', 'battery_charging': 'Battery charging', 'charger_loss': 'Charger loss'} %}
       {% set guest = power_share and not pw %}
       <section class="panel power power-main{{ ' on' if pw }}" aria-label="Power" data-device-id="{{ device.id }}" data-history="/devices/{{ device.id }}/history.json">
         <div class="pw-head">
@@ -297,7 +297,7 @@
       {% if c.last_status == 'up' and c.last_latency_ms is not none %}<span class="muted" style="font-size:12px">{{ c.last_latency_ms | round | int }}ms</span>{% endif %}
       <span class="spacer"></span>
       <form method="post" action="/checks/{{ c.id }}/toggle"><button type="submit" class="term-btn" title="{{ 'Pause' if c.enabled else 'Resume' }}">{% if c.enabled %}❚❚{% else %}▶{% endif %}</button></form>
-      <form method="post" action="/checks/{{ c.id }}/delete" onsubmit="return confirm('Delete this check?')"><button type="submit" class="term-btn" title="Delete">✕</button></form>
+      <form method="post" action="/checks/{{ c.id }}/delete" data-confirm="Delete this check?" data-ok="Delete" data-danger><button type="submit" class="term-btn" title="Delete">✕</button></form>
     </div>
     {% if c.last_status == 'down' and c.last_error %}<div class="check-err">{{ c.last_error }}</div>{% endif %}
     {% else %}
@@ -415,7 +415,7 @@
     </div>
     <h3>Or set .env manually</h3>
     <pre class="key-box" id="env-snippet" data-key="{{ api_key }}">loading…</pre>
-    <form method="post" action="/devices/{{ device.id }}/rotate-key" onsubmit="return confirm('Rotate API key? The client config must be updated to match or it will be locked out.');" style="margin-top:12px">
+    <form method="post" action="/devices/{{ device.id }}/rotate-key" data-confirm="Rotate the API key?&#10;&#10;The client's config must be updated to match, or it will be locked out." data-ok="Rotate" data-danger style="margin-top:12px">
       <button type="submit" class="secondary">Rotate key</button>
     </form>
   </section>
@@ -423,7 +423,7 @@
   <section class="panel danger-zone">
     <h2>Danger zone</h2>
     <p class="muted" style="margin-top:0">Removes this device and all of its history and alerts. This cannot be undone.</p>
-    <form method="post" action="/devices/{{ device.id }}/delete" onsubmit="return confirm('Delete this device and all its history?');">
+    <form method="post" action="/devices/{{ device.id }}/delete" data-confirm="Delete this device?&#10;&#10;Its whole history goes with it. This can't be undone." data-ok="Delete" data-danger>
       <button type="submit" class="danger">Delete device</button>
     </form>
   </section>

@@ -545,6 +545,10 @@ button.danger:hover { background: rgba(255,82,48,0.24); box-shadow: var(--glow-r
 .check-line input { width: auto; }
 #add-ssh-fields { margin-top: 12px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.confirm-dialog { width: min(440px, calc(100vw - 32px)); }
+.confirm-dialog h2 { margin: 0; font-family: var(--font-mono); font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; }
+.confirm-dialog .dialog-intro { white-space: pre-line; color: var(--muted); line-height: 1.5; }
+.confirm-dialog .dialog-actions button { min-width: 88px; }
 .form-error { margin: 0; padding: 8px 12px; border: 1px solid rgba(255,82,48,0.55); background: rgba(255,82,48,0.1); color: var(--red); font-size: 13px; }
 .platform-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
 .platform-tabs button { padding: 5px 10px; font-size: 11px; }

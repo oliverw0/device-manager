@@ -91,6 +91,14 @@
     </section>
   </aside>
 
+  <dialog id="confirm-dialog" class="add-dialog confirm-dialog" aria-labelledby="cd-title">
+    <form method="dialog">
+      <h2 id="cd-title"></h2>
+      <p id="cd-body" class="dialog-intro"></p>
+      <div class="dialog-actions"><button value="" class="secondary">Cancel</button><button value="ok" id="cd-ok">Confirm</button></div>
+    </form>
+  </dialog>
+
   {# Persistent progress for background updates — survives navigation. Populated by app.js. #}
   <div id="update-overlay" class="update-overlay" hidden></div>
 

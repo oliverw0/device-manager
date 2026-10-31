@@ -1,3 +1,27 @@
+// The app's own confirm(): "Title\n\nDetails" -> Promise<boolean>. Esc or Cancel = no.
+function ask(msg, okText, danger) {
+  const d = document.getElementById("confirm-dialog");
+  const [title, ...rest] = msg.split("\n\n");
+  d.querySelector("#cd-title").textContent = title;
+  const body = d.querySelector("#cd-body");
+  body.textContent = rest.join("\n\n");
+  body.hidden = !rest.length;
+  const ok = d.querySelector("#cd-ok");
+  ok.textContent = okText || "Confirm";
+  ok.className = danger ? "danger" : "";
+  d.returnValue = "";
+  d.showModal();
+  return new Promise((res) => d.addEventListener("close", () => res(d.returnValue === "ok"), { once: true }));
+}
+
+// <form data-confirm="..." data-ok="Delete" data-danger> asks before submitting.
+document.addEventListener("submit", (e) => {
+  const f = e.target;
+  if (!f.dataset || !f.dataset.confirm) return;
+  e.preventDefault();
+  ask(f.dataset.confirm, f.dataset.ok, "danger" in f.dataset).then((yes) => { if (yes) f.submit(); });
+});
+
 function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, (c) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
@@ -316,9 +340,9 @@ function renderClientBanner() {
 }
 
 // force: update every online, SSH-enabled device whatever version it reports.
-function updateAllClients(n, force) {
+async function updateAllClients(n, force) {
   const who = force ? "every online device with SSH enabled" : `${n} device${n > 1 ? "s" : ""}`;
-  if (!confirm(`Update the client on ${who}? Each one pulls the latest code and restarts its client.`)) return;
+  if (!(await ask(`Update the client on ${who}?\n\nEach one pulls the latest code and restarts its client.`, "Update"))) return;
   fetch("/updates/client-all" + (force ? "?force=1" : ""), { method: "POST" }).then((r) => r.json())
     .then((res) => { if (!res.started) alert("No updates started (devices offline or SSH unavailable)."); resumeUpdates(); })
     .catch(() => alert("Couldn't start the updates."));
@@ -692,9 +716,9 @@ function fmtEta(s) {
   return Math.floor(s / 60) + "m " + String(s % 60).padStart(2, "0") + "s";
 }
 
-function startUpdate(deviceId, deviceName, kind, os) {
+async function startUpdate(deviceId, deviceName, kind, os) {
   const meta = UPDATE_META[kind];
-  if (!meta || !confirm(meta.confirm(deviceName, os))) return;
+  if (!meta || !(await ask(meta.confirm(deviceName, os), "Update"))) return;
   fetch(`/devices/${deviceId}/update/${kind}`, { method: "POST" })
     .then((r) => r.json())
     .then((res) => {
@@ -1132,9 +1156,9 @@ function renderDiskScan() {
       `<p class="dd-note">Runs over SSH. Nothing is deleted until you confirm, and the confirmation says exactly what runs.</p></section>` : "");
 }
 
-function runCleanup(btn) {
+async function runCleanup(btn) {
   const c = DISK.scan.cleanups.find((x) => x.key === btn.dataset.cleanup);
-  if (!c || !confirm(`Run "${c.how}" on ${DISK.deviceName}?\n\n${c.note}\nFrees about ${fmtBytes(c.bytes)}.`)) return;
+  if (!c || !(await ask(`Run "${c.how}" on ${DISK.deviceName}?\n\n${c.note}\nFrees about ${fmtBytes(c.bytes)}.`, "Run", true))) return;
   btn.disabled = true;
   btn.textContent = "Running…";
   fetch(`/devices/${DISK.deviceId}/cleanup/${c.key}`, { method: "POST" })
@@ -1220,8 +1244,8 @@ function initPowerToggle() {
     PAGE_TIMERS.push(timer);
   };
 
-  const turnOn = (msg) => {
-    if (!confirm(msg)) return false;
+  const turnOn = async (msg) => {
+    if (!(await ask(msg, "Turn on"))) return false;
     busy(true);
     status('<span class="upd-spin"></span>Starting power tracking on the machine…');
     post("enable").then(({ ok, j }) => {
@@ -1235,25 +1259,29 @@ function initPowerToggle() {
   sw.addEventListener("change", () => {
     if (sw.checked) {
       const windows = !!psu;
-      if (!turnOn("Turn on power tracking?\n\n" + (windows
+      turnOn("Turn on power tracking?\n\n" + (windows
         ? "Installs LibreHardwareMonitor's library and the PawnIO driver (to read CPU power), then starts a small background task that estimates wall power using your PSU's curve."
         : "Installs the pve-power exporter (a small Python service on port 9105) as root and starts it.")
-        + " Readings appear within a minute.")) sw.checked = false;
+        + " Readings appear within a minute.").then((on) => { if (!on) sw.checked = false; });
       return;
     }
-    if (!confirm("Turn off power tracking?\n\nStops the exporter on the machine and disables it, so nothing keeps running there. Turning it back on starts it again.")) { sw.checked = true; return; }
+    ask("Turn off power tracking?\n\nStops the exporter on the machine and disables it, so nothing keeps running there. Turning it back on starts it again.", "Turn off", true)
+      .then((yes) => { if (yes) turnOff(); else sw.checked = true; });
+  });
+
+  const turnOff = () => {
     busy(true);
     status('<span class="upd-spin"></span>Stopping power tracking on the machine…');
     post("disable").then(({ ok, j }) => {
       if (!ok) { busy(false); sw.checked = true; status(escapeHtml(j.detail || "Failed."), true); return; }
       location.reload();
     }).catch(() => { busy(false); sw.checked = true; status("Couldn't reach the host.", true); });
-  });
+  };
 
   if (psu) psu.addEventListener("change", () => {
     if (!sw.checked) return;  // just a choice for when it's turned on
     const label = psu.options[psu.selectedIndex].text;
-    if (!turnOn(`Use the ${label} curve?\n\nRestarts the power estimate on the machine with it.`)) location.reload();
+    turnOn(`Use the ${label} curve?\n\nRestarts the power estimate on the machine with it.`).then((on) => { if (!on) location.reload(); });
   });
 }
 

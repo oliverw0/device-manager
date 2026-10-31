@@ -3,7 +3,8 @@
 On installs the pve-power exporter (client/power/pve_power.py, served on
 :9105) as a systemd service; the client then reports its readings. It needs the
 CPU's RAPL energy counters, which bare-metal Intel/AMD Linux has and LXCs/VMs
-don't (a Proxmox host's readings already include each guest's share).
+don't (a Proxmox host's readings already include each guest's share), or an
+Apple Silicon Mac's SMC sensors under Asahi Linux, which measure it directly.
 """
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
@@ -33,8 +34,8 @@ if [ -n "$virt" ] && [ "$virt" != none ]; then
   echo "This is a virtual machine or container ($virt), not bare metal, so it can't measure wall power. Turn power tracking on for the physical host (e.g. your Proxmox host): its report includes each guest's share, which shows on this device's page."
   exit {NO_RAPL_EXIT}
 fi
-if [ ! -r /sys/class/powercap/intel-rapl:0/energy_uj ]; then
-  echo "No CPU power counters here (RAPL at /sys/class/powercap/intel-rapl:0). LXCs and VMs can't read them: turn power tracking on for the Proxmox host instead, whose readings include each guest's share."
+if [ ! -r /sys/class/powercap/intel-rapl:0/energy_uj ] && ! grep -qx macsmc_hwmon /sys/class/hwmon/hwmon*/name 2>/dev/null; then
+  echo "This machine doesn't expose any power sensors: no Intel/AMD RAPL counters (/sys/class/powercap/intel-rapl:0) and no Apple SMC (macsmc_hwmon). $(uname -m) CPUs other than Intel, AMD and Apple Silicon aren't supported yet."
   exit {NO_RAPL_EXIT}
 fi
 command -v python3 >/dev/null 2>&1 || {{ echo "python3 is needed for the power exporter."; exit 1; }}
@@ -68,60 +69,19 @@ echo "Power tracking stopped: the pve-power service is stopped and won't start a
 # PawnIO driver; client/power/win_power.ps1 turns that (plus nvidia-smi for
 # NVIDIA GPUs) into a wall estimate using the chosen PSU's curve, as a SYSTEM
 # scheduled task writing %ProgramData%\DeviceManagerClient\power.json.
-LHM_ZIP = "https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases/download/v0.9.6/LibreHardwareMonitor.zip"
-PAWNIO_SETUP = "https://github.com/namazso/PawnIO.Setup/releases/download/2.2.0/PawnIO_setup.exe"
+# client/power/win_power_install.ps1 sets that up.
 WIN_TASK = "DeviceManagerPower"
 
 
 def windows_enable_script(psu: str) -> str:
+    """Downloads and runs client/power/win_power_install.ps1. The installer is too
+    long to send itself: cmd.exe caps a command line at 8191 characters. psu is
+    already checked against remote.PSU_PRESETS (plain [a-z0-9-] keys)."""
     return f"""$ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 'Tls12'
-$cs = Get-CimInstance Win32_ComputerSystem
-if ("$($cs.Manufacturer) $($cs.Model)" -match 'Virtual|VMware|VirtualBox|QEMU|KVM|Xen|Parallels') {{
-  Write-Output "This is a virtual machine ($($cs.Model)), not bare metal, so it can't measure wall power. Turn power tracking on for the physical host instead."
-  exit {NO_RAPL_EXIT}
-}}
-$dir = Join-Path $env:ProgramFiles 'DeviceManagerClient\\power'
-$data = Join-Path $env:ProgramData 'DeviceManagerClient'
-New-Item -ItemType Directory -Force -Path $dir, $data | Out-Null
-$tmp = Join-Path $env:TEMP ('dm-power-' + [guid]::NewGuid().ToString('N'))
-New-Item -ItemType Directory -Path $tmp | Out-Null
-try {{
-  if (-not (Test-Path "$dir\\lhm\\LibreHardwareMonitorLib.dll")) {{
-    Write-Output 'Downloading LibreHardwareMonitor ...'
-    Invoke-WebRequest -UseBasicParsing -Uri '{LHM_ZIP}' -OutFile "$tmp\\lhm.zip"
-    Expand-Archive -Path "$tmp\\lhm.zip" -DestinationPath "$dir\\lhm" -Force
-  }}
-  if (-not (Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\PawnIO' -ErrorAction SilentlyContinue)) {{
-    Write-Output 'Installing the PawnIO driver ...'
-    Invoke-WebRequest -UseBasicParsing -Uri '{PAWNIO_SETUP}' -OutFile "$tmp\\PawnIO_setup.exe"
-    $p = Start-Process -FilePath "$tmp\\PawnIO_setup.exe" -ArgumentList '-install', '-silent' -Wait -PassThru
-    if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) {{ Write-Output "The PawnIO driver didn't install (exit $($p.ExitCode))."; exit 1 }}
-  }}
-  Invoke-WebRequest -UseBasicParsing -Uri '{remote.CLIENT_RAW}/power/win_power.ps1' -OutFile "$dir\\win_power.ps1"
-}} finally {{ Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue }}
-@{{ psu = '{psu}' }} | ConvertTo-Json | Set-Content -Path "$data\\power-config.json" -Encoding ASCII
-$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$dir\\win_power.ps1`""
-$principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
-$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable `
-  -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1)
-Stop-ScheduledTask -TaskName '{WIN_TASK}' -ErrorAction SilentlyContinue
-Register-ScheduledTask -TaskName '{WIN_TASK}' -Description 'DeviceManager power estimate' -Action $action `
-  -Trigger (New-ScheduledTaskTrigger -AtStartup) -Principal $principal -Settings $settings -Force | Out-Null
-$out = "$data\\power.json"
-Remove-Item $out -Force -ErrorAction SilentlyContinue
-Start-ScheduledTask -TaskName '{WIN_TASK}'
-for ($i = 0; $i -lt 40; $i++) {{
-  Start-Sleep -Seconds 1
-  if (Test-Path $out) {{
-    $j = Get-Content $out -Raw | ConvertFrom-Json
-    $note = if (-not $j.cpu_measured) {{ ' (CPU power not readable yet; a restart may be needed to load the PawnIO driver)' }} else {{ '' }}
-    Write-Output "Power tracking is running: $($j.wall_w) W$note"
-    exit 0
-  }}
-}}
-Write-Output 'Installed and started, but no reading yet.'
-exit 1
+$p = Join-Path $env:TEMP 'dm-power-install.ps1'
+Invoke-WebRequest -UseBasicParsing -Uri '{remote.CLIENT_RAW}/power/win_power_install.ps1' -OutFile $p
+& $p -Psu '{psu}'; exit $LASTEXITCODE
 """
 
 
