@@ -80,6 +80,8 @@ class PowerInfo(BaseModel):
     energy_kwh: Optional[float] = None
     dc_load_w: Optional[float] = None
     psu_efficiency: Optional[float] = None
+    psu: Optional[str] = None             # Windows: which PSU curve the estimate uses
+    cpu_measured: Optional[bool] = None   # Windows: False when the CPU sensor isn't readable
     components: dict = {}
     guests: List[dict] = []  # Proxmox guests' share: {name, type, vmid, cpu_w}
 

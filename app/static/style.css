@@ -1013,10 +1013,6 @@ tr:has(.stat-led.off) .os-icon { opacity: 0.45; }
 /* ---------- power tracking ---------- */
 .fc-foot-l { align-items: center; gap: 10px; }
 .fc-power { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); font-size: 12px; color: var(--amber); }
-.pw-watts { font-family: var(--font-mono); font-size: 30px; font-weight: 700; color: #e6e9ec; line-height: 1.1; }
-.pw-watts small { font-size: 15px; color: var(--muted); font-weight: 500; }
-.pw-meta { font-size: 12.5px; color: var(--muted); }
-.pw-range { margin: 6px 0 0; font-size: 12px; font-family: var(--font-mono); }
 .pw-h { margin: 16px 0 6px; font-family: var(--font-mono); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
 .pw-h .muted { text-transform: none; letter-spacing: 0; font-family: var(--font-sans); font-weight: 400; }
 .pw-list { list-style: none; margin: 0; padding: 0; }
@@ -1024,22 +1020,15 @@ tr:has(.stat-led.off) .os-icon { opacity: 0.45; }
 .pw-list li:first-child { border-top: 0; }
 .pw-w { font-family: var(--font-mono); color: #e6e9ec; white-space: nowrap; }
 
-/* Settings › Power tracking: one row; the card grows downward when on */
-.pt-title { display: flex; flex-direction: column; gap: 2px; font-weight: 500; }
-.pt-title .muted { font-weight: 400; font-size: 12.5px; }
-.pt-expand { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.25s ease; }
-.power-toggle.open .pt-expand { grid-template-rows: 1fr; }
-.pt-inner { overflow: hidden; min-height: 0; }
-.pt-status { display: flex; align-items: center; gap: 8px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); font-size: 13px; color: var(--text); }
+.pw-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 4px 28px; }
+/* Power panel: title row with the reading, PSU choice (Windows) and the on/off switch */
+.pw-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.pw-head h2 { margin: 0; }
+.power.on .pw-head { margin-bottom: 12px; }
+.pw-meta { font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); }
+.pw-meta b { color: #e6e9ec; font-weight: 600; }
+.pw-psu select { background: #0e1013; color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 8px; font-family: var(--font-sans); font-size: 12.5px; max-width: 220px; }
+.pt-status { display: flex; align-items: center; gap: 8px; margin: 12px 0 0; font-size: 13px; color: var(--text); }
 .pt-status:empty { display: none; }
 .pt-status.bad { color: var(--red); }
-.pt-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
-.pt-stats > div { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; background: var(--bg-edge); border: 1px solid var(--border); }
-.pt-k { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
-.pt-v { font-family: var(--font-mono); font-size: 18px; font-weight: 700; color: #e6e9ec; }
-.pt-note { margin: 12px 0 0; font-size: 12px; color: var(--muted); }
-.pt-note code { font-size: 11.5px; }
-.pw-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; margin-bottom: 12px; }
-.pw-head h2 { margin: 0; }
-.pw-head .pw-watts { font-size: 22px; }
-.pw-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 4px 28px; }
+.power.on .pt-status:not(:empty) { margin: 0 0 12px; }

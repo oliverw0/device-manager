@@ -22,6 +22,16 @@ WIN_CLIENT_DIR = r"$env:ProgramFiles\DeviceManagerClient"
 CLIENT_REPO = "https://github.com/oliverw0/device-manager-client"
 CLIENT_RAW = "https://raw.githubusercontent.com/oliverw0/device-manager-client/main"
 
+# Windows power estimate: PSU curves the exporter (client/power/win_power.ps1)
+# knows, by key. Each comes from the PSU's Cybenetics report at 230V.
+PSU_PRESETS = [
+    ("corsair-rm750e", "Corsair RM750e (2022–23)"),
+    ("corsair-rm650e", "Corsair RM650e"),
+    ("generic-gold", "Generic 80 PLUS Gold"),
+    ("generic-bronze", "Generic 80 PLUS Bronze"),
+    ("generic-platinum", "Generic 80 PLUS Platinum"),
+]
+
 
 def _report(device) -> dict:
     return (json.loads(device.last_report_json) if device.last_report_json else None) or {}

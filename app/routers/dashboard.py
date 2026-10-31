@@ -86,6 +86,7 @@ def _fmt_reltime(value) -> str:
 templates.env.filters["uptime"] = _fmt_uptime
 templates.env.filters["dt"] = _fmt_dt
 templates.env.filters["reltime"] = _fmt_reltime
+templates.env.globals["psu_presets"] = remote.PSU_PRESETS
 
 
 # Distros with their own icon; anything else Linux gets Tux (see .os-* in style.css).

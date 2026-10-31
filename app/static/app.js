@@ -131,15 +131,22 @@ const FLEET_FILTERS = [
    leaving that stretch blank. */
 function toMs(iso) { const d = parseUtc(iso); return d ? d.getTime() : 0; }
 
-function timeAxis(times, x0, x1) {
+// range: optional [start, end] ms, so graphs over the same history share one
+// time scale (a series with no data for part of it is blank there).
+function timeAxis(times, x0, x1, range) {
   const n = times.length;
-  const t0 = times[0], span = Math.max(1, times[n - 1] - t0);
+  const t0 = range ? range[0] : times[0];
+  const span = Math.max(1, (range ? range[1] : times[n - 1]) - t0);
   const xs = times.map((t) => x0 + ((t - t0) / span) * (x1 - x0));
   const d = times.slice(1).map((t, i) => t - times[i]).sort((a, b) => a - b);
   const limit = Math.max((d[Math.floor(d.length / 2)] || 60000) * 3, 150000);
   const gaps = [];  // i where a gap sits between sample i-1 and i
   for (let i = 1; i < n; i++) if (times[i] - times[i - 1] > limit) gaps.push(i);
-  return { xs, gaps, breaks: new Set(gaps) };
+  // data that starts after / ends before the shared range: edges to mark too
+  const edges = [];
+  if (range && times[0] - range[0] > limit) edges.push(xs[0]);
+  if (range && range[1] - times[n - 1] > limit) edges.push(xs[n - 1]);
+  return { xs, gaps, edges, breaks: new Set(gaps) };
 }
 
 // Split points into unbroken runs (for polylines / filled areas).
@@ -409,7 +416,7 @@ function niceMax(v) {
 
 // opts: { series, max } — defaults are the CPU / memory / disk percent chart.
 function drawChart(canvas, rows, hoverIndex, opts = {}) {
-  const series = opts.series || CHART_SERIES, max = opts.max || 100;
+  const series = opts.series || CHART_SERIES, max = opts.max || 100, range = opts.range || null;
   const ctx = canvas.getContext("2d");
   const w = canvas.width, h = canvas.height;
   ctx.clearRect(0, 0, w, h);
@@ -427,7 +434,7 @@ function drawChart(canvas, rows, hoverIndex, opts = {}) {
   }
 
   if (rows.length < 2) return null;
-  const ax = timeAxis(rows.map((r) => toMs(r.timestamp)), 4, w - 4);
+  const ax = timeAxis(rows.map((r) => toMs(r.timestamp)), 4, w - 4, range);
 
   // a gap (no reports) is left empty, edged by dotted grey lines where data
   // stopped and where it resumed
@@ -435,14 +442,13 @@ function drawChart(canvas, rows, hoverIndex, opts = {}) {
   ctx.strokeStyle = "rgba(255,255,255,0.22)";
   ctx.lineWidth = 1;
   ctx.setLineDash([3, 4]);
-  ax.gaps.forEach((i) => {
-    [ax.xs[i - 1], ax.xs[i]].forEach((x) => {
-      const px = Math.round(x) + 0.5;
-      ctx.beginPath();
-      ctx.moveTo(px, 0);
-      ctx.lineTo(px, h);
-      ctx.stroke();
-    });
+  const marks = ax.gaps.flatMap((i) => [ax.xs[i - 1], ax.xs[i]]).concat(ax.edges);
+  marks.forEach((x) => {
+    const px = Math.round(x) + 0.5;
+    ctx.beginPath();
+    ctx.moveTo(px, 0);
+    ctx.lineTo(px, h);
+    ctx.stroke();
   });
   ctx.restore();
 
@@ -494,8 +500,8 @@ function loadHistoryChart(url, canvasId, opts = {}) {
   tip.style.display = "none";
   wrap.appendChild(tip);
 
-  const state = { rows: [], hoverIndex: null, ax: null, max: 100 };
-  const draw = () => { state.ax = drawChart(canvas, state.rows, state.hoverIndex, { series, max: state.max }); };
+  const state = { rows: [], hoverIndex: null, ax: null, max: 100, range: null };
+  const draw = () => { state.ax = drawChart(canvas, state.rows, state.hoverIndex, { series, max: state.max, range: state.range }); };
 
   function indexFromEvent(e) {
     const rect = canvas.getBoundingClientRect();
@@ -543,6 +549,9 @@ function loadHistoryChart(url, canvasId, opts = {}) {
   });
 
   const render = () => fetch(url).then((r) => r.json()).then((rows) => {
+    // the time range comes from the whole history (every chart of this device
+    // fetches the same rows), so Hardware usage and Power line up in time
+    state.range = rows.length > 1 ? [toMs(rows[0].timestamp), toMs(rows[rows.length - 1].timestamp)] : null;
     state.rows = rows.filter((r) => series.every((s) => r[s.key] != null));
     state.max = opts.scale ? opts.scale(state.rows) : 100;
     if (opts.onData) opts.onData(state.rows, state.max);
@@ -1172,87 +1181,79 @@ function loadPowerSpark() {
     series: [{ key: "power_w", label: "Power", color: "#ffb038" }],
     unit: " W",
     scale: (rows) => niceMax(Math.max(1, ...rows.map((r) => r.power_w))),
-    onData: (rows, max) => {
-      const el = document.getElementById("power-range");
-      if (!el || !rows.length) return;
-      const vals = rows.map((r) => r.power_w);
-      el.textContent = `${Math.round(Math.min(...vals))}–${Math.round(Math.max(...vals))} W · lines every ${max / 4} W`;
-    },
   });
 }
 
-// Settings › Power tracking: a switch; on expands the card with live status.
+// The Power panel's switch. On installs/starts the exporter on the machine; off
+// stops and disables it there. Windows also picks the PSU curve the estimate uses.
 function initPowerToggle() {
-  const card = document.querySelector(".power-toggle[data-device-id]");
+  const panel = document.querySelector(".panel.power[data-device-id]");
   const sw = document.getElementById("power-toggle");
-  if (!card || !sw || sw.dataset.bound) return;
+  if (!panel || !sw || sw.dataset.bound) return;
   sw.dataset.bound = "1";
-  const id = card.dataset.deviceId;
+  const id = panel.dataset.deviceId;
+  const psu = document.getElementById("power-psu");
   const status = (html, bad) => {
     const el = document.getElementById("pt-status");
     el.innerHTML = html;
     el.classList.toggle("bad", !!bad);
   };
-  const fill = (p) => {
-    const set = (k, v) => { document.getElementById(k).textContent = v; };
-    set("pt-watts", p ? `${p.wall_w.toFixed(1)} W` : "—");
-    set("pt-kwh", p && p.energy_kwh != null ? `${p.energy_kwh.toFixed(2)} kWh` : "—");
-    set("pt-eff", p && p.psu_efficiency ? `${Math.round(p.psu_efficiency * 100)}%` : "—");
-  };
-  const post = (action) => fetch(`/devices/${id}/power/${action}`, { method: "POST" })
+  const busy = (on) => { sw.disabled = on; if (psu) psu.disabled = on; };
+  const post = (action) => fetch(`/devices/${id}/power/${action}?psu=${encodeURIComponent(psu ? psu.value : "generic-gold")}`, { method: "POST" })
     .then((r) => r.json().then((j) => ({ ok: r.ok, j })));
 
-  // after installing, watch for the client's next report to carry the readings
+  // after starting, wait for the client's next report to carry a reading, then redraw the page
   const waitForReading = () => {
     let tries = 0;
     const timer = setInterval(() => {
       tries += 1;
       fetch("/devices.json").then((r) => r.json()).then((devs) => {
         const d = devs.find((x) => String(x.id) === id);
-        const p = d && d.report && d.report.power;
-        if (p) {
+        if (d && d.report && d.report.power) { clearInterval(timer); location.reload(); }
+        else if (tries >= 36) {
           clearInterval(timer);
-          fill(p);
-          status('<span class="hdot ok"></span>Running · pve-power on port 9105');
-        } else if (tries >= 36) {
-          clearInterval(timer);
-          status("Installed, but no reading yet. The client may be older than 1.1.9: update it, and readings will appear.", true);
+          busy(false);
+          status("Running, but no reading has arrived. The client may be too old to report power: update it and readings will appear.", true);
         }
       }).catch(() => {});
     }, 5000);
     PAGE_TIMERS.push(timer);
   };
 
+  const turnOn = (msg) => {
+    if (!confirm(msg)) return false;
+    busy(true);
+    status('<span class="upd-spin"></span>Starting power tracking on the machine…');
+    post("enable").then(({ ok, j }) => {
+      if (!ok) { busy(false); sw.checked = panel.classList.contains("on"); status(escapeHtml(j.detail || "Failed."), true); return; }
+      status('<span class="upd-spin"></span>' + escapeHtml(j.message || "Running.") + " Waiting for the next report…");
+      waitForReading();
+    }).catch(() => { busy(false); sw.checked = panel.classList.contains("on"); status("Couldn't reach the host.", true); });
+    return true;
+  };
+
   sw.addEventListener("change", () => {
-    const on = sw.checked;
-    const msg = on
-      ? "Turn on power tracking?\n\nInstalls the pve-power exporter (a small Python service on port 9105) as root and starts it. Readings appear within a minute."
-      : "Turn off power tracking?\n\nStops and removes the pve-power service. Its script and kWh total stay on the machine.";
-    if (!confirm(msg)) { sw.checked = !on; return; }
-    sw.disabled = true;
-    if (on) {
-      fill(null);
-      card.classList.add("open");
-      status('<span class="upd-spin"></span>Installing the exporter…');
-    } else {
-      status('<span class="upd-spin"></span>Stopping…');
+    if (sw.checked) {
+      const windows = !!psu;
+      if (!turnOn("Turn on power tracking?\n\n" + (windows
+        ? "Installs LibreHardwareMonitor's library and the PawnIO driver (to read CPU power), then starts a small background task that estimates wall power using your PSU's curve."
+        : "Installs the pve-power exporter (a small Python service on port 9105) as root and starts it.")
+        + " Readings appear within a minute.")) sw.checked = false;
+      return;
     }
-    post(on ? "enable" : "disable").then(({ ok, j }) => {
-      sw.disabled = false;
-      if (!ok) {
-        sw.checked = !on;
-        card.classList.add("open");  // keep the reason on screen
-        status(escapeHtml(j.detail || "Failed."), true);
-        return;
-      }
-      if (on) {
-        status('<span class="upd-spin"></span>Installed. Waiting for the first reading…');
-        waitForReading();
-      } else {
-        card.classList.remove("open");
-        status("");
-      }
-    }).catch(() => { sw.disabled = false; sw.checked = !on; status("Couldn't reach the host.", true); });
+    if (!confirm("Turn off power tracking?\n\nStops the exporter on the machine and disables it, so nothing keeps running there. Turning it back on starts it again.")) { sw.checked = true; return; }
+    busy(true);
+    status('<span class="upd-spin"></span>Stopping power tracking on the machine…');
+    post("disable").then(({ ok, j }) => {
+      if (!ok) { busy(false); sw.checked = true; status(escapeHtml(j.detail || "Failed."), true); return; }
+      location.reload();
+    }).catch(() => { busy(false); sw.checked = true; status("Couldn't reach the host.", true); });
+  });
+
+  if (psu) psu.addEventListener("change", () => {
+    if (!sw.checked) return;  // just a choice for when it's turned on
+    const label = psu.options[psu.selectedIndex].text;
+    if (!turnOn(`Use the ${label} curve?\n\nRestarts the power estimate on the machine with it.`)) location.reload();
   });
 }
 

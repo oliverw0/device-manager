@@ -126,15 +126,28 @@
       </section>
 
 {% set power_names = {'cpu_package': 'CPU package', 'vrm_loss': 'VRM loss', 'ram': 'RAM', 'psu_loss': 'PSU loss', 'motherboard': 'Motherboard', 'nic_2_5gbe': 'Network', 'wifi': 'Wi-Fi', 'cpu_cooler_fan': 'CPU fan', 'case_fans': 'Case fans', 'extras': 'Extras'} %}
-      {% if pw %}
-      <section class="panel power power-main" aria-label="Power" data-history="/devices/{{ device.id }}/history.json">
+      {% set guest = power_share and not pw %}
+      <section class="panel power power-main{{ ' on' if pw }}" aria-label="Power" data-device-id="{{ device.id }}" data-history="/devices/{{ device.id }}/history.json">
         <div class="pw-head">
           <h2>Power</h2>
-          <span class="pw-watts">{{ '%.1f' | format(pw.wall_w) }}<small> W</small></span>
-          <span class="pw-meta">{% if pw.energy_kwh is not none %}{{ '%.2f' | format(pw.energy_kwh) }} kWh so far{% endif %}{% if pw.psu_efficiency %} · PSU {{ (pw.psu_efficiency * 100) | round | int }}% efficient{% endif %}</span>
+          {% if pw %}<span class="pw-meta"><b>{{ '%.1f' | format(pw.wall_w) }} W</b>{% if pw.psu_efficiency %} · {{ (pw.psu_efficiency * 100) | round | int }}% PSU efficiency{% endif %}{% if pw.cpu_measured == false %} · CPU estimated{% endif %}</span>
+          {% elif guest %}<span class="pw-meta">≈{{ '%.1f' | format(power_share.cpu_w) }} W of <a href="/devices/{{ power_share.host_id }}">{{ power_share.host_name }}</a></span>{% endif %}
+          <span class="spacer"></span>
+          {% if is_windows %}
+          <label class="pw-psu"><span class="sr-only">Power supply</span>
+            <select id="power-psu" {{ 'disabled' if not device.ssh_enabled }}>
+              {% for key, label in psu_presets %}<option value="{{ key }}" {{ 'selected' if (pw and pw.psu == key) or (not (pw and pw.psu) and key == 'generic-gold') }}>{{ label }}</option>{% endfor %}
+            </select>
+          </label>
+          {% endif %}
+          <label class="switch tip-below tip-end" data-tip="{% if guest %}Measured on {{ power_share.host_name }}, not here{% elif not device.ssh_enabled %}Enable SSH (Settings tab) to turn this on{% else %}Power tracking on this machine{% endif %}">
+            <input type="checkbox" id="power-toggle" aria-label="Power tracking" {{ 'checked' if pw }} {{ 'disabled' if guest or not device.ssh_enabled }} />
+            <span class="slider"></span>
+          </label>
         </div>
+        <p class="pt-status" id="pt-status"></p>
+        {% if pw %}
         <div class="chart-wrap"><canvas id="power-chart" width="1040" height="150" style="max-width:100%" aria-label="Power over time" role="img"></canvas></div>
-        <p class="pw-range muted" id="power-range"></p>
         <div class="pw-cols">
           {% set comps = pw.components | dictsort(by='value', reverse=true) %}
           {% if comps %}
@@ -148,7 +161,7 @@
           {% endif %}
           {% if pw.guests %}
           <div>
-            <h3 class="pw-h">By guest <span class="muted">· CPU share</span></h3>
+            <h3 class="pw-h">By guest</h3>
             <ul class="pw-list">
               {% for g in pw.guests[:8] %}{% set gid = guest_links.get((g.name or '') | lower) %}
               <li><span>{% if gid %}<a href="/devices/{{ gid }}">{{ g.name }}</a>{% else %}{{ g.name or (g.type ~ '-' ~ g.vmid) }}{% endif %}</span><span class="pw-w">{{ '%.1f' | format(g.cpu_w or 0) }} W</span></li>
@@ -157,8 +170,8 @@
           </div>
           {% endif %}
         </div>
+        {% endif %}
       </section>
-      {% endif %}
     </div>
 
     <aside class="overview-side">
@@ -370,28 +383,6 @@
     </details>
   </section>
 
-{% if not is_windows %}
-<section class="panel power-toggle{{ ' open' if pw }}" aria-label="Power tracking" data-device-id="{{ device.id }}">
-  <div class="switch-row">
-    <span class="pt-title">Power tracking
-      <span class="muted">{% if power_share and not pw %}Runs on {{ power_share.host_name }}, not here: this guest's share (≈{{ '%.1f' | format(power_share.cpu_w) }} W) comes from its report{% elif device.ssh_enabled %}Estimates wall power from the CPU's power counters (bare metal only){% else %}Enable SSH above to turn this on{% endif %}</span></span>
-    <label class="switch" aria-label="Power tracking">
-      <input type="checkbox" id="power-toggle" {{ 'checked' if pw }} {{ 'disabled' if not device.ssh_enabled or (power_share and not pw) }} />
-      <span class="slider"></span>
-    </label>
-  </div>
-  <div class="pt-expand"><div class="pt-inner">
-    <div class="pt-status" id="pt-status">{% if pw %}<span class="hdot ok"></span>Running · pve-power on port 9105{% endif %}</div>
-    <div class="pt-stats">
-      <div><span class="pt-k">Now</span><span class="pt-v" id="pt-watts">{{ '%.1f' | format(pw.wall_w) ~ ' W' if pw else '—' }}</span></div>
-      <div><span class="pt-k">So far</span><span class="pt-v" id="pt-kwh">{{ '%.2f' | format(pw.energy_kwh) ~ ' kWh' if pw and pw.energy_kwh is not none else '—' }}</span></div>
-      <div><span class="pt-k">PSU efficiency</span><span class="pt-v" id="pt-eff">{{ ((pw.psu_efficiency * 100) | round | int) ~ '%' if pw and pw.psu_efficiency else '—' }}</span></div>
-    </div>
-    <p class="pt-note">The exporter (/usr/local/bin/pve_power.py, service <code>pve-power</code>) runs as root and serves readings on port 9105; the client reports them with each update. History, the breakdown and each guest's share are on the Overview tab.</p>
-  </div></div>
-</section>
-
-{% endif %}
 <section class="panel" aria-label="Client updates">
   <h2>Client updates</h2>
   <p class="muted" style="margin:0 0 12px;font-size:13px">This device runs client {{ device.agent_version or '1.0.0' }}. Updating pulls the latest client code and restarts it; it needs SSH enabled above.</p>
