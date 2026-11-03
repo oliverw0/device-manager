@@ -29,7 +29,7 @@ async def lifespan(app: FastAPI):
     task.cancel()
 
 
-app = FastAPI(title="DeviceManager", lifespan=lifespan)
+app = FastAPI(title="Pulse", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 # Order matters: Starlette wraps the most-recently-added middleware outermost,

@@ -694,7 +694,7 @@ var UPDATE_META = {
   },
   client: {
     label: "Client update",
-    confirm: (n, os) => "Update the DeviceManager client on " + n + "?\n\n" + (os === "windows"
+    confirm: (n, os) => "Update the Pulse client on " + n + "?\n\n" + (os === "windows"
       ? "Downloads the latest client, refreshes its dependencies and restarts the scheduled task, in the background."
       : "Pulls the latest code and rebuilds/restarts the client, in the background."),
   },

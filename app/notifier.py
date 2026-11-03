@@ -7,7 +7,7 @@ from .config import settings
 logger = logging.getLogger("devicemanager.notifier")
 
 
-def send(message: str, title: str = "DeviceManager", priority: str | None = None, tags: str | None = None) -> None:
+def send(message: str, title: str = "Pulse", priority: str | None = None, tags: str | None = None) -> None:
     if not settings.ntfy_url:
         logger.warning("NTFY_URL not configured, skipping notification: %s", message)
         return

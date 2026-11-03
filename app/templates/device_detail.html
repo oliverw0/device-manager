@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% import "_macros.html" as ui %}
-{% block title %}{{ device.name }} - DeviceManager{% endblock %}
+{% block title %}{{ device.name }} - Pulse{% endblock %}
 {% block content %}
 {% set sys = device.report.system if device.report else none %}
 {% set ts = device.report.tailscale if device.report else none %}

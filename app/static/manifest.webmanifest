@@ -1,7 +1,7 @@
 {
-  "name": "DeviceManager",
-  "short_name": "Devices",
-  "description": "Monitor devices, containers and stacks.",
+  "name": "Pulse",
+  "short_name": "Pulse",
+  "description": "Health, problems and fixes for every machine.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

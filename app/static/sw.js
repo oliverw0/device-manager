@@ -1,8 +1,8 @@
-// DeviceManager service worker.
+// Pulse service worker.
 // Static assets are cache-first (fast loads, offline shell); everything else
 // (navigations, API, terminal) goes straight to the network so device data is
 // never served stale. Bump CACHE when static files change.
-const CACHE = "dm-static-v2";
+const CACHE = "dm-static-v3";
 // Only unversioned assets are precached. style.css / app.js carry a ?v=<hash>
 // query, so they cache per-version on first request and bust automatically when
 // the hash changes — precaching them (or matching with ignoreSearch) would pin

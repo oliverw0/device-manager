@@ -139,18 +139,18 @@ def user_for(db: Session, claims: dict, now: datetime | None = None) -> User:
     unknown users when auto-create is off, and non-members of the allowed group."""
     group = settings.oidc_allowed_group
     if group and group not in (claims.get("groups") or []):
-        raise OidcError(f"Your account isn't in the {group!r} group, which is needed to use DeviceManager.")
+        raise OidcError(f"Your account isn't in the {group!r} group, which is needed to use Pulse.")
     user = db.exec(select(User).where(User.sub == claims["sub"])).first()
     if user is None:
         if not settings.oidc_auto_create:
-            raise OidcError("Your account hasn't been added to DeviceManager. Ask an admin to turn on OIDC_AUTO_CREATE.")
+            raise OidcError("Your account hasn't been added to Pulse. Ask an admin to turn on OIDC_AUTO_CREATE.")
         base = claims.get("preferred_username") or (claims.get("email") or "").split("@")[0] or "user"
         name, n = base, 2
         while db.exec(select(User).where(User.username == name)).first():
             name, n = f"{base}{n}", n + 1
         user = User(username=name, sub=claims["sub"], source="oidc")
     if user.disabled:
-        raise OidcError("This account is disabled in DeviceManager.")
+        raise OidcError("This account is disabled in Pulse.")
     user.email = claims.get("email") or user.email
     user.name = claims.get("name") or user.name
     user.last_login_at = now or datetime.utcnow()

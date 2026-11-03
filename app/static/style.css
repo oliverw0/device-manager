@@ -147,6 +147,7 @@ h3 { font-size: 11px; margin: 18px 0 6px; color: var(--muted); letter-spacing: 0
   text-transform: uppercase;
 }
 .brand:hover { text-decoration: none; }
+.brand-logo { width: 22px; height: 22px; margin-right: 10px; flex-shrink: 0; }
 /* Amber count badge on the Devices nav item — links to the "needs updates" filter. */
 .nav-slot { position: relative; }
 .apt-badge {
