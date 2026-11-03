@@ -1,5 +1,6 @@
 // The app's own confirm(): "Title\n\nDetails" -> Promise<boolean>. Esc or Cancel = no.
-function ask(msg, okText, danger) {
+// With a placeholder it also asks for a note: resolves to the text, or null on cancel.
+function ask(msg, okText, danger, placeholder) {
   const d = document.getElementById("confirm-dialog");
   const [title, ...rest] = msg.split("\n\n");
   d.querySelector("#cd-title").textContent = title;
@@ -9,9 +10,17 @@ function ask(msg, okText, danger) {
   const ok = d.querySelector("#cd-ok");
   ok.textContent = okText || "Confirm";
   ok.className = danger ? "danger" : "";
+  const input = d.querySelector("#cd-input");
+  input.hidden = placeholder == null;
+  input.value = "";
+  input.placeholder = placeholder || "";
   d.returnValue = "";
   d.showModal();
-  return new Promise((res) => d.addEventListener("close", () => res(d.returnValue === "ok"), { once: true }));
+  if (!input.hidden) input.focus();
+  return new Promise((res) => d.addEventListener("close", () => {
+    const yes = d.returnValue === "ok";
+    res(input.hidden ? yes : yes ? input.value : null);
+  }, { once: true }));
 }
 
 // <form data-confirm="..." data-ok="Delete" data-danger> asks before submitting.
@@ -108,7 +117,7 @@ function containerSummary(list, offline) {
 /* ---------- dashboard: fleet cards ----------
    The front page is rendered only here (initial data is embedded in the page,
    then refreshed by polling), so there's no Jinja twin to keep in sync. */
-var FLEET = { devices: [], filter: "all", query: "" };
+var FLEET = { devices: [], query: "" };
 
 const SEV_RANK = { bad: 0, warn: 1 };
 
@@ -136,17 +145,6 @@ function deviceIssues(d) {
   return out.sort((a, b) => SEV_RANK[a.sev] - SEV_RANK[b.sev]);
 }
 
-function osFamily(d) { return d.os_key === "windows" ? "windows" : d.os_key ? "linux" : ""; }
-
-const FLEET_FILTERS = [
-  ["all", "All", () => true],
-  ["online", "Online", (d) => d.is_online],
-  ["offline", "Offline", (d) => !d.is_online],
-  ["attention", "Needs attention", (d) => d._issues.length > 0],
-  ["updates", "Updates", (d) => d.apt_needs_update],
-  ["windows", "Windows", (d) => osFamily(d) === "windows"],
-  ["linux", "Linux", (d) => osFamily(d) === "linux"],
-];
 
 /* ---------- time axis for every graph ----------
    Samples sit at their real time, not evenly by index, and a pause longer than
@@ -202,6 +200,22 @@ function metricBlock(label, value, title) {
     `<span class="fc-mval ${cls}">${p}%</span><span class="fc-bar"><span class="${cls}" style="width:${Math.min(100, p)}%"></span></span></div>`;
 }
 
+// Tailscale state for the card: [chip class, text].
+function tailscaleState(ts, offline) {
+  if (!ts || ts.backend_state === "not_installed") return ["neutral", "Not set up"];
+  if (offline) return ["bad", "Unknown"];
+  if (ts.connected) return ["ok", "Connected"];
+  return [ts.backend_state === "NeedsLogin" || ts.backend_state === "Stopped" ? "warn" : "bad", ts.backend_state || "Down"];
+}
+
+const ICON_LAN = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="6"/><rect x="2" y="16" width="6" height="6"/><rect x="16" y="16" width="6" height="6"/><path d="M12 8v4M5 16v-4h14v4"/></svg>';
+const ICON_BOLT = '<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg>';
+const ICON_OPEN = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17L17 7M8 7h9v9"/></svg>';
+
+function cardLine(icon, label, value) {
+  return `<div class="fc-line"><span class="fc-line-ico">${icon}</span><span class="fc-line-label">${label}</span><span class="fc-line-val">${value}</span></div>`;
+}
+
 function deviceCard(d) {
   const sys = d.report && d.report.system;
   const sub = (sys && (sys.os_version || (sys.hostname !== d.name ? sys.hostname : ""))) || (d.report ? "" : "Waiting for first report");
@@ -213,32 +227,46 @@ function deviceCard(d) {
     diskLabel = "DISK " + (worst.mount.replace(/\\+$/, "").includes(":") ? worst.mount.replace(/\\+$/, "") : "");
     diskTip = sys.disks.map((dk) => `${dk.mount.replace(/\\+$/, "") || dk.mount} ${Math.round(dk.percent)}%`).join(" · ");
   }
-  const issues = d._issues;
-  const chips = issues.slice(0, 2).map((i) => `<span class="chip ${i.sev}">${escapeHtml(i.text)}</span>`).join("") +
-    (issues.length > 2 ? `<span class="chip neutral">+${issues.length - 2}</span>` : "");
-  const ctrs = d.report && d.report.docker_containers;
-  return `<article class="fleet-card${d.is_online ? "" : " offline"}" onclick="navTo('/devices/${d.id}')">
+  const offline = !d.is_online;
+  const ip = (sys && sys.local_ip) || (d.report ? d.last_report_ip : "") || "";
+  const ts = d.report ? d.report.tailscale : null;
+  const [tsCls, tsTxt] = tailscaleState(ts, offline);
+  const conn = [offline ? "bad" : "ok", tsCls].filter((c) => c === "bad" || c === "warn");
+  const connSummary = conn.length ? `<span class="${conn.includes("bad") ? "bad" : "warn"}">${conn.length} issue${conn.length > 1 ? "s" : ""}</span>` : `<span class="ok">All connected</span>`;
+
+  const ctrs = (d.report && d.report.docker_containers) || [];
+  const running = ctrs.filter((c) => c.status === "running").length;
+  const power = d.report && d.report.power;
+  const work = [];
+  if (ctrs.length) work.push(cardLine(DOCKER_ICON, "Docker containers",
+    `<b class="${offline ? "" : running === ctrs.length ? "" : running ? "warn" : "bad"}">${offline ? "—" : `${running}/${ctrs.length} running`}</b>`));
+  if (power) work.push(cardLine(ICON_BOLT, "Power", `<b>${Math.round(power.wall_w)} W</b>`));
+
+  return `<article class="fleet-card${offline ? " offline" : ""}" onclick="navTo('/devices/${d.id}')">
     <div class="fc-head">
       <span class="fc-os">${d.os_key ? `<span class="os-icon os-${d.os_key}"></span>` : ""}</span>
       <span class="fc-title">
         <a class="fc-name" href="/devices/${d.id}" onclick="event.stopPropagation()">${escapeHtml(d.name)}</a>
         <span class="fc-sub">${escapeHtml(sub)}</span>
       </span>
-      <span class="fc-status ${d.is_online ? "on" : "off"}" title="${escapeHtml(fmtAbsolute(d.last_seen_at))}"><span class="dot"></span>${d.is_online ? "Online" : "Offline"}</span>
+      <span class="chip ${offline ? "bad" : "ok"}" title="${escapeHtml(fmtAbsolute(d.last_seen_at))}">${offline ? "Offline" : "Online"}</span>
     </div>
     <div class="fc-metrics">
       ${metricBlock("CPU", sys ? sys.cpu_percent : null, sys && sys.cpu_cores ? `${Math.round(sys.cpu_percent)}% of ${sys.cpu_cores} cores` : "")}
       ${metricBlock("MEM", sys ? sys.mem_percent : null, sys && sys.mem_total_bytes ? `${gib(sys.mem_used_bytes)} / ${gib(sys.mem_total_bytes)}` : "")}
       ${metricBlock(diskLabel.trim(), disk, diskTip)}
     </div>
-    <svg class="fc-spark" viewBox="0 0 280 36" preserveAspectRatio="none" aria-hidden="true">${sparkSvg(d.cpu_spark)}</svg>
-    ${chips ? `<div class="fc-issues">${chips}</div>` : ""}
+    <section class="fc-sec">
+      <h3 class="fc-sec-head">Connectivity${connSummary}</h3>
+      ${cardLine(ICON_LAN, `LAN${ip ? ` <span class="fc-ip">${escapeHtml(ip)}</span>` : ""}`, `<span class="chip ${offline ? "bad" : "ok"}">${offline ? "Offline" : "Connected"}</span>`)}
+      ${cardLine(`<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="${TS_PATH}"/></svg>`, "Tailscale", `<span class="chip ${tsCls}">${escapeHtml(tsTxt)}</span>`)}
+    </section>
+    ${work.length ? `<section class="fc-sec"><h3 class="fc-sec-head">Workloads</h3>${work.join("")}</section>` : ""}
     <div class="fc-foot">
-      <span class="fc-foot-l">${tailscaleLogo(d.report ? d.report.tailscale : null, !d.is_online)}${d.report && d.report.power ? `<span class="fc-power" title="Estimated wall power"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg>${Math.round(d.report.power.wall_w)} W</span>` : ""}</span>
-      <span class="fc-foot-c">${ctrs && ctrs.length ? `<span class="fc-ctr" title="Docker containers running">${DOCKER_ICON}${containerSummary(ctrs, !d.is_online)}</span>` : ""}</span>
+      <span class="fc-seen">Last report ${fmtRelative(d.seconds_since_seen)}</span>
       <span class="fc-foot-r">
-        <span class="fc-seen">${fmtRelative(d.seconds_since_seen)}</span>
         ${d.ssh_enabled ? `<button class="term-btn" title="Open terminal" aria-label="Open terminal on ${escapeHtml(d.name)}" data-term-id="${d.id}" data-term-name="${escapeHtml(d.name)}" onclick="event.stopPropagation(); openTerminalFromBtn(this)">${TERMINAL_ICON}</button>` : ""}
+        <a class="term-btn fc-open" href="/devices/${d.id}" aria-label="Open ${escapeHtml(d.name)}" title="Open device" onclick="event.stopPropagation()">${ICON_OPEN}</a>
       </span>
     </div>
   </article>`;
@@ -249,38 +277,8 @@ function renderFleet() {
   if (!grid) return;
   const devs = FLEET.devices;
 
-  const filters = document.getElementById("device-filters");
-  if (filters) {
-    filters.innerHTML = FLEET_FILTERS.map(([key, label, fn]) => {
-      const n = devs.filter(fn).length;
-      if (!n && key !== "all" && key !== FLEET.filter) return "";
-      return `<button type="button" class="filter-chip f-${key}${FLEET.filter === key ? " active" : ""}" aria-pressed="${FLEET.filter === key}" data-filter="${key}">${label} <b>${n}</b></button>`;
-    }).join("");
-  }
-
-  const attention = document.getElementById("attention");
-  if (attention) {
-    const items = [];
-    devs.forEach((d) => d._issues.forEach((i) => items.push({ d, i, key: `${d.id}:${i.id}` })));
-    items.sort((a, b) => SEV_RANK[a.i.sev] - SEV_RANK[b.i.sev]);
-    // A dismissal lasts until that problem clears, so if it comes back it shows again.
-    if (devs.length) {
-      const live = new Set(items.map((x) => x.key));
-      Object.keys(DISMISSED).forEach((k) => { if (/^\d+:/.test(k) && !live.has(k)) delete DISMISSED[k]; });
-      saveDismissed();
-    }
-    const shown = items.filter((x) => !DISMISSED[x.key]);
-    const hiddenCount = items.length - shown.length;
-    attention.hidden = items.length === 0;
-    attention.innerHTML = shown.slice(0, 6).map(({ d, i, key }) =>
-      `<div class="attn ${i.sev}"><a class="attn-link" href="/devices/${d.id}${i.inspect != null && d.ssh_enabled ? "?inspect=" + encodeURIComponent(i.inspect) : ""}"><span class="attn-what">${escapeHtml(i.text)}</span><span class="attn-dev">${escapeHtml(d.name)}</span></a>` +
-      `<button type="button" class="attn-x tip-below tip-end" data-dismiss="${key}" data-tip="Dismiss" aria-label="Dismiss: ${escapeHtml(i.text)} on ${escapeHtml(d.name)}">✕</button></div>`).join("") +
-      (hiddenCount ? `<button type="button" class="attn-restore" data-restore="1">Show ${hiddenCount} dismissed</button>` : "");
-  }
-
-  const pred = (FLEET_FILTERS.find(([k]) => k === FLEET.filter) || FLEET_FILTERS[0])[2];
   const q = FLEET.query.trim().toLowerCase();
-  const shown = devs.filter(pred).filter((d) => {
+  const shown = devs.filter((d) => {
     if (!q) return true;
     const sys = d.report && d.report.system;
     return [d.name, d.notes, sys && sys.hostname, sys && sys.os_version, sys && sys.local_ip, d.report && d.report.tailscale && (d.report.tailscale.ips || []).join(" ")]
@@ -354,25 +352,10 @@ function saveDismissed() { try { localStorage.setItem("dm-dismissed", JSON.strin
 
 function initFleet(devices, latest) {
   FLEET.latest = latest;
-  const attention = document.getElementById("attention");
-  if (attention) attention.addEventListener("click", (e) => {
-    const x = e.target.closest("[data-dismiss]");
-    if (x) { DISMISSED[x.dataset.dismiss] = 1; saveDismissed(); renderFleet(); return; }
-    if (e.target.closest("[data-restore]")) {
-      Object.keys(DISMISSED).forEach((k) => { if (/^\d+:/.test(k)) delete DISMISSED[k]; });
-      saveDismissed(); renderFleet();
-    }
-  });
   const banner = document.getElementById("client-banner");
   if (banner) banner.addEventListener("click", (e) => {
     const x = e.target.closest("[data-dismiss]");
     if (x) { DISMISSED[x.dataset.dismiss] = 1; saveDismissed(); renderClientBanner(); }
-  });
-  if (new URLSearchParams(location.search).has("updates")) FLEET.filter = "updates";
-  const filters = document.getElementById("device-filters");
-  if (filters) filters.addEventListener("click", (e) => {
-    const b = e.target.closest("[data-filter]");
-    if (b) { FLEET.filter = b.dataset.filter; renderFleet(); }
   });
   const search = document.getElementById("device-search");
   if (search) search.addEventListener("input", () => { FLEET.query = search.value; renderFleet(); });
@@ -1283,6 +1266,35 @@ function initPowerToggle() {
     const label = psu.options[psu.selectedIndex].text;
     turnOn(`Use the ${label} curve?\n\nRestarts the power estimate on the machine with it.`).then((on) => { if (!on) location.reload(); });
   });
+}
+
+/* ---------- Problems page ---------- */
+function problemsRefresh() {
+  fetch(location.pathname, { headers: { "X-Boost": "1" } }).then((r) => r.text()).then((html) => {
+    const next = new DOMParser().parseFromString(html, "text/html").getElementById("problems-live");
+    const cur = document.getElementById("problems-live");
+    if (!next || !cur || document.querySelector("dialog[open]") || cur.querySelector("button:disabled")) return;
+    cur.replaceWith(next);
+  }).catch(() => {});
+}
+
+function initProblems() {
+  if (document.getElementById("problems-live")) PAGE_TIMERS.push(setInterval(problemsRefresh, 20000));
+}
+
+async function ackProblem(id, btn, acked) {
+  const note = acked ? "" : await ask("Acknowledge this problem?\n\nIt stays listed, dimmed, until it clears, and stops counting in the menu badge.", "Ack", false, "Note (optional), e.g. after Sunday");
+  if (note === null) return;
+  btn.disabled = true;
+  const body = new FormData();
+  body.set("note", note);
+  fetch(`/problems/${id}/ack`, { method: "POST", body }).finally(() => { btn.disabled = false; problemsRefresh(); });
+}
+
+async function ackAll(btn) {
+  if (!(await ask("Acknowledge every new problem?", "Ack all"))) return;
+  btn.disabled = true;
+  fetch("/problems/ack-all", { method: "POST" }).finally(() => { btn.disabled = false; problemsRefresh(); });
 }
 
 /* ---------- device page tabs ----------

@@ -49,6 +49,12 @@ The dashboard is served on port 8000. Log in with the admin credentials from
 | `ADMIN_PASSWORD` | `change-me` | Dashboard login password. See the `$` note below. |
 | `NTFY_URL` | (empty) | Full ntfy topic URL, e.g. `https://ntfy.sh/my-topic`. Empty disables alerts. |
 | `NTFY_DEFAULT_PRIORITY` | `default` | ntfy priority for notifications. |
+| `OIDC_ISSUER` | (empty) | OpenID Connect issuer URL, e.g. authentik's `https://auth.example.com/application/o/devicemanager/`. Set with `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` to add "Sign in with authentik". |
+| `OIDC_AUTO_CREATE` | `true` | Create a user on their first OIDC sign-in. |
+| `OIDC_ALLOWED_GROUP` | (empty) | Only members of this group (the `groups` claim) may sign in. |
+| `OIDC_NAME` | `authentik` | Name on the sign-in button. |
+| `PUBLIC_URL` | (empty) | The dashboard's address as browsers see it; behind a proxy it sets the OIDC redirect URI (`<PUBLIC_URL>/login/oidc/callback`). |
+| `PASSWORD_LOGIN` | `true` | Set `false` to hide the username/password form once OIDC works. |
 | `SESSION_SECRET` | (empty) | Login cookie signing key. Left empty, one is generated and persisted in `./data`. |
 | `SESSION_HTTPS_ONLY` | `false` | Mark the login cookie `Secure`. Set `true` only when reached over HTTPS; over plain HTTP it breaks login. |
 | `DATABASE_URL` | SQLite in `./data` | Point at Postgres if you outgrow SQLite. |
@@ -59,6 +65,39 @@ Passwords containing `$`: Docker Compose interpolates `${...}` in `.env`, so a
 `$` in `ADMIN_PASSWORD` is eaten. Escape it as `$$`, or put the password in a
 plain file and set `ADMIN_PASSWORD_FILE=/run/secrets/admin_password` (see the
 commented mount in `docker-compose.yml`).
+
+## Sign in with authentik
+
+1. In authentik: **Applications > Applications > Create with provider**.
+   - Name `DeviceManager`, slug `devicemanager`.
+   - Provider: **OAuth2/OpenID Connect**, client type **Confidential**,
+     authorization flow `default-provider-authorization-implicit-consent`.
+   - Redirect URI (strict): `https://<your dashboard>/login/oidc/callback`.
+     The dashboard's Users page shows the exact URI it uses.
+   - Leave the scopes at the defaults (`openid`, `email`, `profile`: profile
+     carries `groups`).
+2. Copy the provider's **Client ID**, **Client Secret** and **OpenID
+   Configuration Issuer** into `.env`:
+   ```
+   OIDC_ISSUER=https://auth.example.com/application/o/devicemanager/
+   OIDC_CLIENT_ID=...
+   OIDC_CLIENT_SECRET=...
+   PUBLIC_URL=https://dm.example.com
+   SESSION_HTTPS_ONLY=true
+   ```
+3. Restrict who gets in: on the application's **Policy / Group / User
+   Bindings** tab, bind the group allowed to use it (authentik then refuses
+   everyone else). `OIDC_ALLOWED_GROUP=<group>` adds the same check here.
+4. `docker compose up -d`, open the dashboard's **Users** page: the Sign-in
+   panel should say **ready**. Sign in with authentik in a private window.
+5. Once that works, switch off the password account on the Users page (or set
+   `PASSWORD_LOGIN=false` to hide the form).
+
+Locked out (password account off and authentik down)?
+
+```
+docker compose exec host python -m app.routers.users enable admin
+```
 
 ## Adding a device
 

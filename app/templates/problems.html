@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Problems - DeviceManager{% endblock %}
+
+{# Terminal (when SSH is set up) and acknowledge: the row itself says what's wrong. #}
+{% macro actions(r) %}
+{%- set p, d = r.p, r.d -%}
+{%- set ssh = d.ssh_enabled and d.is_online -%}
+{%- set name = d.name | tojson | forceescape -%}
+{%- if ssh %}<button type="button" class="secondary pb-icon tip-below tip-end" aria-label="Open terminal on {{ d.name }}" data-tip="Terminal" onclick="openTerminal({{ d.id }}, {{ name }})"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7l5 5-5 5M12 17h7"/></svg></button>{% else %}<span></span>{% endif -%}
+<button type="button" class="pb-icon pb-ack{{ ' on' if p.acked_at }} tip-below tip-end" aria-pressed="{{ 'true' if p.acked_at else 'false' }}" aria-label="{{ 'Unacknowledge' if p.acked_at else 'Acknowledge' }}: {{ p.title }} on {{ d.name }}" data-tip="{{ 'Acknowledged. Click to undo' if p.acked_at else 'Acknowledge' }}" onclick="ackProblem({{ p.id }}, this, {{ 'true' if p.acked_at else 'false' }})"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></button>
+{% endmacro %}
+
+{% block content %}
+<div id="problems-live">
+<div class="page-head pb-head">
+  <h1>Problems</h1>
+  <span class="muted pb-sub">{{ groups | map(attribute=2) | map('length') | sum }} open · {{ new_count }} new · checks {{ checks_up }}/{{ checks_on }} up · {{ online }}/{{ total }} devices online</span>
+  <span class="spacer"></span>
+  {% if new_count %}<button type="button" class="secondary" onclick="ackAll(this)">Ack all new</button>{% endif %}
+</div>
+
+
+{% set any_open = groups | map(attribute=2) | map('length') | sum %}
+{% if not any_open %}
+<section class="panel pb-clear"><span class="brand-mark"></span> Nothing wrong right now.</section>
+{% endif %}
+{% for sev, label, rows in groups %}{% if rows %}
+<section class="pb-group" aria-label="{{ label }}">
+  <h2 class="pb-gh sev-{{ sev }}"><span class="pb-dot"></span>{{ label }}<span class="muted">{{ rows | length }}</span></h2>
+  {% for r in rows %}
+  <article class="pb-row sev-{{ sev }}{{ ' acked' if r.p.acked_at }}">
+    <a class="pb-who" href="/devices/{{ r.d.id }}">{{ r.d.name }}</a>
+    <span class="pb-what"{% if r.p.detail %} title="{{ r.p.detail }}"{% endif %}><b>{{ r.p.title }}</b>{% if r.p.ack_note %}<span class="pb-acknote">{{ r.p.ack_note }}</span>{% endif %}</span>
+    <span class="pb-since">{{ r.since }}</span>
+    <span class="pb-acts">{{ actions(r) }}</span>
+  </article>
+  {% endfor %}
+</section>
+{% endif %}{% endfor %}
+
+<div class="pb-cols">
+  <section class="panel pb-checks" id="checks" aria-label="Checks">
+    <h2>Checks · 30 days</h2>
+    {% for x in checks %}{% set c = x.c %}
+    <div class="pb-check{{ ' paused' if not c.enabled }}">
+      <span class="pb-sq st-{{ c.last_status if c.enabled else 'unknown' }}"></span>
+      <span class="pb-cname">
+        <a href="/devices/{{ c.device_id }}#checks">{{ c.name }}</a>
+        <span class="muted">{% if c.kind == 'heartbeat' %}Heartbeat · every {{ c.interval_seconds | dur }}{% if c.grace_seconds %} + {{ c.grace_seconds | dur }}{% endif %}{% else %}{{ c.kind | upper }} · {{ c.target }}{% endif %}{% if x.device %} · {{ x.device.name }}{% endif %}{% if x.cert_days is not none %} · cert {{ x.cert_days }}d{% endif %}</span>
+      </span>
+      <span class="pb-bars" role="img" aria-label="Daily uptime, last 30 days">{% for b in x.bars %}<i class="{{ 'none' if b is none else 'ok' if b >= 0.999 else 'part' if b >= 0.9 else 'bad' }}"></i>{% endfor %}</span>
+      <span class="pb-up">{% if x.uptime is not none %}{{ '%.1f' | format(x.uptime * 100) if x.uptime < 0.9995 else '100' }}%{% else %}—{% endif %}</span>
+    </div>
+    {% else %}
+    <p class="muted">No checks yet. Add HTTP, TCP or heartbeat checks from a device's Checks tab.</p>
+    {% endfor %}
+  </section>
+
+  <section class="panel pb-resolved" aria-label="Resolved in the last 24 hours">
+    <h2>Resolved · last 24h</h2>
+    {% for x in resolved %}
+    <div class="pb-res">
+      <span class="muted">{{ x.p.resolved_at | dt }}</span>
+      <span><b>{{ x.name }}</b> {{ x.p.title }}</span>
+      <span class="muted">{{ x.lasted }}</span>
+    </div>
+    {% else %}
+    <p class="muted">Nothing cleared in the last day.</p>
+    {% endfor %}
+    <p class="muted pb-foot">A summary of this page goes to ntfy every morning. <a href="/alerts">Full alert log</a></p>
+  </section>
+</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>initProblems();</script>
+{% endblock %}

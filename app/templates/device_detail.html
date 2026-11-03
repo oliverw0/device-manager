@@ -293,15 +293,20 @@
     <div class="check-item">
       <span class="chip {{ 'ok' if c.last_status == 'up' else 'bad' if c.last_status == 'down' else 'neutral' }}">{{ c.last_status }}</span>
       <span class="c-name">{{ c.name }}{% if not c.enabled %} <span class="chip neutral">paused</span>{% endif %}</span>
-      <span class="check-target">{{ c.kind }} · {{ c.target }}</span>
+      {% if c.kind == 'heartbeat' %}
+      <span class="check-target">heartbeat · every {{ c.interval_seconds | dur }}{% if c.grace_seconds %} + {{ c.grace_seconds | dur }} grace{% endif %} · {% if c.last_checked_at %}last ping {{ c.last_checked_at | reltime }}{% else %}waiting for the first ping{% endif %}</span>
+      {% else %}
+      <span class="check-target">{{ c.kind }} · {{ c.target }}{% if c.cert_expires_at %} · cert until {{ c.cert_expires_at.strftime('%Y-%m-%d') }}{% endif %}</span>
+      {% endif %}
       {% if c.last_status == 'up' and c.last_latency_ms is not none %}<span class="muted" style="font-size:12px">{{ c.last_latency_ms | round | int }}ms</span>{% endif %}
       <span class="spacer"></span>
       <form method="post" action="/checks/{{ c.id }}/toggle"><button type="submit" class="term-btn" title="{{ 'Pause' if c.enabled else 'Resume' }}">{% if c.enabled %}❚❚{% else %}▶{% endif %}</button></form>
       <form method="post" action="/checks/{{ c.id }}/delete" data-confirm="Delete this check?" data-ok="Delete" data-danger><button type="submit" class="term-btn" title="Delete">✕</button></form>
     </div>
     {% if c.last_status == 'down' and c.last_error %}<div class="check-err">{{ c.last_error }}</div>{% endif %}
+    {% if c.kind == 'heartbeat' %}<div class="ping-url"><span class="muted">Add to the end of the job:</span> <code>curl -fsS -m 10 {{ request.base_url }}ping/{{ c.token }}</code></div>{% endif %}
     {% else %}
-    <p class="muted">No checks yet. Add an HTTP or TCP check to watch a service on this device.</p>
+    <p class="muted">No checks yet. HTTP and TCP checks watch a service; a heartbeat watches a job (backup, cron) that pings when it finishes.</p>
     {% endfor %}
     <details style="margin-top:12px">
       <summary class="muted" style="cursor:pointer;font-size:13px">+ Add check</summary>
@@ -311,10 +316,12 @@
           <select name="kind">
             <option value="http">HTTP</option>
             <option value="tcp">TCP</option>
+            <option value="heartbeat">Heartbeat (job pings in)</option>
           </select>
         </label>
-        <label>Target <input type="text" name="target" placeholder="http://100.x:8080  or  100.x:5432" required /></label>
-        <label>Interval (s) <input type="number" name="interval_seconds" value="60" min="10" /></label>
+        <label>Target <input type="text" name="target" placeholder="http://100.x:8080  or  100.x:5432 (not for heartbeats)" /></label>
+        <label>Interval (s) <input type="number" name="interval_seconds" value="60" min="10" /><small class="muted">Heartbeat: how often the job runs, e.g. 86400 for daily</small></label>
+        <label>Grace (min) <input type="number" name="grace_minutes" value="15" min="0" /><small class="muted">Heartbeat only: how late it may ping</small></label>
         <div class="full-width"><button type="submit">Add check</button></div>
       </form>
     </details>

@@ -9,6 +9,20 @@ def generate_api_key() -> str:
     return secrets.token_urlsafe(32)
 
 
+class User(SQLModel, table=True):
+    """Someone who signs in: from OIDC (created on first sign-in) or the
+    ADMIN_USERNAME password login. Everyone has full access; disabled can't sign in."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    username: str = Field(unique=True, index=True)
+    sub: Optional[str] = Field(default=None, unique=True, index=True)  # OIDC subject
+    source: str = "oidc"  # oidc | local
+    email: str = ""
+    name: str = ""
+    disabled: bool = False
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    last_login_at: Optional[datetime] = None
+
+
 class Device(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(unique=True, index=True)
@@ -51,19 +65,52 @@ class Device(SQLModel, table=True):
 
 class ServiceCheck(SQLModel, table=True):
     """An HTTP or TCP health check the monitor runs on an interval. HTTP checks
-    pass on any <400 status; TCP checks pass if the port accepts a connection."""
+    pass on any <400 status; TCP checks pass if the port accepts a connection.
+    A heartbeat check is the other way round: a job calls /ping/<token> and the
+    check is down once interval_seconds + grace_seconds pass without a ping
+    (last_checked_at is then the last ping)."""
     id: Optional[int] = Field(default=None, primary_key=True)
     device_id: int = Field(foreign_key="device.id", index=True)
     name: str
-    kind: str = "http"  # http | tcp
-    target: str         # URL for http, host:port for tcp
+    kind: str = "http"  # http | tcp | heartbeat
+    target: str = ""    # URL for http, host:port for tcp, unused for heartbeat
     interval_seconds: int = 60
+    grace_seconds: int = 0
+    token: Optional[str] = Field(default=None, index=True)  # heartbeat ping URL secret
     enabled: bool = True
+    cert_expires_at: Optional[datetime] = None  # https checks: the certificate's expiry
+    cert_checked_at: Optional[datetime] = None
 
     last_status: str = "unknown"  # up | down | unknown
     last_checked_at: Optional[datetime] = None
     last_latency_ms: Optional[float] = None
     last_error: Optional[str] = None
+
+
+class CheckDay(SQLModel, table=True):
+    """Per-check, per-day pass count: the Problems page's 30-day uptime bars."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    check_id: int = Field(index=True)
+    day: str = Field(index=True)  # YYYY-MM-DD, UTC
+    ok: int = 0
+    total: int = 0
+
+
+class Problem(SQLModel, table=True):
+    """Something wrong, open from when it's first seen until it clears.
+    (device_id, key) identifies it while open: "offline", "disk:/",
+    "container:mosquitto", "check:5", ..."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    device_id: int = Field(index=True)
+    key: str
+    severity: str  # high | warning | info
+    source: str    # Device, Disk /, Container, Check, Heartbeat, Certificate, Updates, Client ...
+    title: str
+    detail: str = ""
+    opened_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    resolved_at: Optional[datetime] = Field(default=None, index=True)
+    acked_at: Optional[datetime] = None
+    ack_note: str = ""
 
 
 class ReportHistory(SQLModel, table=True):

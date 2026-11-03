@@ -54,6 +54,30 @@ class Settings(BaseSettings):
     alert_disk_percent: int = 90
     alert_sustained_minutes: int = 10
 
+    # Problems: warn when an https check's certificate expires within this many
+    # days (high within 3). The daily summary goes to ntfy at this hour, host
+    # local time (set TZ on the container); -1 turns it off.
+    tls_warn_days: int = 14
+    digest_hour: int = 8
+
+    # Sign in with OpenID Connect (e.g. authentik). Set OIDC_ISSUER to the
+    # provider's issuer URL (authentik: https://auth.example.com/application/o/<slug>/)
+    # plus the client id/secret; the redirect URI to register is
+    # <PUBLIC_URL>/login/oidc/callback. First sign-in creates the user unless
+    # OIDC_AUTO_CREATE is false; OIDC_ALLOWED_GROUP limits sign-in to one group.
+    # PASSWORD_LOGIN=false hides the ADMIN_USERNAME form once OIDC works.
+    oidc_issuer: str = ""
+    oidc_client_id: str = ""
+    oidc_client_secret: str = ""
+    oidc_scopes: str = "openid email profile"
+    oidc_name: str = "authentik"
+    oidc_auto_create: bool = True
+    oidc_allowed_group: str = ""
+    password_login: bool = True
+    # The dashboard's own address as browsers see it (https://dm.example.com),
+    # for the OIDC redirect URI behind a proxy. Empty: taken from each request.
+    public_url: str = ""
+
     # Set to true ONLY when the browser reaches the app over HTTPS (e.g. behind
     # a TLS-terminating proxy). Over plain http:// the browser silently drops a
     # Secure cookie, so the session never persists and login loops back to /login.

@@ -135,6 +135,7 @@ def serialize_device(device: Device) -> dict:
         "report_interval_seconds": device.report_interval_seconds,
         "offline_after_seconds": device.offline_after_seconds,
         "ssh_enabled": device.ssh_enabled,
+        "last_report_ip": device.last_report_ip,
         "os": remote.device_os(device),
         "apt_needs_update": bool(device.apt_needs_update),
         "alerts_muted": device.alerts_muted(),

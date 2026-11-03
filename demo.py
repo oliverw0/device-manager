@@ -34,8 +34,8 @@ auth_middleware.AdminAuthMiddleware.dispatch = _no_auth
 
 from app.database import engine, init_db  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models import AlertEvent, ContainerHistory, Device, ReportHistory, ServiceCheck  # noqa: E402
-from sqlmodel import Session, delete  # noqa: E402
+from app.models import AlertEvent, CheckDay, ContainerHistory, Device, Problem, ReportHistory, ServiceCheck, User  # noqa: E402
+from sqlmodel import Session, delete, select  # noqa: E402
 
 GIB = 1073741824
 NOW = datetime.utcnow()
@@ -200,10 +200,15 @@ CHECKS = [
 def seed():
     init_db()
     with Session(engine) as s:
-        for t in (AlertEvent, ContainerHistory, ReportHistory, ServiceCheck, Device):
+        for t in (AlertEvent, CheckDay, ContainerHistory, Problem, ReportHistory, ServiceCheck, Device, User):
             s.exec(delete(t))
         s.commit()
 
+        s.add(User(username="admin", source="local", created_at=NOW - timedelta(days=40), last_login_at=NOW - timedelta(days=3)))
+        s.add(User(username="oliver", sub="demo-1", source="oidc", email="oliver@example.com", name="Oliver",
+                   created_at=NOW - timedelta(days=2), last_login_at=NOW - timedelta(minutes=5)))
+        s.add(User(username="guest", sub="demo-2", source="oidc", email="guest@example.com", disabled=True,
+                   created_at=NOW - timedelta(days=1), last_login_at=NOW - timedelta(hours=20)))
         by_name = {}
         for d in DEVICES:
             rep = d["report"]
@@ -251,6 +256,31 @@ def seed():
             s.add(ServiceCheck(device_id=by_name[name].id, name=cname, kind=kind, target=target,
                                last_status=status, last_latency_ms=latency, last_error=error,
                                last_checked_at=NOW - timedelta(seconds=20)))
+        # heartbeats: one on time, one missed; a site whose certificate is close to expiry
+        s.add(ServiceCheck(device_id=by_name["db-vm-01"].id, name="nightly-backup", kind="heartbeat",
+                           interval_seconds=86400, grace_seconds=900, token="demo-nightly", last_status="down",
+                           last_checked_at=NOW - timedelta(hours=27)))
+        s.add(ServiceCheck(device_id=by_name["web-vm-01"].id, name="cert renew", kind="heartbeat",
+                           interval_seconds=7 * 86400, grace_seconds=3600, token="demo-cert", last_status="up",
+                           last_checked_at=NOW - timedelta(days=2)))
+        s.add(ServiceCheck(device_id=by_name["web-vm-01"].id, name="site", kind="http", target="https://example.com",
+                           last_status="up", last_latency_ms=88.0, last_checked_at=NOW,
+                           cert_expires_at=NOW + timedelta(days=9), cert_checked_at=NOW))
+        s.commit()
+        # 30 days of uptime with a few bad days, and some problems that already cleared
+        for c in s.exec(select(ServiceCheck)).all():
+            for i in range(30):
+                bad = random.random() < 0.08
+                s.add(CheckDay(check_id=c.id, day=(NOW - timedelta(days=i)).strftime("%Y-%m-%d"),
+                               ok=random.randint(1300, 1400) if bad else 1440, total=1440))
+        for name, key, sev, src, title, opened, lasted in [
+            ("web-vm-01", "offline", "high", "Device", "Offline", 9, 4),
+            ("db-vm-01", "container:pgadmin", "warning", "Container", "pgadmin exited", 14, 6),
+            ("gaming-pc", "disk:C:\\", "high", "Disk C:", "C: is 93% full", 30, 27 * 60),
+        ]:
+            s.add(Problem(device_id=by_name[name].id, key=key, severity=sev, source=src, title=title,
+                          opened_at=NOW - timedelta(hours=opened, minutes=lasted),
+                          resolved_at=NOW - timedelta(hours=opened)))
         s.commit()
 
 

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Users - DeviceManager{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Users</h1>
+</div>
+
+<section class="panel">
+  <div class="users-wrap">
+  <table class="users-table">
+    <thead><tr><th>User</th><th>Email</th><th>Sign-in</th><th>Created</th><th>Last sign-in</th><th></th></tr></thead>
+    <tbody>
+    {% for u in users %}
+    <tr class="{{ 'disabled' if u.disabled }}">
+      <td><span class="u-name">{{ u.username }}</span>{% if u.name and u.name != u.username %}<br><span class="muted">{{ u.name }}</span>{% endif %}{% if u.id == me %} <span class="chip neutral chip-sm">you</span>{% endif %}</td>
+      <td class="muted">{{ u.email or '—' }}</td>
+      <td><span class="chip {{ 'ok' if u.source == 'oidc' else 'neutral' }} chip-sm">{{ settings.oidc_name if u.source == 'oidc' else 'password' }}</span></td>
+      <td class="muted">{{ u.created_at | dt }}</td>
+      <td class="muted">{{ u.last_login_at | reltime if u.last_login_at else 'never' }}</td>
+      <td>
+        {% if u.id != me %}
+        <span class="u-acts">
+          <form method="post" action="/users/{{ u.id }}/toggle">
+            <label class="switch" title="{{ 'Disabled: cannot sign in' if u.disabled else 'Enabled: turn off to sign them out and block sign-in' }}">
+              <input type="checkbox" aria-label="{{ u.username }} can sign in" {{ '' if u.disabled else 'checked' }} onchange="this.form.submit()" />
+              <span class="slider"></span>
+            </label>
+          </form>
+          {% if u.source == 'local' %}<span class="u-bin-space"></span>{% else %}<form method="post" action="/users/{{ u.id }}/delete" data-confirm="Remove {{ u.username }}?&#10;&#10;They're signed out at once.{% if u.source == 'oidc' and settings.oidc_auto_create %} With auto-create on, signing in through {{ settings.oidc_name }} adds them back: disable them instead to keep them out.{% endif %}" data-ok="Remove" data-danger><button type="submit" class="danger u-bin" aria-label="Remove {{ u.username }}" title="Remove"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg></button></form>{% endif %}
+        </span>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="muted">Nobody has signed in since users were added. Your next sign-in appears here.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="muted users-note">All users have full access.</p>
+</section>
+
+<section class="panel signin-setup" aria-label="Sign-in setup">
+  <h2>Sign-in</h2>
+  <dl class="setup-list">
+    <dt>{{ settings.oidc_name | capitalize }}</dt>
+    <dd>{% if not oidc_on %}<span class="chip neutral chip-sm">off</span> Needs OIDC_ISSUER, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET in .env
+        {% elif provider_error %}<span class="chip bad chip-sm">unreachable</span> {{ provider_error }}
+        {% else %}<span class="chip ok chip-sm">ready</span> <code>{{ provider }}</code>{% endif %}</dd>
+    <dt>Redirect URI</dt>
+    <dd><code class="setup-copy">{{ redirect_uri }}</code>{% if not settings.public_url %}<span class="muted">Wrong behind a proxy? Set PUBLIC_URL.</span>{% endif %}</dd>
+    <dt>Access</dt>
+    <dd>{% if settings.oidc_allowed_group %}Group <b>{{ settings.oidc_allowed_group }}</b>{% else %}Anyone {{ settings.oidc_name }} allows (OIDC_ALLOWED_GROUP to limit){% endif %} · {{ 'auto-create on' if settings.oidc_auto_create else 'auto-create off' }}</dd>
+    <dt>Password</dt>
+    <dd>{% if settings.password_login %}On ({{ settings.admin_username }}){% else %}Off{% endif %}
+        <span class="muted">Locked out: <code>docker compose exec host python -m app.routers.users enable {{ settings.admin_username }}</code></span></dd>
+  </dl>
+</section>
+{% endblock %}

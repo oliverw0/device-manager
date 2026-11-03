@@ -1,3 +1,5 @@
+import secrets
+
 from fastapi import APIRouter, Depends, Form
 from fastapi.responses import RedirectResponse
 from sqlmodel import Session
@@ -13,17 +15,20 @@ def create_check(
     device_id: int,
     name: str = Form(...),
     kind: str = Form("http"),
-    target: str = Form(...),
+    target: str = Form(""),
     interval_seconds: int = Form(60),
+    grace_minutes: int = Form(15),
     session: Session = Depends(get_session),
 ):
-    session.add(ServiceCheck(
-        device_id=device_id,
-        name=name.strip(),
-        kind="tcp" if kind == "tcp" else "http",
-        target=target.strip(),
-        interval_seconds=max(10, interval_seconds),
-    ))
+    kind = kind if kind in ("tcp", "heartbeat") else "http"
+    if kind == "heartbeat":
+        # interval: how often the job runs; it's late after interval + grace
+        session.add(ServiceCheck(device_id=device_id, name=name.strip(), kind=kind, target="",
+                                 interval_seconds=max(60, interval_seconds), grace_seconds=max(0, grace_minutes) * 60,
+                                 token=secrets.token_urlsafe(16)))
+    elif target.strip():
+        session.add(ServiceCheck(device_id=device_id, name=name.strip(), kind=kind, target=target.strip(),
+                                 interval_seconds=max(10, interval_seconds)))
     session.commit()
     return RedirectResponse(url=f"/devices/{device_id}", status_code=303)
 

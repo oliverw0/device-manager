@@ -3,13 +3,18 @@
 {% block content %}
 <section class="panel login-panel">
   <h1>Sign in</h1>
-  <p class="login-sub">Enter your admin credentials to access the dashboard.</p>
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  {% if oidc_enabled() %}
+  <a class="btn login-sso" href="/login/oidc?next={{ next | urlencode }}">Sign in with {{ oidc_name }}</a>
+  {% if password_login %}<p class="login-or"><span>or</span></p>{% endif %}
+  {% endif %}
+  {% if password_login %}
   <form method="post" action="/login" class="stacked-form">
     <input type="hidden" name="next" value="{{ next }}" />
     <label>Username <input type="text" name="username" autocomplete="username" required autofocus /></label>
     <label>Password <input type="password" name="password" autocomplete="current-password" required /></label>
-    <button type="submit">Sign in</button>
+    <button type="submit"{% if oidc_enabled() %} class="secondary"{% endif %}>Sign in</button>
   </form>
+  {% endif %}
 </section>
 {% endblock %}
