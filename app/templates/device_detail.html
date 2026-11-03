@@ -28,14 +28,7 @@
         {% if sys and sys.os_version %}<li class="fact{{ ' tip-below' if sys.kernel }}"{% if sys.kernel %} data-tip="Kernel {{ sys.kernel }}"{% endif %}><span class="fact-k">OS</span>{{ sys.os_version }}</li>{% endif %}
         {% if sys and sys.hardware_model %}<li class="fact"><span class="fact-k">Hardware</span>{{ sys.hardware_model }}</li>{% endif %}
         {% if sys and sys.hostname %}<li class="fact"><span class="fact-k">Host</span>{{ sys.hostname }}</li>{% endif %}
-        {% set ip = ts.ips[0] if ts and ts.ips else (sys.local_ip if sys else none) %}
-        {% if ip %}<li><button type="button" class="fact copyable-fact" onclick="copyText('{{ ip }}', this)" title="Copy IP"><span class="fact-k">{{ 'Tailscale' if ts and ts.ips else 'IP' }}</span>{{ ip }}</button></li>{% endif %}
-        {% if sys and sys.uptime_seconds is defined %}<li class="fact"><span class="fact-k">Up</span>{{ sys.uptime_seconds | uptime }}</li>{% endif %}
-        {% if sys and sys.cpu_cores %}<li class="fact"><span class="fact-k">CPU</span>{{ sys.cpu_cores }} cores</li>{% endif %}
-        {% if sys and sys.mem_total_bytes %}<li class="fact"><span class="fact-k">RAM</span>{{ (sys.mem_total_bytes / 1073741824) | round | int }} GiB</li>{% endif %}
-        {% if pw %}<li class="fact tip-below" data-tip="Estimated wall draw{% if pw.energy_kwh is not none %} · {{ '%.1f' | format(pw.energy_kwh) }} kWh so far{% endif %}"><span class="fact-k">Power</span>{{ '%.0f' | format(pw.wall_w) }} W</li>
-        {% elif power_share %}<li class="fact tip-below" data-tip="This guest's CPU share of {{ power_share.host_name }}'s draw"><span class="fact-k">Power</span>≈{{ '%.1f' | format(power_share.cpu_w) }} W of {{ power_share.host_name }}</li>{% endif %}
-        <li class="fact{{ ' warn' if client_outdated }}"{% if client_outdated %} title="Latest is {{ latest_client }}"{% endif %}><span class="fact-k">Client</span>{{ device.agent_version or '1.0.0' }}{% if client_outdated %} · update available{% endif %}</li>
+        {% if gaming %}<li class="fact tip-below" data-tip="Time above {{ gaming.line_w }} W in sessions of 15+ minutes; short dips (loading screens) don't break a session. {{ gaming.sessions }} session{{ '' if gaming.sessions == 1 else 's' }}."><span class="fact-k">Gaming</span>{{ gaming.label }} {{ gaming.period }}</li>{% endif %}
       </ul>
       {% else %}
       <p class="hero-facts-empty">Waiting for the first report from this device.</p>
@@ -179,7 +172,7 @@
         <h2>Health</h2>
         <ul class="health-list">
           {% if ts and ts.backend_state != 'not_installed' %}
-          <li><span class="hdot {{ 'ok' if ts.connected and device.is_online else 'bad' }}"></span><span>Tailscale</span><span class="h-detail">{{ 'Connected' if ts.connected else (ts.backend_state or 'Down') }}</span></li>
+          <li><span class="hdot {{ 'ok' if ts.connected and device.is_online else 'bad' }}"></span><span>Tailscale</span><span class="h-detail">{{ 'Offline' if not device.is_online else 'Connected' if ts.connected else (ts.backend_state or 'Down') }}</span></li>
           {% endif %}
           {% if auth %}
           <li><span class="hdot {{ 'warn' if auth.recent_failed_count else 'ok' }}"></span><span>SSH logins</span><span class="h-detail">{{ auth.recent_failed_count or 0 }} failed · {{ auth.recent_accepted_count or 0 }} ok</span></li>

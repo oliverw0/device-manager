@@ -14,29 +14,37 @@
 <div id="problems-live">
 <div class="page-head pb-head">
   <h1>Problems</h1>
-  <span class="muted pb-sub">{{ groups | map(attribute=2) | map('length') | sum }} open · {{ new_count }} new · checks {{ checks_up }}/{{ checks_on }} up · {{ online }}/{{ total }} devices online</span>
+  <span class="muted pb-sub">{{ open_count }} open · {{ new_count }} new · checks {{ checks_up }}/{{ checks_on }} up · {{ online }}/{{ total }} devices online</span>
   <span class="spacer"></span>
   {% if new_count %}<button type="button" class="secondary" onclick="ackAll(this)">Ack all new</button>{% endif %}
 </div>
 
 
-{% set any_open = groups | map(attribute=2) | map('length') | sum %}
-{% if not any_open %}
-<section class="panel pb-clear"><span class="brand-mark"></span> Nothing wrong right now.</section>
-{% endif %}
-{% for sev, label, rows in groups %}{% if rows %}
-<section class="pb-group" aria-label="{{ label }}">
-  <h2 class="pb-gh sev-{{ sev }}"><span class="pb-dot"></span>{{ label }}<span class="muted">{{ rows | length }}</span></h2>
-  {% for r in rows %}
-  <article class="pb-row sev-{{ sev }}{{ ' acked' if r.p.acked_at }}">
+{% macro row(r) %}
+  <article class="pb-row sev-{{ r.p.severity }}{{ ' acked' if r.p.acked_at }}">
     <a class="pb-who" href="/devices/{{ r.d.id }}">{{ r.d.name }}</a>
     <span class="pb-what"{% if r.p.detail %} title="{{ r.p.detail }}"{% endif %}><b>{{ r.p.title }}</b>{% if r.p.ack_note %}<span class="pb-acknote">{{ r.p.ack_note }}</span>{% endif %}</span>
     <span class="pb-since">{{ r.since }}</span>
     <span class="pb-acts">{{ actions(r) }}</span>
   </article>
-  {% endfor %}
+{% endmacro %}
+
+{% if not new_count %}
+<section class="panel pb-clear"><span class="brand-mark"></span> {{ 'Nothing new: the rest are acknowledged.' if acked else 'Nothing wrong right now.' }}</section>
+{% endif %}
+{% for sev, label, rows in groups %}{% if rows %}
+<section class="pb-group" aria-label="{{ label }}">
+  <h2 class="pb-gh sev-{{ sev }}"><span class="pb-dot"></span>{{ label }}<span class="muted">{{ rows | length }}</span></h2>
+  {% for r in rows %}{{ row(r) }}{% endfor %}
 </section>
 {% endif %}{% endfor %}
+
+{% if acked %}
+<details class="pb-group pb-acked" id="pb-acked">
+  <summary class="pb-gh"><span class="pb-chev" aria-hidden="true"></span>Acknowledged<span class="muted">{{ acked | length }}</span></summary>
+  {% for r in acked %}{{ row(r) }}{% endfor %}
+</details>
+{% endif %}
 
 <div class="pb-cols">
   <section class="panel pb-checks" id="checks" aria-label="Checks">

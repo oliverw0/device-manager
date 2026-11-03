@@ -1032,6 +1032,12 @@ tr:has(.stat-led.off) .os-icon { opacity: 0.45; }
 .pb-group { gap: 4px; }
 .pb-row { display: grid; grid-template-columns: minmax(110px, 170px) minmax(0, 1fr) 72px auto; align-items: center; gap: 14px; padding: 6px 8px 6px 12px; background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--sev); border-radius: var(--radius); }
 .pb-row.acked { opacity: 0.6; }
+.pb-acked { --sev: var(--muted); }
+.pb-acked > summary { cursor: pointer; list-style: none; user-select: none; }
+.pb-acked > summary::-webkit-details-marker { display: none; }
+.pb-acked > summary:hover { color: var(--text); }
+.pb-chev { width: 6px; height: 6px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); transition: transform 0.15s; }
+.pb-acked[open] > summary .pb-chev { transform: rotate(45deg); }
 .pb-row a.pb-who, .pb-row a.pb-who:visited, .pb-row a.pb-who:hover { font-family: var(--font-mono); font-weight: 700; color: #e6e9ec; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pb-what { display: flex; align-items: baseline; gap: 10px; min-width: 0; white-space: nowrap; }
 .pb-what b { color: #e6e9ec; font-weight: 500; overflow: hidden; text-overflow: ellipsis; }

@@ -34,7 +34,9 @@ def problems_page(request: Request, session: Session = Depends(get_session)):
     open_ = session.exec(select(Problem).where(Problem.resolved_at == None).order_by(Problem.opened_at)).all()  # noqa: E711
     rows = [{"p": p, "d": info.get(p.device_id), "dev": devices.get(p.device_id),
              "since": problems.ago((now - p.opened_at).total_seconds())} for p in open_ if p.device_id in devices]
-    groups = [(sev, label, [r for r in rows if r["p"].severity == sev]) for sev, label in problems.SEVERITIES]
+    # acknowledged ones go in a collapsed list of their own, still in severity order
+    groups = [(sev, label, [r for r in rows if r["p"].severity == sev and not r["p"].acked_at]) for sev, label in problems.SEVERITIES]
+    acked = [r for sev, _ in problems.SEVERITIES for r in rows if r["p"].severity == sev and r["p"].acked_at]
     resolved = session.exec(select(Problem).where(Problem.resolved_at >= now - timedelta(hours=24))
                             .order_by(Problem.resolved_at.desc())).all()
     checks = []
@@ -45,7 +47,7 @@ def problems_page(request: Request, session: Session = Depends(get_session)):
                        "cert_days": int((c.cert_expires_at - now).total_seconds() // 86400) if c.cert_expires_at else None})
     online = sum(1 for d in devices.values() if d.is_online)
     return templates.TemplateResponse("problems.html", {
-        "request": request, "groups": groups, "checks": checks,
+        "request": request, "groups": groups, "acked": acked, "open_count": len(rows), "checks": checks,
         "resolved": [{"p": p, "name": devices[p.device_id].name if p.device_id in devices else "?",
                       "lasted": problems.ago((p.resolved_at - p.opened_at).total_seconds())} for p in resolved],
         "new_count": sum(1 for r in rows if not r["p"].acked_at),

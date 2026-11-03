@@ -10,7 +10,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, delete, select
 
-from .. import remote
+from .. import gaming, remote
+from ..config import settings
 from ..database import get_session
 from ..models import AlertEvent, ContainerHistory, Device, ReportHistory, ServiceCheck, generate_api_key
 
@@ -299,6 +300,8 @@ def device_detail(request: Request, device_id: int, session: Session = Depends(g
     serialized = serialize_device(device)
     latest = latest_client_version([serialized["agent_version"]])
     guest_links, power_share = _power_links(session, device)
+    # gaming PCs only: on a server the same high-draw plateaus are builds or backups
+    gaming_week = gaming.week_summary(session, device.id, settings.history_retention_days) if remote.is_windows(device) else None
     return templates.TemplateResponse(
         "device_detail.html",
         {
@@ -306,6 +309,7 @@ def device_detail(request: Request, device_id: int, session: Session = Depends(g
             "device": serialized,
             "guest_links": guest_links,
             "power_share": power_share,
+            "gaming": gaming_week,
             "latest_client": latest,
             "client_outdated": bool(device.last_report_json) and is_outdated(serialized["agent_version"], latest),
             "api_key": device.api_key,

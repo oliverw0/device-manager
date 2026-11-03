@@ -1285,6 +1285,9 @@ function problemsRefresh() {
     const next = new DOMParser().parseFromString(html, "text/html").getElementById("problems-live");
     const cur = document.getElementById("problems-live");
     if (!next || !cur || document.querySelector("dialog[open]") || cur.querySelector("button:disabled")) return;
+    // keep the Acknowledged list open if it was opened
+    const was = cur.querySelector("#pb-acked"), now = next.querySelector("#pb-acked");
+    if (was && now) now.open = was.open;
     cur.replaceWith(next);
   }).catch(() => {});
 }
@@ -1294,7 +1297,7 @@ function initProblems() {
 }
 
 async function ackProblem(id, btn, acked) {
-  const note = acked ? "" : await ask("Acknowledge this problem?\n\nIt stays listed, dimmed, until it clears, and stops counting in the menu badge.", "Ack", false, "Note (optional), e.g. after Sunday");
+  const note = acked ? "" : await ask("Acknowledge this problem?\n\nIt moves to the Acknowledged list until it clears, and stops counting in the menu badge.", "Ack", false, "Note (optional), e.g. after Sunday");
   if (note === null) return;
   btn.disabled = true;
   const body = new FormData();
