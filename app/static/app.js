@@ -212,8 +212,18 @@ const ICON_LAN = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" st
 const ICON_BOLT = '<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg>';
 const ICON_OPEN = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17L17 7M8 7h9v9"/></svg>';
 
-function cardLine(icon, label, value) {
-  return `<div class="fc-line"><span class="fc-line-ico">${icon}</span><span class="fc-line-label">${label}</span><span class="fc-line-val">${value}</span></div>`;
+// ip (Connectivity lines only) sits in its own column so the addresses line up.
+function cardLine(icon, label, value, ip) {
+  const addr = ip === undefined ? "" : `<span class="fc-ip">${escapeHtml(ip || "")}</span>`;
+  return `<div class="fc-line${ip === undefined ? "" : " fc-line-ip"}"><span class="fc-line-ico">${icon}</span><span class="fc-line-label">${label}</span>${addr}<span class="fc-line-val">${value}</span></div>`;
+}
+
+// The machine's LAN address. Docker clients can't see it (local_ip is empty) and
+// the report's source is then the Docker network (172.16/12), so show nothing.
+function lanIp(d, sys) {
+  if (sys && sys.local_ip) return sys.local_ip;
+  const ip = d.last_report_ip || "";
+  return /^172\.(1[6-9]|2\d|3[01])\./.test(ip) ? "" : ip;
 }
 
 function deviceCard(d) {
@@ -228,7 +238,7 @@ function deviceCard(d) {
     diskTip = sys.disks.map((dk) => `${dk.mount.replace(/\\+$/, "") || dk.mount} ${Math.round(dk.percent)}%`).join(" · ");
   }
   const offline = !d.is_online;
-  const ip = (sys && sys.local_ip) || (d.report ? d.last_report_ip : "") || "";
+  const ip = d.report ? lanIp(d, sys) : "";
   const ts = d.report ? d.report.tailscale : null;
   const [tsCls, tsTxt] = tailscaleState(ts, offline);
   const conn = [offline ? "bad" : "ok", tsCls].filter((c) => c === "bad" || c === "warn");
@@ -258,8 +268,9 @@ function deviceCard(d) {
     </div>
     <section class="fc-sec">
       <h3 class="fc-sec-head">Connectivity${connSummary}</h3>
-      ${cardLine(ICON_LAN, `LAN${ip ? ` <span class="fc-ip">${escapeHtml(ip)}</span>` : ""}`, `<span class="chip ${offline ? "bad" : "ok"}">${offline ? "Offline" : "Connected"}</span>`)}
-      ${cardLine(`<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="${TS_PATH}"/></svg>`, "Tailscale", `<span class="chip ${tsCls}">${escapeHtml(tsTxt)}</span>`)}
+      ${cardLine(ICON_LAN, "LAN", `<span class="chip ${offline ? "bad" : "ok"}">${offline ? "Offline" : "Connected"}</span>`, ip)}
+      ${cardLine(`<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="${TS_PATH}"/></svg>`, "Tailscale", `<span class="chip ${tsCls}">${escapeHtml(tsTxt)}</span>`,
+        ((ts && ts.ips) || []).find((a) => a.includes(".")) || "")}
     </section>
     ${work.length ? `<section class="fc-sec"><h3 class="fc-sec-head">Workloads</h3>${work.join("")}</section>` : ""}
     <div class="fc-foot">
