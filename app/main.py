@@ -29,6 +29,18 @@ async def lifespan(app: FastAPI):
     task.cancel()
 
 
+class PageSessionMiddleware(SessionMiddleware):
+    """No session (so no Set-Cookie) on static files. A caching proxy (NPM's
+    "Cache Assets") stores the Set-Cookie along with the file and replays it
+    to everyone for 30 minutes, overwriting their session with a stale one."""
+    NO_SESSION = ("/static/", "/sw.js", "/favicon.ico")
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope["path"].startswith(self.NO_SESSION):
+            return await self.app(scope, receive, send)
+        await super().__call__(scope, receive, send)
+
+
 app = FastAPI(title="Pulse", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
@@ -37,7 +49,7 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 # reads request.session on every request.
 app.add_middleware(AdminAuthMiddleware)
 app.add_middleware(
-    SessionMiddleware,
+    PageSessionMiddleware,
     secret_key=settings.resolved_session_secret(),
     session_cookie="dm_session",
     max_age=60 * 60 * 24 * 30,  # 30 days — persistent so phones aren't re-prompted twice a day

@@ -1434,6 +1434,8 @@ function initBoost() {
     let url;
     try { url = new URL(a.href, location.href); } catch (_) { return; }
     if (url.origin !== location.origin) return;
+    // sign-in redirects off-site to the provider; a fetch can't follow that (CORS)
+    if (url.pathname.startsWith("/login")) return;
     e.preventDefault();
     boostTo(url.pathname + url.search, true);
   });
