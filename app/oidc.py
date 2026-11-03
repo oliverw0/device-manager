@@ -18,9 +18,11 @@ import httpx
 from sqlmodel import Session, select
 
 from .config import settings
-from .models import User
+from .models import AppSetting, User
 
-_discovery = {"at": 0.0, "doc": None}
+_discovery = {}  # issuer -> (fetched at, document)
+# Set on the Users page (saved as AppSetting rows, which beat .env).
+UI_KEYS = ("oidc_issuer", "oidc_client_id", "oidc_client_secret", "oidc_allowed_group", "public_url")
 
 
 class OidcError(Exception):
@@ -46,15 +48,33 @@ async def _post_json(url: str, data: dict, auth: tuple) -> dict:
         return r.json()
 
 
-async def discovery() -> dict:
-    if not _discovery["doc"] or time.time() - _discovery["at"] > 3600:
-        url = settings.oidc_issuer.rstrip("/") + "/.well-known/openid-configuration"
+async def discovery(issuer: str | None = None) -> dict:
+    issuer = (issuer or settings.oidc_issuer).rstrip("/")
+    at, doc = _discovery.get(issuer, (0.0, None))
+    if not doc or time.time() - at > 3600:
+        url = issuer + "/.well-known/openid-configuration"
         try:
-            _discovery["doc"] = await _get_json(url)
+            doc = await _get_json(url)
         except (httpx.HTTPError, ValueError) as exc:
-            raise OidcError(f"Couldn't reach the sign-in provider at {url}: {exc}") from exc
-        _discovery["at"] = time.time()
-    return _discovery["doc"]
+            raise OidcError(f"Couldn't reach {url}: {exc}") from exc
+        if not doc.get("authorization_endpoint") or not doc.get("token_endpoint"):
+            raise OidcError(f"{url} isn't an OpenID Connect provider.")
+        _discovery[issuer] = (time.time(), doc)
+    return doc
+
+
+def load_saved(db: Session) -> None:
+    """Apply the sign-in settings saved on the Users page over .env."""
+    for row in db.exec(select(AppSetting).where(AppSetting.key.in_(UI_KEYS))).all():
+        setattr(settings, row.key, row.value)
+
+
+def save(db: Session, values: dict) -> None:
+    for key, value in values.items():
+        assert key in UI_KEYS
+        db.merge(AppSetting(key=key, value=value))
+        setattr(settings, key, value)
+    db.commit()
 
 
 def redirect_uri(base_url: str) -> str:
@@ -140,11 +160,15 @@ def user_for(db: Session, claims: dict, now: datetime | None = None) -> User:
     return user
 
 
-def local_user(db: Session, username: str) -> User:
-    """The ADMIN_USERNAME password login, recorded as a user so it shows on the Users page."""
+def local_user(db: Session, username: str, signing_in: bool = True) -> User:
+    """The ADMIN_USERNAME password account as a user, so it's on the Users page
+    from the start (created at startup) and can be switched off there."""
     user = db.exec(select(User).where(User.username == username, User.source == "local")).first()
+    if user and not signing_in:
+        return user
     user = user or User(username=username, source="local")
-    user.last_login_at = datetime.utcnow()
+    if signing_in:
+        user.last_login_at = datetime.utcnow()
     db.add(user)
     db.commit()
     db.refresh(user)

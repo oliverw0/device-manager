@@ -23,6 +23,12 @@ class User(SQLModel, table=True):
     last_login_at: Optional[datetime] = None
 
 
+class AppSetting(SQLModel, table=True):
+    """A setting changed in the UI; overrides the .env value of the same name."""
+    key: str = Field(primary_key=True)
+    value: str = ""
+
+
 class Device(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(unique=True, index=True)

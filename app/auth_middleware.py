@@ -2,7 +2,9 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, RedirectResponse
 from urllib.parse import quote
 
-from sqlmodel import Session
+from sqlmodel import Session, select
+
+from .config import settings
 
 from .database import engine
 from .models import User
@@ -19,7 +21,15 @@ class AdminAuthMiddleware(BaseHTTPMiddleware):
 
         # a user disabled or deleted on the Users page is signed out on their next request
         uid = request.session.get("user_id")
-        if uid is not None:
+        if request.session.get("is_admin") and uid is None:
+            # signed in with the password before users existed: that's the local account
+            with Session(engine) as db:
+                user = db.exec(select(User).where(User.username == settings.admin_username, User.source == "local")).first()
+            if user and not user.disabled:
+                request.session.update(user_id=user.id, username=user.username)
+            else:
+                request.session.clear()
+        elif uid is not None:
             with Session(engine) as db:
                 user = db.get(User, uid)
             if user is None or user.disabled:

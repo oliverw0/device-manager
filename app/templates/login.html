@@ -5,10 +5,10 @@
   <h1>Sign in</h1>
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
   {% if oidc_enabled() %}
-  <a class="btn login-sso" href="/login/oidc?next={{ next | urlencode }}">Sign in with {{ oidc_name }}</a>
-  {% if password_login %}<p class="login-or"><span>or</span></p>{% endif %}
+  <a class="btn login-sso" href="/login/oidc?next={{ next | urlencode }}">Sign in with {{ settings.oidc_name }}</a>
+  {% if settings.password_login %}<p class="login-or"><span>or</span></p>{% endif %}
   {% endif %}
-  {% if password_login %}
+  {% if settings.password_login %}
   <form method="post" action="/login" class="stacked-form">
     <input type="hidden" name="next" value="{{ next }}" />
     <label>Username <input type="text" name="username" autocomplete="username" required autofocus /></label>

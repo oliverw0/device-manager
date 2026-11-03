@@ -5,7 +5,7 @@ Locked out (local account disabled and the provider down)? From the host:
 """
 import sys
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
 from sqlmodel import Session, select
 
@@ -18,8 +18,7 @@ from .dashboard import templates
 router = APIRouter()
 
 
-@router.get("/users")
-async def users_page(request: Request):
+async def _page(request: Request, form_error: str = "", saved: bool = False):
     with Session(engine) as session:
         users = session.exec(select(User).order_by(User.created_at)).all()
     provider, provider_error = None, None
@@ -33,7 +32,38 @@ async def users_page(request: Request):
         "oidc_on": oidc.enabled(), "settings": settings,
         "redirect_uri": oidc.redirect_uri(str(request.base_url)),
         "provider": provider, "provider_error": provider_error,
-    })
+        "form_error": form_error, "saved": saved,
+    }, status_code=400 if form_error else 200)
+
+
+@router.get("/users")
+async def users_page(request: Request):
+    return await _page(request)
+
+
+@router.post("/users/sign-in")
+async def save_sign_in(request: Request, issuer: str = Form(""), client_id: str = Form(""),
+                       client_secret: str = Form(""), allowed_group: str = Form(""),
+                       public_url: str = Form(""), action: str = Form("save")):
+    """Set up or turn off authentik from the page. The issuer is checked before saving."""
+    if action == "off":
+        with Session(engine) as db:
+            oidc.save(db, {"oidc_issuer": "", "oidc_client_id": "", "oidc_client_secret": ""})
+        return RedirectResponse(url="/users#sign-in", status_code=303)
+    issuer, client_id, public_url = issuer.strip(), client_id.strip(), public_url.strip().rstrip("/")
+    secret = client_secret.strip() or settings.oidc_client_secret  # blank keeps the saved secret
+    if not issuer.startswith(("https://", "http://")) or not client_id or not secret:
+        return await _page(request, "Issuer URL, client ID and client secret are all needed.")
+    if public_url and not public_url.startswith(("https://", "http://")):
+        return await _page(request, "Dashboard URL must start with https:// or http://.")
+    try:
+        await oidc.discovery(issuer)
+    except oidc.OidcError as exc:
+        return await _page(request, f"Not saved. {exc}")
+    with Session(engine) as db:
+        oidc.save(db, {"oidc_issuer": issuer, "oidc_client_id": client_id, "oidc_client_secret": secret,
+                       "oidc_allowed_group": allowed_group.strip(), "public_url": public_url})
+    return await _page(request, saved=True)
 
 
 @router.post("/users/{user_id}/toggle")

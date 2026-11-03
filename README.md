@@ -76,20 +76,16 @@ commented mount in `docker-compose.yml`).
      The dashboard's Users page shows the exact URI it uses.
    - Leave the scopes at the defaults (`openid`, `email`, `profile`: profile
      carries `groups`).
-2. Copy the provider's **Client ID**, **Client Secret** and **OpenID
-   Configuration Issuer** into `.env`:
-   ```
-   OIDC_ISSUER=https://auth.example.com/application/o/devicemanager/
-   OIDC_CLIENT_ID=...
-   OIDC_CLIENT_SECRET=...
-   PUBLIC_URL=https://dm.example.com
-   SESSION_HTTPS_ONLY=true
-   ```
+2. On the dashboard's **Users** page, fill in **Sign in with authentik**: the
+   provider's **OpenID Configuration Issuer**, **Client ID** and **Client
+   Secret** (and the dashboard's public URL if it's behind a proxy). It checks
+   the issuer before saving. The same values can go in `.env` instead
+   (`OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `PUBLIC_URL`); what's
+   saved on the page wins. Behind HTTPS also set `SESSION_HTTPS_ONLY=true`.
 3. Restrict who gets in: on the application's **Policy / Group / User
    Bindings** tab, bind the group allowed to use it (authentik then refuses
    everyone else). `OIDC_ALLOWED_GROUP=<group>` adds the same check here.
-4. `docker compose up -d`, open the dashboard's **Users** page: the Sign-in
-   panel should say **ready**. Sign in with authentik in a private window.
+4. Sign in with authentik in a private window.
 5. Once that works, switch off the password account on the Users page (or set
    `PASSWORD_LOGIN=false` to hide the form).
 

@@ -13,8 +13,7 @@ router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 templates.env.globals["static_version"] = STATIC_VERSION
 templates.env.globals["oidc_enabled"] = oidc.enabled
-templates.env.globals["oidc_name"] = settings.oidc_name
-templates.env.globals["password_login"] = settings.password_login
+templates.env.globals["settings"] = settings
 
 
 def _safe_next(path: str) -> str:

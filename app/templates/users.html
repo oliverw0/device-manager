@@ -40,20 +40,32 @@
   <p class="muted users-note">All users have full access.</p>
 </section>
 
-<section class="panel signin-setup" aria-label="Sign-in setup">
-  <h2>Sign-in</h2>
+<section class="panel signin-setup" id="sign-in" aria-label="Sign-in">
+  <h2>Sign in with {{ settings.oidc_name }}
+    {% if not oidc_on %}<span class="chip neutral chip-sm">off</span>
+    {% elif provider_error %}<span class="chip bad chip-sm">unreachable</span>
+    {% else %}<span class="chip ok chip-sm">on</span>{% endif %}</h2>
+  {% if form_error %}<p class="error">{{ form_error }}</p>
+  {% elif saved %}<p class="setup-ok">Saved. Test it in a private window before switching off {{ settings.admin_username }}.</p>
+  {% elif provider_error %}<p class="error">{{ provider_error }}</p>{% endif %}
+
   <dl class="setup-list">
-    <dt>{{ settings.oidc_name | capitalize }}</dt>
-    <dd>{% if not oidc_on %}<span class="chip neutral chip-sm">off</span> Needs OIDC_ISSUER, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET in .env
-        {% elif provider_error %}<span class="chip bad chip-sm">unreachable</span> {{ provider_error }}
-        {% else %}<span class="chip ok chip-sm">ready</span> <code>{{ provider }}</code>{% endif %}</dd>
     <dt>Redirect URI</dt>
-    <dd><code class="setup-copy">{{ redirect_uri }}</code>{% if not settings.public_url %}<span class="muted">Wrong behind a proxy? Set PUBLIC_URL.</span>{% endif %}</dd>
-    <dt>Access</dt>
-    <dd>{% if settings.oidc_allowed_group %}Group <b>{{ settings.oidc_allowed_group }}</b>{% else %}Anyone {{ settings.oidc_name }} allows (OIDC_ALLOWED_GROUP to limit){% endif %} · {{ 'auto-create on' if settings.oidc_auto_create else 'auto-create off' }}</dd>
-    <dt>Password</dt>
-    <dd>{% if settings.password_login %}On ({{ settings.admin_username }}){% else %}Off{% endif %}
-        <span class="muted">Locked out: <code>docker compose exec host python -m app.routers.users enable {{ settings.admin_username }}</code></span></dd>
+    <dd><code class="setup-copy">{{ redirect_uri }}</code><span class="muted">Paste into the {{ settings.oidc_name }} provider.</span></dd>
   </dl>
+
+  <form method="post" action="/users/sign-in" class="form-grid setup-form">
+    <label>Issuer URL <input type="url" name="issuer" value="{{ settings.oidc_issuer }}" placeholder="https://auth.example.com/application/o/devicemanager/" title="The provider's OpenID Configuration Issuer" required /></label>
+    <label>Client ID <input type="text" name="client_id" value="{{ settings.oidc_client_id }}" autocomplete="off" required /></label>
+    <label>Client secret <input type="password" name="client_secret" autocomplete="new-password" placeholder="{{ 'Saved: leave blank to keep' if settings.oidc_client_secret else '' }}" {{ '' if settings.oidc_client_secret else 'required' }} /></label>
+    <label>Group <input type="text" name="allowed_group" value="{{ settings.oidc_allowed_group }}" placeholder="Optional" /></label>
+    <label>Dashboard URL <input type="url" name="public_url" value="{{ settings.public_url }}" placeholder="Only if behind a proxy" /></label>
+    <div class="full-width setup-actions">
+      <button type="submit" name="action" value="save">Save</button>
+      {% if oidc_on %}<button type="submit" name="action" value="off" class="secondary" formnovalidate>Turn off</button>{% endif %}
+    </div>
+  </form>
+
+  <p class="muted setup-foot">Password sign-in: {{ 'on (' ~ settings.admin_username ~ ')' if settings.password_login else 'off' }}. Locked out: <code>docker compose exec host python -m app.routers.users enable {{ settings.admin_username }}</code></p>
 </section>
 {% endblock %}

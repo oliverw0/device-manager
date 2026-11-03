@@ -5,12 +5,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from sqlmodel import Session
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import monitor, ssh_keys
+from . import monitor, oidc, ssh_keys
 from .auth_middleware import AdminAuthMiddleware
 from .config import settings
-from .database import init_db
+from .database import engine, init_db
 from .routers import api, auth, checks, dashboard, power, problems, storage, terminal, updates, users
 
 logging.basicConfig(level=logging.INFO)
@@ -19,6 +20,9 @@ logging.basicConfig(level=logging.INFO)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    with Session(engine) as db:
+        oidc.local_user(db, settings.admin_username, signing_in=False)
+        oidc.load_saved(db)
     ssh_keys.ensure_host_keypair()
     task = asyncio.create_task(monitor.run_forever())
     yield

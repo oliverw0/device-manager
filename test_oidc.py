@@ -18,6 +18,7 @@ os.environ.update(
     OIDC_CLIENT_ID="dm-client", OIDC_CLIENT_SECRET="s3cret",
 )
 
+import httpx  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlmodel import Session, select  # noqa: E402
 
@@ -36,6 +37,8 @@ def b64(d):
 
 
 async def fake_get(url, **kw):
+    if url.endswith("/.well-known/openid-configuration") and not url.startswith(ISSUER.rstrip("/")):
+        raise httpx.ConnectError("connection refused")
     if url.endswith("/.well-known/openid-configuration"):
         return {"issuer": ISSUER, "authorization_endpoint": "https://auth.test/authorize",
                 "token_endpoint": "https://auth.test/token", "userinfo_endpoint": "https://auth.test/userinfo"}
@@ -63,6 +66,17 @@ def sign_in(c, state=None):
 
 with TestClient(app, base_url="http://testserver") as c:
     assert "Sign in with authentik" in c.get("/login").text
+
+    # the password account is on the Users page from startup, before anyone signs in
+    with Session(engine) as db:
+        assert db.exec(select(User).where(User.source == "local")).one().username == "admin"
+    # a session from before users existed (only is_admin) becomes that account
+    import itsdangerous
+    signer = itsdangerous.TimestampSigner(settings.resolved_session_secret())
+    old = signer.sign(base64.b64encode(json.dumps({"is_admin": True}).encode())).decode()
+    with TestClient(app, base_url="http://testserver", cookies={"dm_session": old}) as legacy:
+        page = legacy.get("/users", follow_redirects=False)
+        assert page.status_code == 200 and ">you<" in page.text, page.status_code
 
     r = sign_in(c, state="forged")
     assert r.status_code == 401 and "Try again" in r.text, r.status_code
@@ -99,7 +113,7 @@ with TestClient(app, base_url="http://testserver") as c:
     with TestClient(app, base_url="http://testserver") as admin:
         admin.post("/login", data={"username": "admin", "password": "hunter2", "next": "/"})
         page = admin.get("/users").text
-        assert "http://testserver/login/oidc/callback" in page and ">ready<" in page, page[-1500:]
+        assert "http://testserver/login/oidc/callback" in page and ">on<" in page, page[-1500:]
     # local account: switched off blocks the password, can't be removed, and the recovery command restores it
     from app.routers.users import set_enabled
     with Session(engine) as db:
@@ -116,6 +130,28 @@ with TestClient(app, base_url="http://testserver") as c:
         other.post(f"/users/{local.id}/delete")  # own row: refused anyway; a local account is never removed
     with Session(engine) as db:
         assert db.get(User, local.id) is not None
+
+# set up from the Users page: a wrong issuer isn't saved; a good one is, and outlives a restart
+from app.models import AppSetting  # noqa: E402
+settings.oidc_issuer = settings.oidc_client_id = settings.oidc_client_secret = ""
+with TestClient(app, base_url="http://testserver") as admin:
+    admin.post("/login", data={"username": "admin", "password": "hunter2", "next": "/"})
+    assert ">off<" in admin.get("/users").text
+    r = admin.post("/users/sign-in", data={"issuer": "https://wrong.test/", "client_id": "dm-client", "client_secret": "s3cret"})
+    assert r.status_code == 400 and "Not saved" in r.text and "connection refused" in r.text
+    r = admin.post("/users/sign-in", data={"issuer": ISSUER, "client_id": "dm-client", "client_secret": "s3cret", "allowed_group": "homelab"})
+    assert r.status_code == 200 and "Saved." in r.text and ">on<" in r.text, r.text[-800:]
+    r = admin.post("/users/sign-in", data={"issuer": ISSUER, "client_id": "dm-client", "client_secret": ""})  # blank keeps the secret
+    assert r.status_code == 200 and settings.oidc_client_secret == "s3cret"
+settings.oidc_issuer = settings.oidc_client_secret = ""  # as after a restart with an empty .env
+with TestClient(app, base_url="http://testserver") as c:  # startup loads the saved values
+    assert settings.oidc_issuer == ISSUER and settings.oidc_client_secret == "s3cret"
+    assert "Sign in with authentik" in c.get("/login").text
+    c.post("/login", data={"username": "admin", "password": "hunter2", "next": "/"})
+    c.post("/users/sign-in", data={"action": "off"})
+    assert not oidc.enabled() and "Sign in with authentik" not in c.get("/login").text
+with Session(engine) as db:
+    assert db.get(AppSetting, "oidc_issuer").value == ""
 
 engine.dispose()  # Windows won't delete an open database
 DB.unlink(missing_ok=True)
