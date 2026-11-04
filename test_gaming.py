@@ -67,5 +67,6 @@ with Session(engine) as db:
     assert s == {"label": "5.7 h", "sessions": 5, "line_w": s["line_w"], "period": "this week"}, s
     assert gaming.week_summary(db, dev.id, retention_days=3, now=now)["period"] == "last 3 days"
 
+engine.dispose()  # Windows won't delete an open database
 DB.unlink(missing_ok=True)
 print("gaming self-checks passed")
