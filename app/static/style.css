@@ -1131,3 +1131,16 @@ tr:has(.stat-led.off) .os-icon { opacity: 0.45; }
 .setup-ok { color: var(--green); margin: 0 0 12px; font-size: 13px; }
 .setup-foot { font-size: 12px; margin: 16px 0 0; overflow-wrap: anywhere; }
 .setup-foot code { font-family: var(--font-mono); }
+
+/* add-check form: one row of the fields that apply, wrapping on a phone */
+.check-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin-top: 10px; }
+.check-form label { display: flex; flex-direction: column; gap: 5px; flex: 1 1 140px; font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); }
+.check-form label.cf-type { flex: 0 1 150px; }
+.check-form label.cf-wide { flex: 2 1 220px; }
+.check-form [hidden] { display: none; }
+.check-form select { background: #0e1013; color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); padding: 9px 11px; width: 100%; font-family: var(--font-mono); text-transform: none; letter-spacing: 0; }
+.check-form select:focus { outline: none; border-color: var(--green); box-shadow: 0 0 0 1px rgba(55,224,106,0.4), var(--glow-green); }
+.check-form button { padding: 10px 18px; }
+.cf-hint { flex: 1 1 100%; margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+.cf-hint code { font-family: var(--font-mono); color: var(--text); }
+.cf-hint b { color: var(--text); font-weight: 500; }

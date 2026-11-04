@@ -2,7 +2,7 @@
 // Static assets are cache-first (fast loads, offline shell); everything else
 // (navigations, API, terminal) goes straight to the network so device data is
 // never served stale. Bump CACHE when static files change.
-const CACHE = "dm-static-v3";
+const CACHE = "dm-static-v4";
 // Only unversioned assets are precached. style.css / app.js carry a ?v=<hash>
 // query, so they cache per-version on first request and bust automatically when
 // the hash changes — precaching them (or matching with ignoreSearch) would pin
@@ -35,8 +35,8 @@ self.addEventListener("fetch", (e) => {
     e.respondWith(
       caches.match(e.request).then(
         (hit) => hit || fetch(e.request).then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(e.request, copy));
+          // only good responses: a 500 during a restart would otherwise stick for the whole version
+          if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(e.request, copy)); }
           return res;
         })
       )

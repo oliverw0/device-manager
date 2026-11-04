@@ -26,7 +26,8 @@ from app import auth_middleware  # noqa: E402
 
 
 async def _no_auth(self, request, call_next):
-    request.session["is_admin"] = True  # act as a logged-in admin (nav, logout, ssh buttons)
+    if "session" in request.scope:  # static files skip the session middleware
+        request.session["is_admin"] = True  # act as a logged-in admin (nav, logout, ssh buttons)
     return await call_next(request)
 
 

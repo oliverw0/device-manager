@@ -1332,6 +1332,24 @@ function showDeviceTab(name) {
   window.dispatchEvent(new Event("resize"));  // container sparklines skip drawing while hidden
 }
 
+// Add-check form: show the fields for the chosen type. Hidden fields are
+// disabled so they're neither sent nor required.
+function initCheckForm() {
+  const form = document.getElementById("check-form");
+  if (!form) return;
+  const kind = form.elements.kind;
+  const show = () => {
+    form.elements.name.placeholder = kind.selectedOptions[0].dataset.name;
+    form.querySelectorAll("[data-kind]").forEach((el) => {
+      const on = el.dataset.kind.split(" ").includes(kind.value);
+      el.hidden = !on;
+      el.querySelectorAll("input, select").forEach((i) => { i.disabled = !on; });
+    });
+  };
+  kind.addEventListener("change", show);
+  show();
+}
+
 function initDeviceTabs() {
   const tabs = document.querySelector(".device-tabs");
   if (!tabs) return;
