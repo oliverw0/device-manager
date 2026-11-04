@@ -231,6 +231,24 @@ def digest(session: Session, now: datetime, disks_before: dict) -> tuple[str, di
     return text or "All quiet: no outages, restarts or errors, and storage is steady.", disks_now
 
 
+def client_release(session: Session, stamp: Path) -> str | None:
+    """Once per client release: the push saying which machines are behind it.
+    Returns the message sent (None when nothing's due)."""
+    from .routers.updates import _agent_version, is_outdated, latest_client_version  # here: the routers import this module
+    versions = {d.name: _agent_version(d) for d in session.exec(select(Device)).all() if d.last_report_json}
+    latest = latest_client_version(list(versions.values()))
+    if not latest or _read(stamp) == latest:
+        return None
+    stamp.write_text(latest, encoding="utf-8")
+    behind = sorted(n for n, v in versions.items() if is_outdated(v, latest))
+    if not behind:
+        return None
+    msg = (f"Client {latest} is out. {len(behind)} machine{'s are' if len(behind) != 1 else ' is'} on an older release: "
+           f"{', '.join(behind)}. Tap Update all on the Devices page.")
+    notifier.send(msg, title="Client update", tags="arrow_up", click="/")
+    return msg
+
+
 def run() -> None:
     """One sweep: sync, prune, and the daily summary when it's due. Blocking
     (ntfy is plain HTTP): run it in a thread."""
@@ -241,6 +259,7 @@ def run() -> None:
         session.exec(delete(Problem).where(Problem.resolved_at < old))
         session.exec(delete(CheckDay).where(CheckDay.day < old.strftime("%Y-%m-%d")))
         session.commit()
+        client_release(session, settings.data_dir() / "client_release_notified.txt")
         local = datetime.now()
         stamp = settings.data_dir() / "last_digest.txt"
         if settings.digest_hour == local.hour and _read(stamp) != local.date().isoformat():
@@ -314,5 +333,18 @@ if __name__ == "__main__":  # ponytail: self-check
         assert unwanted not in text, (unwanted, text)
     assert snap == {"1|/volume1": 800 * GIB}
     assert digest(Session(mem), now, snap)[0].count("Storage") == 0
+
+    import tempfile
+    import time
+    from .routers import updates
+    updates._latest_cache.update(at=time.time(), ttl=3600, version="1.2.0")
+    stamp = Path(tempfile.mkdtemp()) / "notified.txt"
+    with Session(mem) as db:
+        db.add(Device(id=3, name="pbs", last_report_json=json.dumps({"agent_version": "1.1.0"})))
+        db.add(Device(id=4, name="web", last_report_json=json.dumps({"agent_version": "1.2.0"})))
+        db.commit()
+        msg = client_release(db, stamp)  # nas and oliver-pc report no version: treated as old
+        assert msg and "Client 1.2.0 is out. 3 machines" in msg and "pbs" in msg and "web" not in msg, msg
+        assert client_release(db, stamp) is None  # once per release
     print(text)
     print("ok")
