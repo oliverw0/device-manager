@@ -1057,12 +1057,16 @@ function initInstallCmd() {
   const host = location.origin;
   if (env) env.textContent = `HOST_URL=${host}\nAPI_KEY=${key}`;
   if (!cmd) return;
-  const clone = "git clone https://github.com/oliverw0/device-manager-client && cd device-manager-client\n";
+  // Works as root (no sudo on PBS / minimal Debian) or as a sudo user, and installs git first.
+  // env: "$S HOST_URL=..." isn't an assignment once $S expands to nothing.
+  const prep = 'S=$([ "$(id -u)" = 0 ] || echo sudo); command -v git >/dev/null || { $S apt-get update -qq && $S apt-get install -y -qq git; }\n';
+  const repo = "https://github.com/oliverw0/device-manager-client";
+  const run = (script) => `$S env HOST_URL=${host} API_KEY=${key} bash ${script}`;
   const platforms = {
-    docker: [clone + `sudo HOST_URL=${host} API_KEY=${key} ./install.sh`,
-      "Run on the machine. Writes .env, auto-enables the Tailscale mount if present, and starts the client in Docker."],
-    native: [clone + `sudo HOST_URL=${host} API_KEY=${key} ./install-native.sh`,
-      "For a Linux box without Docker: installs a venv and a systemd service."],
+    docker: [prep + `git clone -q ${repo} && cd device-manager-client && ` + run("./install.sh"),
+      "Paste on the machine as root or a sudo user. Writes .env, auto-enables the Tailscale mount if present, and starts the client in Docker."],
+    native: [prep + `D=$(mktemp -d) && git clone -q ${repo} "$D" && ` + run('"$D/install-native.sh"'),
+      "For Linux without Docker. Paste as root or a sudo user: installs git, Python venv and anything else missing, then a systemd service."],
     // TLS 1.2 line: Windows PowerShell 5.1 on older Server builds can't reach GitHub without it.
     windows: [`$env:HOST_URL='${host}'; $env:API_KEY='${key}'\n` +
       "[Net.ServicePointManager]::SecurityProtocol = 'Tls12'\n" +

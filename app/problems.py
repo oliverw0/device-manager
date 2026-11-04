@@ -8,7 +8,7 @@ sync() only pushes for what's new here: missed heartbeats and certificates.
 """
 import json
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from sqlmodel import Session, delete, select
@@ -48,6 +48,11 @@ def check_problems(c: ServiceCheck, now: datetime) -> list[dict]:
             last = f"Last ping {ago((now - c.last_checked_at).total_seconds())} ago." if c.last_checked_at else "No ping yet."
             out.append(_p(f"check:{c.id}", "warning", "Heartbeat", f"{c.name} missed",
                           f"Expected every {ago(c.interval_seconds)} (+{ago(c.grace_seconds)} grace). {last}"))
+        return out
+    if c.kind == "pbs":
+        if c.last_status == "down":
+            title = f"{c.name}: backup task failed" if c.summary else f"{c.name}: can't read PBS"
+            out.append(_p(f"check:{c.id}", "high", "Backups", title, c.last_error or ""))
         return out
     if c.last_status == "down":
         out.append(_p(f"check:{c.id}", "high", "Check", f"{c.name} is down", c.last_error or c.target))
@@ -149,18 +154,81 @@ def uptime(rows: list[CheckDay], today: date, days: int = 30) -> tuple[list[floa
     return ratios, (ok / total if total else None)
 
 
-def digest(session: Session, now: datetime) -> str:
-    devices = {d.id: d.name for d in session.exec(select(Device)).all()}
-    open_ = session.exec(select(Problem).where(Problem.resolved_at == None)).all()  # noqa: E711
-    fixed = session.exec(select(Problem).where(Problem.resolved_at >= now - timedelta(hours=24))).all()
-    lines = [f"{len(open_)} open · {len(fixed)} fixed in the last 24h"]
-    for sev, label in SEVERITIES:
-        items = [f"{devices.get(p.device_id, '?')} {p.title}" for p in open_ if p.severity == sev]
-        if items:
-            lines.append(f"{label}: " + "; ".join(items[:6]) + (f" (+{len(items) - 6})" if len(items) > 6 else ""))
-    if fixed:
-        lines.append("Fixed: " + "; ".join(f"{devices.get(p.device_id, '?')} {p.title}" for p in fixed[:6]))
-    return "\n".join(lines)
+def _hm(utc: datetime) -> str:
+    return utc.replace(tzinfo=timezone.utc).astimezone().strftime("%H:%M")
+
+
+def _size(b: float) -> str:
+    return f"{b / GIB / 1024:.1f} TiB" if abs(b) >= 1024 * GIB else f"{b / GIB:.1f} GiB"
+
+
+def _docker_time(s: str | None) -> datetime | None:
+    try:
+        return datetime.fromisoformat(s[:19]) if s and not s.startswith("0001") else None
+    except ValueError:
+        return None
+
+
+def digest(session: Session, now: datetime, disks_before: dict) -> tuple[str, dict]:
+    """What happened in the last 24h: outages, restarts, errors, storage growth.
+    Acknowledged problems and devices with alerts muted (a PC that's often
+    off) are left out. disks_before is the snapshot from the last summary;
+    returns the text and the new snapshot."""
+    since = now - timedelta(hours=24)
+    devices = {d.id: d for d in session.exec(select(Device)).all()}
+    quiet = {i for i, d in devices.items() if d.alerts_muted(now)}
+    name = lambda i: devices[i].name if i in devices else "?"
+    probs = [p for p in session.exec(select(Problem).where(
+        (Problem.opened_at >= since) | (Problem.resolved_at >= since) | (Problem.resolved_at == None))).all()  # noqa: E711
+        if p.device_id not in quiet and not p.acked_at]
+    sections, disks_now = {}, {}
+    add = lambda k, line: sections.setdefault(k, []).append(line)
+
+    for p in sorted(probs, key=lambda p: p.opened_at):
+        if p.opened_at < since and p.resolved_at is None:
+            continue  # older and still open: already in an earlier summary, on the Problems page
+        if p.key == "offline":
+            took = f"for {ago(((p.resolved_at or now) - p.opened_at).total_seconds())}" if p.resolved_at else "still"
+            add("Went offline", f"{name(p.device_id)} at {_hm(p.opened_at)}, {took}" + ("" if p.resolved_at else " offline"))
+        elif p.opened_at >= since and p.key != "updates":  # pending updates aren't news
+            add("Errors", f"{name(p.device_id)}: {p.title}" + (f" (cleared {_hm(p.resolved_at)})" if p.resolved_at else ""))
+
+    for d in devices.values():
+        rep = json.loads(d.last_report_json) if d.last_report_json else {}
+        sys = rep.get("system") or {}
+        for dk in sys.get("disks") or []:
+            if dk.get("used_bytes") is None or not dk.get("total_bytes"):
+                continue
+            k = f"{d.id}|{dk.get('mount')}"
+            disks_now[k] = dk["used_bytes"]
+            grew = dk["used_bytes"] - disks_before.get(k, dk["used_bytes"])
+            if abs(grew) >= GIB:
+                add("Storage", f"{d.name} {dk.get('mount')}: {'+' if grew > 0 else '-'}{_size(abs(grew))}, "
+                               f"{_size(dk['total_bytes'] - dk['used_bytes'])} left ({dk.get('percent', 0):.0f}% used)")
+        if d.id in quiet or not d.is_online:
+            continue
+        booted = now - timedelta(seconds=sys["uptime_seconds"]) if sys.get("uptime_seconds") else None
+        if booted and booted >= since:
+            add("Restarted", f"{d.name} rebooted at {_hm(booted)}")
+        for c in rep.get("docker_containers") or []:
+            started = _docker_time(c.get("started_at"))
+            if c.get("status") == "running" and started and started >= since and not (booted and started - booted < timedelta(minutes=10)):
+                add("Restarted", f"{d.name} {c['name']} at {_hm(started)}")
+
+    checks = {c.id: c for c in session.exec(select(ServiceCheck)).all()}
+    for c in checks.values():
+        if c.kind == "pbs" and c.enabled:
+            add("Backups", f"{c.name}: {c.summary or c.last_error or 'not read yet'}"
+                           + (f" ({c.last_error})" if c.summary and c.last_error else ""))
+    days = {since.strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d")}
+    for r in session.exec(select(CheckDay).where(CheckDay.day.in_(days))).all():
+        c = checks.get(r.check_id)
+        if c and c.kind != "pbs" and r.ok < r.total and c.device_id not in quiet:
+            add("Errors", f"{c.name}: {r.total - r.ok} failed check{'s' if r.total - r.ok != 1 else ''} ({r.day[5:]})")
+
+    order = ["Backups", "Errors", "Went offline", "Restarted", "Storage"]
+    text = "\n\n".join(f"{k}\n" + "\n".join(f"· {line}" for line in sections[k]) for k in order if k in sections)
+    return text or "All quiet: no outages, restarts or errors, and storage is steady.", disks_now
 
 
 def run() -> None:
@@ -177,7 +245,10 @@ def run() -> None:
         stamp = settings.data_dir() / "last_digest.txt"
         if settings.digest_hour == local.hour and _read(stamp) != local.date().isoformat():
             stamp.write_text(local.date().isoformat(), encoding="utf-8")
-            notifier.send(digest(session, now), title="Daily summary", tags="clipboard")
+            snap = settings.data_dir() / "digest_disks.json"
+            text, disks = digest(session, now, json.loads(_read(snap) or "{}"))
+            snap.write_text(json.dumps(disks), encoding="utf-8")
+            notifier.send(text, title="Daily summary", tags="clipboard")
 
 
 def _read(path: Path) -> str:
@@ -204,9 +275,44 @@ if __name__ == "__main__":  # ponytail: self-check
     assert got["disk:/"]["severity"] == "high" and "7.0 GiB left" in got["disk:/"]["detail"]
     assert got["cert:8"]["severity"] == "high" and "2 days" in got["cert:8"]["title"]
     assert "Last ping 1d 3h ago" in got["check:7"]["detail"]
+    bad = ServiceCheck(id=9, device_id=1, name="pbs", kind="pbs", last_status="down", summary="3 backups; 1 failed", last_error="backup vm/101 failed: x")
+    assert check_problems(bad, now)[0]["title"] == "pbs: backup task failed"
     d.is_online = False
     assert [p["key"] for p in detect(d, [hb], now)] == ["offline"]
     assert detect(Device(id=2, name="new"), [], now) == []
     ratios, overall = uptime([CheckDay(check_id=1, day="2026-11-03", ok=9, total=10)], date(2026, 11, 3), 3)
     assert ratios == [None, None, 0.9] and overall == 0.9
+
+    from sqlmodel import SQLModel, create_engine
+    mem = create_engine("sqlite://")
+    SQLModel.metadata.create_all(mem)
+    with Session(mem) as db:
+        nas = Device(id=1, name="nas", is_online=True, last_report_json=json.dumps({"system": {
+            "uptime_seconds": 3 * 3600, "disks": [{"mount": "/volume1", "used_bytes": 800 * GIB, "total_bytes": 1000 * GIB, "percent": 80}]},
+            "docker_containers": [{"name": "mqtt", "status": "running", "started_at": "2026-11-03T11:00:00.1234Z"},
+                                  {"name": "web", "status": "running", "started_at": "2026-11-03T09:02:00Z"}]}))
+        pc = Device(id=2, name="oliver-pc", is_online=True, alerts_muted_until=datetime(9999, 1, 1),
+                    last_report_json=json.dumps({"system": {"uptime_seconds": 600}}))
+        db.add_all([nas, pc,
+                    Problem(device_id=1, key="offline", severity="high", source="Device", title="Offline",
+                            opened_at=now - timedelta(hours=5), resolved_at=now - timedelta(hours=5, minutes=-4)),
+                    Problem(device_id=2, key="offline", severity="high", source="Device", title="Offline", opened_at=now - timedelta(hours=2)),
+                    Problem(device_id=1, key="container:x", severity="warning", source="Container", title="x exited", opened_at=now - timedelta(hours=1)),
+                    Problem(device_id=1, key="container:y", severity="warning", source="Container", title="y exited",
+                            opened_at=now - timedelta(hours=1), acked_at=now),
+                    Problem(device_id=1, key="updates", severity="warning", source="Updates", title="3 updates pending", opened_at=now),
+                    ServiceCheck(id=7, device_id=1, name="backup", kind="heartbeat"),
+                    ServiceCheck(id=9, device_id=1, name="pbs", kind="pbs", summary="12 backups, 1 GC, all OK"),
+                    CheckDay(check_id=9, day="2026-11-03", ok=3, total=4),
+                    CheckDay(check_id=7, day="2026-11-03", ok=10, total=12)])
+        db.commit()
+        text, snap = digest(db, now, {"1|/volume1": 758 * GIB})
+    for want in ("Backups\n· pbs: 12 backups, 1 GC, all OK", "nas: x exited", "backup: 2 failed checks", "nas at", "for 4m", "nas rebooted at", "nas mqtt at",
+                 "nas /volume1: +42.0 GiB, 200.0 GiB left (80% used)"):
+        assert want in text, (want, text)
+    for unwanted in ("y exited", "oliver-pc", "updates", "web", "pbs: 1 failed"):  # acked, muted device, not news, started at boot
+        assert unwanted not in text, (unwanted, text)
+    assert snap == {"1|/volume1": 800 * GIB}
+    assert digest(Session(mem), now, snap)[0].count("Storage") == 0
+    print(text)
     print("ok")

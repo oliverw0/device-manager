@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Form
 from fastapi.responses import RedirectResponse
 from sqlmodel import Session
 
+from .. import pbs
 from ..database import get_session
 from ..models import ServiceCheck
 
@@ -18,14 +19,19 @@ def create_check(
     target: str = Form(""),
     interval_seconds: int = Form(60),
     grace_minutes: int = Form(15),
+    secret: str = Form(""),
     session: Session = Depends(get_session),
 ):
-    kind = kind if kind in ("tcp", "heartbeat") else "http"
+    kind = kind if kind in ("tcp", "heartbeat", "pbs") else "http"
     if kind == "heartbeat":
         # interval: how often the job runs; it's late after interval + grace
         session.add(ServiceCheck(device_id=device_id, name=name.strip(), kind=kind, target="",
                                  interval_seconds=max(60, interval_seconds), grace_seconds=max(0, grace_minutes) * 60,
                                  token=secrets.token_urlsafe(16)))
+    elif kind == "pbs":
+        if target.strip() and secret.strip():  # tasks change slowly: at most every 5 min
+            session.add(ServiceCheck(device_id=device_id, name=name.strip(), kind=kind, target=pbs.normalize_url(target),
+                                     secret=secret.strip(), interval_seconds=max(300, interval_seconds)))
     elif target.strip():
         session.add(ServiceCheck(device_id=device_id, name=name.strip(), kind=kind, target=target.strip(),
                                  interval_seconds=max(10, interval_seconds)))

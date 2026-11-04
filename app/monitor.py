@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 import httpx
 from sqlmodel import Session, delete, select
 
-from . import notifier, problems
+from . import notifier, pbs, problems
 from .config import settings
 from .database import engine
 from .models import AlertEvent, ContainerHistory, Device, ReportHistory, ServiceCheck
@@ -93,25 +93,32 @@ def check_thresholds(session: Session) -> None:
     session.commit()
 
 
-async def _run_check(kind: str, target: str):
-    """Returns (status, latency_ms, error). status is 'up' or 'down'."""
+async def _run_check(kind: str, target: str, secret: str = ""):
+    """Returns (status, latency_ms, error, summary). status is 'up' or 'down';
+    summary is only for pbs checks."""
     loop = asyncio.get_event_loop()
     start = loop.time()
+    if kind == "pbs":
+        try:
+            ok, summary, error = await pbs.check(target, secret)
+            return ("up" if ok else "down"), round((loop.time() - start) * 1000, 1), error, summary
+        except pbs.PbsError as exc:
+            return "down", None, str(exc), ""
     try:
         if kind == "tcp":
             host, _, port = target.rpartition(":")
             reader, writer = await asyncio.wait_for(asyncio.open_connection(host, int(port)), timeout=8)
             writer.close()
-            return "up", round((loop.time() - start) * 1000, 1), None
+            return "up", round((loop.time() - start) * 1000, 1), None, None
         url = target if "://" in target else "http://" + target
         # verify=False: homelab services often use self-signed certs; we're
         # checking reachability, not trust. ponytail comment: tighten if needed.
         async with httpx.AsyncClient(timeout=8, follow_redirects=True, verify=False) as client:
             r = await client.get(url)
         up = r.status_code < 400
-        return ("up" if up else "down"), round((loop.time() - start) * 1000, 1), (None if up else f"HTTP {r.status_code}")
+        return ("up" if up else "down"), round((loop.time() - start) * 1000, 1), (None if up else f"HTTP {r.status_code}"), None
     except Exception as exc:  # noqa: BLE001 — any failure means "down", record why
-        return "down", None, str(exc)[:200]
+        return "down", None, str(exc)[:200], None
 
 
 async def _cert_expiry(url: str):
@@ -154,7 +161,7 @@ async def check_services() -> None:
     with Session(engine) as session:
         checks = session.exec(select(ServiceCheck).where(ServiceCheck.enabled == True, ServiceCheck.kind != "heartbeat")).all()  # noqa: E712
         due = [
-            (c.id, c.kind, c.target)
+            (c.id, c.kind, c.target, c.secret)
             for c in checks
             if c.last_checked_at is None or (now - c.last_checked_at).total_seconds() >= c.interval_seconds
         ]
@@ -174,9 +181,9 @@ async def check_services() -> None:
             session.commit()
     if not due:
         return
-    results = await asyncio.gather(*[_run_check(kind, target) for (_, kind, target) in due])
+    results = await asyncio.gather(*[_run_check(*c[1:]) for c in due])
     with Session(engine) as session:
-        for (cid, _, _), (status, latency, error) in zip(due, results):
+        for (cid, *_), (status, latency, error, summary) in zip(due, results):
             check = session.get(ServiceCheck, cid)
             if check is None:
                 continue
@@ -185,6 +192,8 @@ async def check_services() -> None:
             check.last_checked_at = datetime.utcnow()
             check.last_latency_ms = latency
             check.last_error = error
+            if summary is not None:
+                check.summary = summary
             session.add(check)
             problems.record_check(session, cid, status == "up", now)
             if prev != status and status in ("up", "down"):

@@ -297,9 +297,10 @@
       <form method="post" action="/checks/{{ c.id }}/delete" data-confirm="Delete this check?" data-ok="Delete" data-danger><button type="submit" class="term-btn" title="Delete">✕</button></form>
     </div>
     {% if c.last_status == 'down' and c.last_error %}<div class="check-err">{{ c.last_error }}</div>{% endif %}
+    {% if c.kind == 'pbs' and c.summary %}<div class="ping-url"><span class="muted">Last 24h:</span> {{ c.summary }}</div>{% endif %}
     {% if c.kind == 'heartbeat' %}<div class="ping-url"><span class="muted">Add to the end of the job:</span> <code>curl -fsS -m 10 {{ request.base_url }}ping/{{ c.token }}</code></div>{% endif %}
     {% else %}
-    <p class="muted">No checks yet. HTTP and TCP checks watch a service; a heartbeat watches a job (backup, cron) that pings when it finishes.</p>
+    <p class="muted">No checks yet. HTTP and TCP checks watch a service; a heartbeat watches a job (backup, cron) that pings when it finishes; PBS backups reads a Proxmox Backup Server's task results.</p>
     {% endfor %}
     <details style="margin-top:12px">
       <summary class="muted" style="cursor:pointer;font-size:13px">+ Add check</summary>
@@ -310,9 +311,11 @@
             <option value="http">HTTP</option>
             <option value="tcp">TCP</option>
             <option value="heartbeat">Heartbeat (job pings in)</option>
+            <option value="pbs">PBS backups</option>
           </select>
         </label>
-        <label>Target <input type="text" name="target" placeholder="http://100.x:8080  or  100.x:5432 (not for heartbeats)" /></label>
+        <label>Target <input type="text" name="target" placeholder="http://100.x:8080  or  100.x:5432 (not for heartbeats)" /><small class="muted">PBS: its address, e.g. 192.168.1.20 (port 8007 is added)</small></label>
+        <label>API token <input type="password" name="secret" autocomplete="off" placeholder="root@pam!pulse:xxxxxxxx-xxxx-…" /><small class="muted">PBS only. In PBS: Access Control → API Token → Add, then Permissions → Add API Token Permission: path /, role Audit.</small></label>
         <label>Interval (s) <input type="number" name="interval_seconds" value="60" min="10" /><small class="muted">Heartbeat: how often the job runs, e.g. 86400 for daily</small></label>
         <label>Grace (min) <input type="number" name="grace_minutes" value="15" min="0" /><small class="muted">Heartbeat only: how late it may ping</small></label>
         <div class="full-width"><button type="submit">Add check</button></div>

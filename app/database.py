@@ -28,6 +28,8 @@ _COLUMN_MIGRATIONS = {
         "token": "ALTER TABLE servicecheck ADD COLUMN token VARCHAR",
         "cert_expires_at": "ALTER TABLE servicecheck ADD COLUMN cert_expires_at DATETIME",
         "cert_checked_at": "ALTER TABLE servicecheck ADD COLUMN cert_checked_at DATETIME",
+        "secret": "ALTER TABLE servicecheck ADD COLUMN secret VARCHAR NOT NULL DEFAULT ''",
+        "summary": "ALTER TABLE servicecheck ADD COLUMN summary VARCHAR NOT NULL DEFAULT ''",
     },
     "reporthistory": {
         "power_w": "ALTER TABLE reporthistory ADD COLUMN power_w FLOAT",

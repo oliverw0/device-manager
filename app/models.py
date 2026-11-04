@@ -74,15 +74,18 @@ class ServiceCheck(SQLModel, table=True):
     pass on any <400 status; TCP checks pass if the port accepts a connection.
     A heartbeat check is the other way round: a job calls /ping/<token> and the
     check is down once interval_seconds + grace_seconds pass without a ping
-    (last_checked_at is then the last ping)."""
+    (last_checked_at is then the last ping). A pbs check reads a Proxmox Backup
+    Server's last 24h of tasks with an API token (secret); it's down if one failed."""
     id: Optional[int] = Field(default=None, primary_key=True)
     device_id: int = Field(foreign_key="device.id", index=True)
     name: str
-    kind: str = "http"  # http | tcp | heartbeat
+    kind: str = "http"  # http | tcp | heartbeat | pbs
     target: str = ""    # URL for http, host:port for tcp, unused for heartbeat
     interval_seconds: int = 60
     grace_seconds: int = 0
     token: Optional[str] = Field(default=None, index=True)  # heartbeat ping URL secret
+    secret: str = ""   # pbs: API token, USER@REALM!NAME:SECRET
+    summary: str = ""  # pbs: what the last 24h of tasks did, for the daily summary
     enabled: bool = True
     cert_expires_at: Optional[datetime] = None  # https checks: the certificate's expiry
     cert_checked_at: Optional[datetime] = None
