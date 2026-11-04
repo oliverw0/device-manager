@@ -297,7 +297,8 @@ def _vtuple(v: str) -> tuple:
 def latest_client_version(reported: list) -> str | None:
     """Newest of: main branch on GitHub and any version a device already reports.
     None when GitHub has never answered (the dashboard then offers "update all"
-    without version info). A good answer is kept an hour, a failure 5 minutes."""
+    without version info). A good answer is kept a minute (GitHub's raw CDN caches up to
+    5 minutes anyway), a failure 5."""
     if time.time() - _latest_cache["at"] > _latest_cache["ttl"]:
         _latest_cache["at"] = time.time()
         try:
@@ -305,7 +306,7 @@ def latest_client_version(reported: list) -> str | None:
             m = re.search(r'__version__\s*=\s*"([^"]+)"', r.text)
             if not m:
                 raise ValueError(f"HTTP {r.status_code}, no __version__ in response")
-            _latest_cache.update(version=m.group(1), ttl=3600)
+            _latest_cache.update(version=m.group(1), ttl=60)
         except (httpx.HTTPError, ValueError) as exc:
             _latest_cache["ttl"] = 300
             logger.warning("Couldn't read the latest client version from %s: %s", CLIENT_VERSION_URL, exc)
