@@ -1,13 +1,14 @@
-"""The Problems page, acknowledging, and heartbeat pings."""
+"""The Health page (what needs attention, every check, what resolved),
+acknowledging, and heartbeat pings."""
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from sqlmodel import Session, select
 
 from .. import problems
 from ..database import get_session
-from ..models import CheckDay, Device, Problem, ServiceCheck
+from ..models import Device, Problem, ServiceCheck
 from .dashboard import serialize_device, templates
 
 router = APIRouter()
@@ -26,8 +27,15 @@ templates.env.globals["open_problem_count"] = open_count
 templates.env.filters["dur"] = problems.ago
 
 
-@router.get("/problems", response_class=HTMLResponse)
-def problems_page(request: Request, session: Session = Depends(get_session)):
+@router.get("/problems")
+def old_problems_url():
+    return RedirectResponse(url="/health", status_code=301)
+
+
+@router.get("/health", response_class=HTMLResponse)
+def health_page(request: Request, session: Session = Depends(get_session)):
+    from ..config import settings
+    from .views import status_groups  # views imports dashboard, like this module
     now = datetime.utcnow()
     devices = {d.id: d for d in session.exec(select(Device)).all()}
     info = {i: serialize_device(d) for i, d in devices.items()}
@@ -39,20 +47,15 @@ def problems_page(request: Request, session: Session = Depends(get_session)):
     acked = [r for sev, _ in problems.SEVERITIES for r in rows if r["p"].severity == sev and r["p"].acked_at]
     resolved = session.exec(select(Problem).where(Problem.resolved_at >= now - timedelta(hours=24))
                             .order_by(Problem.resolved_at.desc())).all()
-    checks = []
-    days = session.exec(select(CheckDay).where(CheckDay.day >= (now - timedelta(days=30)).strftime("%Y-%m-%d"))).all()
-    for c in session.exec(select(ServiceCheck).order_by(ServiceCheck.device_id, ServiceCheck.name)).all():
-        bars, overall = problems.uptime([r for r in days if r.check_id == c.id], now.date())
-        checks.append({"c": c, "device": devices.get(c.device_id), "bars": bars, "uptime": overall,
-                       "cert_days": int((c.cert_expires_at - now).total_seconds() // 86400) if c.cert_expires_at else None})
+    check_groups, totals = status_groups(session, now)
     online = sum(1 for d in devices.values() if d.is_online)
     return templates.TemplateResponse("problems.html", {
-        "request": request, "groups": groups, "acked": acked, "open_count": len(rows), "checks": checks,
+        "request": request, "groups": groups, "acked": acked, "open_count": len(rows),
+        "check_groups": check_groups, "public_on": settings.public_status,
         "resolved": [{"p": p, "name": devices[p.device_id].name if p.device_id in devices else "?",
                       "lasted": problems.ago((p.resolved_at - p.opened_at).total_seconds())} for p in resolved],
         "new_count": sum(1 for r in rows if not r["p"].acked_at),
-        "checks_up": sum(1 for x in checks if x["c"].enabled and x["c"].last_status == "up"),
-        "checks_on": sum(1 for x in checks if x["c"].enabled),
+        "checks_up": totals["up"], "checks_on": totals["on"],
         "online": online, "total": len(devices),
     })
 

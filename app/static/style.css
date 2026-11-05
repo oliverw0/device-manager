@@ -1279,3 +1279,28 @@ tr:has(.stat-led.off) .os-icon { opacity: 0.45; }
 .sidebar-nav .nav-bottom { margin-top: auto; }
 @media (max-width: 720px) { .sidebar-nav .nav-bottom { margin-top: 0; } }
 .alert-form .check-line.cf-full { flex: 1 1 100%; flex-direction: row; text-transform: none; letter-spacing: 0; font-family: var(--font-sans); font-size: 13px; color: var(--text); }
+
+/* ---------- Health: checks as accordions ---------- */
+.hl-checks { margin: 8px 0 18px; }
+.hl-h { display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px; margin: 0 0 12px; }
+.hl-h .muted { font-family: var(--font-mono); font-size: 12px; font-weight: 400; letter-spacing: 0; text-transform: none; }
+.hl-h .linkish { padding: 0; font-size: 12px; }
+.st-gh { margin: 0 0 4px; font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: #e6e9ec; }
+.ck { border-top: 1px solid var(--border); }
+.ck.paused { opacity: 0.55; }
+.ck > summary { list-style: none; cursor: pointer; border-top: 0; grid-template-columns: 8px minmax(0, 1fr) auto 54px 12px; }
+.ck > summary::-webkit-details-marker { display: none; }
+.ck > summary:hover .st-name { color: var(--green); }
+.ck-chev { width: 6px; height: 6px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); transition: transform 0.15s; justify-self: center; margin-top: -3px; }
+.ck[open] .ck-chev { transform: rotate(-135deg); margin-top: 3px; }
+.ck .pb-cname .muted { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ck-body { padding: 4px 0 14px 20px; }
+.ck-body .check-err { margin: 0 0 10px; padding: 0; }
+.ck-ok { margin: 0 0 10px; color: var(--green); font-size: 13px; }
+.ck-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 16px; margin: 0; font-size: 12.5px; }
+.ck-facts dt { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); padding-top: 2px; }
+.ck-facts dd { margin: 0; overflow-wrap: anywhere; }
+.ck-facts code { font-family: var(--font-mono); font-size: 12px; color: var(--text); }
+.ck-facts a { color: var(--green); }
+.pb-resolved { margin-top: 0; }
+@media (max-width: 900px) { .ck > summary { grid-template-columns: 8px minmax(0, 1fr) 54px 12px; } .ck-body { padding-left: 0; } }

@@ -126,12 +126,12 @@
 </details>
 {%- endmacro %}
 
-{# Problems / Timeline / Sent: one section with three views. #}
+{# Health: Now / Timeline / Sent alerts, one section with three views. #}
 {% macro problems_tabs(active) -%}
-<nav class="subtabs" aria-label="Problems views">
-  <a href="/problems" class="{{ 'active' if active == 'now' }}"{% if active == 'now' %} aria-current="page"{% endif %}>Open now</a>
-  <a href="/problems/timeline" class="{{ 'active' if active == 'timeline' }}"{% if active == 'timeline' %} aria-current="page"{% endif %}>Timeline</a>
-  <a href="/problems/sent" class="{{ 'active' if active == 'sent' }}"{% if active == 'sent' %} aria-current="page"{% endif %}>Sent alerts</a>
+<nav class="subtabs" aria-label="Health views">
+  <a href="/health" class="{{ 'active' if active == 'now' }}"{% if active == 'now' %} aria-current="page"{% endif %}>Now</a>
+  <a href="/health/timeline" class="{{ 'active' if active == 'timeline' }}"{% if active == 'timeline' %} aria-current="page"{% endif %}>Timeline</a>
+  <a href="/health/sent" class="{{ 'active' if active == 'sent' }}"{% if active == 'sent' %} aria-current="page"{% endif %}>Sent alerts</a>
 </nav>
 {%- endmacro %}
 

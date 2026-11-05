@@ -201,11 +201,17 @@ with TestClient(app, base_url="http://testserver") as c:
     report(c, keys["services"], hostname="services", docker_containers=[
         {"name": "mqtt", "image": "eclipse-mosquitto", "status": "running", "restart_count": 6, "ports": [1883]},
         {"name": "web", "image": "nginx", "status": "running", "health": "unhealthy"}])
-    for path in ("/", "/status", "/problems", "/problems/timeline", "/problems/timeline?span=24h", "/problems/timeline?span=30d",
-                 "/problems/sent", "/map", f"/devices/{ids['services']}", f"/devices/{ids['pve']}#checks",
+    for path in ("/", "/health", "/health/timeline", "/health/timeline?span=24h", "/health/timeline?span=30d",
+                 "/health/sent", "/map", f"/devices/{ids['services']}", f"/devices/{ids['pve']}#checks",
                  f"/devices/{ids['pve']}?check_name=mqtt&check_target=10.0.0.2:1883"):
         r = c.get(path)
         assert r.status_code == 200, (path, r.status_code, r.text[-800:])
+    for old, new in (("/problems", "/health"), ("/status", "/health#checks"),
+                     ("/problems/timeline?span=24h", "/health/timeline?span=24h"), ("/problems/sent", "/health/sent")):
+        r = c.get(old, follow_redirects=False)
+        assert r.status_code == 301 and r.headers["location"] == new, (old, r.status_code, r.headers.get("location"))
+    health = c.get("/health").text
+    assert 'data-keep="ck-' in health and "services: last backup 30h ago" in health  # checks open to their findings
     page = c.get(f"/devices/{ids['services']}").text
     assert "unhealthy" in page and "+ check" in page
     assert "plex-server" in c.get("/map").text

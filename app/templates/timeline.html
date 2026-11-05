@@ -3,10 +3,10 @@
 {% block title %}Timeline - Pulse{% endblock %}
 {% block content %}
 <div class="page-head">
-  <h1>Problems</h1>
+  <h1>Health</h1>
   <span class="spacer"></span>
   <div class="spark-toggle" role="group" aria-label="Time span">
-    {% for s in spans %}<a href="/problems/timeline?span={{ s }}" class="seg{{ ' active' if s == span }}"{% if s == span %} aria-current="true"{% endif %}>{{ s }}</a>{% endfor %}
+    {% for s in spans %}<a href="/health/timeline?span={{ s }}" class="seg{{ ' active' if s == span }}"{% if s == span %} aria-current="true"{% endif %}>{{ s }}</a>{% endfor %}
   </div>
 </div>
 {{ ui.problems_tabs('timeline') }}

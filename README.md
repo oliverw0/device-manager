@@ -30,10 +30,11 @@ Companion agent: [device-manager-client](https://github.com/oliverw0/device-mana
   tasks, no backups in 24h, each guest's newest backup age, datastore space) and
   **Proxmox VE** (storage and thin-pool metadata, SMART health, guests set to
   start at boot that are stopped). Each PBS/Proxmox finding is its own problem.
-- **Status** page with the checks grouped (DNS, Proxmox, Backups, or your own
-  groups) and 30-day uptime; optional read-only public version.
-- **Problems**: what's open now, a **Timeline** of the last 24h / 7d / 30d,
-  and **Sent alerts** (every ntfy push, whether it was delivered, watchdog state).
+- **Health**: what needs attention now, every check grouped (DNS, Proxmox,
+  Backups, or your own groups) with 30-day uptime, each opening to show what it
+  found; a **Timeline** of the last 24h / 7d / 30d; and **Sent alerts** (every
+  ntfy push, whether it was delivered, watchdog state). Optional read-only
+  public status page.
 - **Map** of what runs where (LXCs under their Proxmox host).
 - **Alerts that don't pile up**: a guest whose host is down is named in the
   host's push; when most machines go quiet at once, one "lost contact" push.

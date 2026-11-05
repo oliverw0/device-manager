@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% import "_macros.html" as ui %}
-{% block title %}Problems - Pulse{% endblock %}
+{% block title %}Health - Pulse{% endblock %}
 
 {# Terminal (when SSH is set up) and acknowledge: the row itself says what's wrong. #}
 {% macro actions(r) %}
@@ -14,8 +14,8 @@
 {% block content %}
 <div id="problems-live">
 <div class="page-head pb-head">
-  <h1>Problems</h1>
-  <span class="muted pb-sub">{{ open_count }} open · {{ new_count }} new · checks {{ checks_up }}/{{ checks_on }} up · {{ online }}/{{ total }} devices online</span>
+  <h1>Health</h1>
+  <span class="muted pb-sub">{{ new_count }} need{{ 's' if new_count == 1 }} attention · checks {{ checks_up }}/{{ checks_on }} up · {{ online }}/{{ total }} devices online</span>
   <span class="spacer"></span>
   {% if new_count %}<button type="button" class="secondary" onclick="ackAll(this)">Ack all new</button>{% endif %}
 </div>
@@ -32,7 +32,7 @@
 {% endmacro %}
 
 {% if not new_count %}
-<section class="panel pb-clear"><span class="brand-mark"></span> {{ 'Nothing new: the rest are acknowledged.' if acked else 'Nothing wrong right now.' }}</section>
+<section class="panel pb-clear"><span class="brand-mark"></span> {{ 'Nothing new needs attention: the rest are acknowledged.' if acked else 'Nothing needs attention right now.' }}</section>
 {% endif %}
 {% for sev, label, rows in groups %}{% if rows %}
 <section class="pb-group" aria-label="{{ label }}">
@@ -48,38 +48,85 @@
 </details>
 {% endif %}
 
-<div class="pb-cols">
-  <section class="panel pb-checks" id="checks" aria-label="Checks">
-    <h2>Checks · 30 days <a class="linkish pb-more" href="/status">Status page →</a></h2>
-    {% for x in checks %}{% set c = x.c %}
-    <div class="pb-check{{ ' paused' if not c.enabled }}">
-      <span class="pb-sq st-{{ c.last_status if c.enabled else 'unknown' }}"></span>
-      <span class="pb-cname">
-        <a href="/devices/{{ c.device_id }}#checks">{{ c.name }}</a>
-        <span class="muted">{% if c.kind == 'heartbeat' %}Heartbeat · every {{ c.interval_seconds | dur }}{% if c.grace_seconds %} + {{ c.grace_seconds | dur }}{% endif %}{% else %}{{ c.kind | upper }} · {{ c.target }}{% endif %}{% if x.device %} · {{ x.device.name }}{% endif %}{% if x.cert_days is not none %} · cert {{ x.cert_days }}d{% endif %}</span>
-      </span>
-      <span class="pb-bars" role="img" aria-label="Daily uptime, last 30 days">{% for b in x.bars %}<i class="{{ 'none' if b is none else 'ok' if b >= 0.999 else 'part' if b >= 0.9 else 'bad' }}"></i>{% endfor %}</span>
-      <span class="pb-up">{% if x.uptime is not none %}{{ '%.1f' | format(x.uptime * 100) if x.uptime < 0.9995 else '100' }}%{% else %}—{% endif %}</span>
-    </div>
+{% macro check_body(x) %}
+{%- set c = x.c -%}
+{%- set kinds = {'http': 'HTTP', 'tcp': 'TCP port', 'dns': 'DNS', 'heartbeat': 'Heartbeat', 'pbs': 'Proxmox Backup Server', 'proxmox': 'Proxmox VE'} -%}
+<div class="ck-body">
+  {% if c.kind in ('pbs', 'proxmox') %}
+    {% if x.issues %}
+    <ul class="check-issues">{% for i in x.issues %}<li class="sev-{{ i.severity }}"><b>{{ i.title }}</b>{% if i.detail %} <span class="muted">{{ i.detail }}</span>{% endif %}</li>{% endfor %}</ul>
+    {% elif c.last_status == 'down' and c.last_error %}<p class="check-err">{{ c.last_error }}</p>
+    {% elif c.last_status == 'up' %}<p class="ck-ok">Nothing wrong found.</p>{% endif %}
+  {% elif c.last_status == 'down' and c.last_error %}<p class="check-err">{{ c.last_error }}</p>{% endif %}
+  <dl class="ck-facts">
+    {% if c.kind in ('pbs', 'proxmox') and c.summary %}<dt>{{ 'Last 24h' if c.kind == 'pbs' else 'Now' }}</dt><dd>{{ c.summary }}</dd>{% endif %}
+    <dt>Type</dt><dd>{{ kinds.get(c.kind, c.kind) }}</dd>
+    {% if c.kind == 'heartbeat' %}
+    <dt>Schedule</dt><dd>every {{ c.interval_seconds | dur }}{% if c.grace_seconds %}, late after {{ c.grace_seconds | dur }} more{% endif %}</dd>
+    <dt>Last ping</dt><dd>{% if c.last_checked_at %}{{ c.last_checked_at | reltime }} · {{ c.last_checked_at | dt }}{% else %}none yet{% endif %}</dd>
+    <dt>Ping URL</dt><dd><code class="setup-copy">curl -fsS -m 10 {{ request.base_url }}ping/{{ c.token }}</code></dd>
     {% else %}
-    <p class="muted">No checks yet. Add HTTP, TCP or heartbeat checks from a device's Checks tab.</p>
-    {% endfor %}
-  </section>
-
-  <section class="panel pb-resolved" aria-label="Resolved in the last 24 hours">
-    <h2>Resolved · last 24h</h2>
-    {% for x in resolved %}
-    <div class="pb-res">
-      <span class="muted">{{ x.p.resolved_at | dt }}</span>
-      <span><b>{{ x.name }}</b> {{ x.p.title }}</span>
-      <span class="muted">{{ x.lasted }}</span>
-    </div>
-    {% else %}
-    <p class="muted">Nothing cleared in the last day.</p>
-    {% endfor %}
-    <p class="muted pb-foot">A summary of this page goes to ntfy every morning. <a href="/alerts">Full alert log</a></p>
-  </section>
+    <dt>Target</dt><dd><code>{{ c.target }}</code></dd>
+    {% if c.expect %}<dt>Expects</dt><dd>{{ c.expect }}</dd>{% endif %}
+    <dt>Checked</dt><dd>every {{ c.interval_seconds | dur }}{% if c.last_checked_at %} · last {{ c.last_checked_at | reltime }}{% endif %}{% if c.last_status == 'up' and c.last_latency_ms is not none %} · {{ c.last_latency_ms | round | int }} ms{% endif %}</dd>
+    {% if c.cert_expires_at %}<dt>Certificate</dt><dd>until {{ c.cert_expires_at.strftime('%Y-%m-%d') }} ({{ x.cert_days }} days)</dd>{% endif %}
+    {% endif %}
+    <dt>30 days</dt><dd>{{ ui.uptime_pct(x.uptime) }} of checks passed</dd>
+    {% if x.device %}<dt>Device</dt><dd><a href="/devices/{{ c.device_id }}#checks">{{ x.device.name }}</a> · edit, pause or delete it there</dd>{% endif %}
+  </dl>
 </div>
+{% endmacro %}
+
+<section id="checks" class="hl-checks" aria-label="Checks">
+  <h2 class="hl-h">Checks <span class="muted">{{ checks_up }}/{{ checks_on }} up · 30 days{% if public_on %} · <a class="linkish" href="/status/public" target="_blank" rel="noopener">public page ↗</a>{% endif %}</span></h2>
+  {% if not check_groups %}
+  <section class="panel"><p class="muted" style="margin:0">No checks yet. Add them from a device's <b>Checks</b> tab, and give them a group (DNS, Auth, Media, ...) to sort them here.</p></section>
+  {% endif %}
+  <div class="st-groups">
+  {% for g in check_groups %}
+  <section class="panel st-group" aria-label="{{ g.name }}">
+    <h3 class="st-gh"><span class="st-sq st-{{ g.state }}"></span>{{ g.name }}<span class="spacer"></span><span class="muted">{{ g.on - g.down }}/{{ g.on }} up</span></h3>
+    {% for x in g.checks %}{% set c = x.c %}
+    <details class="ck{{ ' paused' if x.state == 'paused' }}" data-keep="ck-{{ c.id }}">
+      <summary class="st-row">
+        <span class="pb-sq st-{{ x.state if x.state in ('up', 'down') else 'unknown' }}"></span>
+        <span class="pb-cname">
+          <span class="st-name">{{ c.name }}</span>
+          <span class="muted">
+            {%- if x.state == 'paused' %}Paused
+            {%- elif x.issues %}{{ x.issues | length }} finding{{ 's' if x.issues | length != 1 }}: {{ x.issues[0].title }}
+            {%- elif x.state == 'down' %}{{ c.last_error or 'Down' }}
+            {%- elif c.kind in ('pbs', 'proxmox') and c.summary %}{{ c.summary }}
+            {%- elif x.state == 'up' %}Up{% if c.last_latency_ms is not none %} · {{ c.last_latency_ms | round | int }} ms{% endif %}{% if x.cert_days is not none %} · cert {{ x.cert_days }}d{% endif %}
+            {%- else %}Waiting for the first check{% endif %}
+            {%- if x.device %} · {{ x.device.name }}{% endif %}
+          </span>
+        </span>
+        {{ ui.uptime_bars(x.bars) }}
+        <span class="pb-up">{{ ui.uptime_pct(x.uptime) }}</span>
+        <span class="ck-chev" aria-hidden="true"></span>
+      </summary>
+      {{ check_body(x) }}
+    </details>
+    {% endfor %}
+  </section>
+  {% endfor %}
+  </div>
+</section>
+
+<section class="panel pb-resolved" aria-label="Resolved in the last 24 hours">
+  <h2>Resolved · last 24h</h2>
+  {% for x in resolved %}
+  <div class="pb-res">
+    <span class="muted">{{ x.p.resolved_at | dt }}</span>
+    <span><b>{{ x.name }}</b> {{ x.p.title }}</span>
+    <span class="muted">{{ x.lasted }}</span>
+  </div>
+  {% else %}
+  <p class="muted">Nothing cleared in the last day.</p>
+  {% endfor %}
+  <p class="muted pb-foot">A summary goes to ntfy every morning. <a href="/health/timeline">Timeline</a> · <a href="/alerts">Full alert log</a></p>
+</section>
 </div>
 {% endblock %}
 

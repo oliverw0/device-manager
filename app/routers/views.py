@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlmodel import Session, select
 
 from .. import monitor, problems, topology
@@ -49,11 +49,10 @@ def status_groups(session: Session, now: datetime) -> tuple[list[dict], dict]:
     return out, {"on": on, "down": down, "up": on - down}
 
 
-@router.get("/status", response_class=HTMLResponse)
-def status_page(request: Request, session: Session = Depends(get_session)):
-    groups, totals = status_groups(session, datetime.utcnow())
-    return templates.TemplateResponse("status.html", {"request": request, "groups": groups, "totals": totals,
-                                                      "public": False, "public_on": settings.public_status})
+@router.get("/status")
+def status_page():
+    """Checks live on the Health page now."""
+    return RedirectResponse(url="/health#checks", status_code=301)
 
 
 @router.get("/status/public", response_class=HTMLResponse)
@@ -98,7 +97,14 @@ def lanes(rows: list[Problem], start: datetime, end: datetime) -> list[list[dict
     return packed[:6]
 
 
-@router.get("/problems/timeline", response_class=HTMLResponse)
+@router.get("/problems/timeline")
+@router.get("/problems/sent")
+def old_urls(request: Request):
+    return RedirectResponse(url=request.url.path.replace("/problems/", "/health/", 1)
+                            + (f"?{request.url.query}" if request.url.query else ""), status_code=301)
+
+
+@router.get("/health/timeline", response_class=HTMLResponse)
 def timeline(request: Request, span: str = "7d", session: Session = Depends(get_session)):
     span = span if span in SPANS else "7d"
     length, tick, fmt = SPANS[span]
@@ -135,7 +141,7 @@ def timeline(request: Request, span: str = "7d", session: Session = Depends(get_
     })
 
 
-@router.get("/problems/sent", response_class=HTMLResponse)
+@router.get("/health/sent", response_class=HTMLResponse)
 def sent(request: Request, session: Session = Depends(get_session)):
     now = datetime.utcnow()
     rows = session.exec(select(NotificationLog).order_by(NotificationLog.id.desc()).limit(200)).all()

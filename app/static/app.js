@@ -1312,6 +1312,11 @@ function problemsRefresh() {
     // keep the Acknowledged list open if it was opened
     const was = cur.querySelector("#pb-acked"), now = next.querySelector("#pb-acked");
     if (was && now) now.open = was.open;
+    // and any check that was expanded
+    cur.querySelectorAll("details[data-keep][open]").forEach((d) => {
+      const twin = next.querySelector(`details[data-keep="${d.dataset.keep}"]`);
+      if (twin) twin.open = true;
+    });
     cur.replaceWith(next);
   }).catch(() => {});
 }

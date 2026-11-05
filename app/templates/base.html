@@ -34,7 +34,7 @@
           <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="6" rx="1"/><rect x="2" y="15" width="20" height="6" rx="1"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
           <span class="nav-label">Devices</span>
         </a>
-        <a id="apt-alert" class="apt-badge" href="/problems" title="Devices needing updates"
+        <a id="apt-alert" class="apt-badge" href="/health" title="Devices needing updates"
            {{ '' if (apt_alert_count | default(0)) else 'hidden' }}>
           <span id="apt-alert-count">{{ apt_alert_count | default(0) }}</span>
         </a>
@@ -48,16 +48,12 @@
         <span class="nav-label">Stacks</span>
       </a>
       <div class="nav-slot">
-        <a class="nav-item {{ 'active' if p.startswith('/problems') or p.startswith('/alerts') }}" href="/problems" title="Problems">
-          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-          <span class="nav-label">Problems</span>
+        <a class="nav-item {{ 'active' if p.startswith('/health') or p.startswith('/problems') or p.startswith('/alerts') }}" href="/health" title="Health">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="2 12 6 12 9 4 15 20 18 12 22 12"/></svg>
+          <span class="nav-label">Health</span>
         </a>
-        <a class="apt-badge pb-badge" href="/problems" title="{{ open_problems }} open, not acknowledged" {{ '' if open_problems else 'hidden' }}><span>{{ open_problems }}</span></a>
+        <a class="apt-badge pb-badge" href="/health" title="{{ open_problems }} open, not acknowledged" {{ '' if open_problems else 'hidden' }}><span>{{ open_problems }}</span></a>
       </div>
-      <a class="nav-item {{ 'active' if p.startswith('/status') }}" href="/status" title="Status">
-        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="2 12 6 12 9 4 15 20 18 12 22 12"/></svg>
-        <span class="nav-label">Status</span>
-      </a>
       <a class="nav-item {{ 'active' if p.startswith('/map') }}" href="/map" title="Map">
         <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="5" rx="1"/><rect x="2" y="17" width="6" height="5" rx="1"/><rect x="16" y="17" width="6" height="5" rx="1"/><path d="M12 7v5M5 17v-5h14v5"/></svg>
         <span class="nav-label">Map</span>

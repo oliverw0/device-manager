@@ -3,7 +3,7 @@
 {% block title %}Sent alerts - Pulse{% endblock %}
 {% block content %}
 <div class="page-head">
-  <h1>Problems</h1>
+  <h1>Health</h1>
   <span class="muted pb-sub">{{ day_total }} sent in 24h{% if day_failed %} · <span class="sn-bad">{{ day_failed }} failed</span>{% endif %}</span>
 </div>
 {{ ui.problems_tabs('sent') }}
