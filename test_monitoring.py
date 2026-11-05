@@ -97,6 +97,18 @@ with TestClient(app, base_url="http://testserver") as c:
     report(c, keys["plex-server"])
     SENT.clear()
 
+    # --- a PC that's switched off often: no problem, no push, quiet return ---
+    assert c.post(f"/devices/{ids['nas']}/alerting", data={"offline_ok": "true"}, follow_redirects=False).status_code == 303
+    with Session(engine) as s:
+        d = s.get(Device, ids["nas"]); d.last_seen_at = datetime.utcnow() - timedelta(minutes=10); s.add(d); s.commit()
+        assert monitor.check_offline_devices(s) == [] and not s.get(Device, ids["nas"]).is_online
+        problems.sync(s)
+        assert not s.exec(select(Problem).where(Problem.device_id == ids["nas"], Problem.key == "offline",
+                                                Problem.resolved_at == None)).all()  # noqa: E711
+    report(c, keys["nas"])
+    assert not SENT, SENT
+    assert c.post(f"/devices/{ids['nas']}/alerting", data={}, follow_redirects=False).status_code == 303  # unticked
+
     # --- offline: most of the fleet at once is Pulse's own network ---
     with Session(engine) as s:
         old = datetime.utcnow() - timedelta(minutes=10)

@@ -28,6 +28,7 @@ _COLUMN_MIGRATIONS = {
         "alert_mem_percent": "ALTER TABLE device ADD COLUMN alert_mem_percent INTEGER",
         "alert_disk_percent": "ALTER TABLE device ADD COLUMN alert_disk_percent INTEGER",
         "container_restarts": "ALTER TABLE device ADD COLUMN container_restarts VARCHAR",
+        "offline_ok": "ALTER TABLE device ADD COLUMN offline_ok BOOLEAN NOT NULL DEFAULT 0",
     },
     "servicecheck": {
         "grace_seconds": "ALTER TABLE servicecheck ADD COLUMN grace_seconds INTEGER NOT NULL DEFAULT 0",

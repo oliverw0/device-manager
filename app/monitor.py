@@ -50,6 +50,21 @@ def check_offline_devices(session: Session, now: datetime | None = None) -> list
         return []
     parent_of = topology.parents(devices)
     by_id = {d.id: d for d in devices}
+    # machines switched off on purpose (a PC) go offline quietly and don't count as an outage
+    for d in went:
+        if d.offline_ok:
+            d.offline_quiet = True
+    expected = [d for d in went if d.offline_ok]
+    online_before = [d for d in online_before if not d.offline_ok]
+    for d in expected:
+        d.is_online = False
+        session.add(AlertEvent(device_id=d.id, device_name=d.name, kind="offline",
+                               message=f"{d.name} went offline (switched off often, so no alert)"))
+        session.add(d)
+    went = [d for d in went if not d.offline_ok]
+    if not went:
+        session.commit()
+        return []
     for d in went:
         d.is_online = False
         last_seen = d.last_seen_at.strftime("%Y-%m-%d %H:%M:%S UTC")

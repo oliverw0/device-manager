@@ -72,6 +72,9 @@ class Device(SQLModel, table=True):
     # set when this device's offline push was held back (parent down, or Pulse
     # lost everything at once), so its recovery is quiet too
     offline_quiet: bool = False
+    # a machine that's switched off often (a desktop PC): going offline isn't a
+    # problem, isn't pushed, and doesn't count towards a "lost contact" storm
+    offline_ok: bool = False
 
     # per-device alert thresholds (percent); None = the global ALERT_*_PERCENT
     alert_cpu_percent: Optional[int] = None

@@ -326,6 +326,7 @@ def device_detail(request: Request, device_id: int, session: Session = Depends(g
             "parent_id": device.parent_id,
             "inferred_parent": next((d for d in everyone if d.id == inferred), None),
             "thresholds": {k: getattr(device, f"alert_{k}_percent") for k in ("cpu", "mem", "disk")},
+            "offline_ok": device.offline_ok,
             "defaults": {k: getattr(settings, f"alert_{k}_percent") for k in ("cpu", "mem", "disk")},
             "check_groups": groups,
             "prefill": {"name": request.query_params.get("check_name", ""), "target": request.query_params.get("check_target", "")},
@@ -382,11 +383,13 @@ def rename_device(device_id: int, name: str = Form(...), notes: Optional[str] = 
 
 @router.post("/devices/{device_id}/alerting")
 def update_alerting(device_id: int, parent: str = Form(""), cpu: str = Form(""), mem: str = Form(""),
-                    disk: str = Form(""), session: Session = Depends(get_session)):
-    """Runs on (parent: "" = from the power report, "0" = nothing) and this
-    device's alert thresholds (blank = the global default, 0 = off)."""
+                    disk: str = Form(""), offline_ok: bool = Form(False), session: Session = Depends(get_session)):
+    """Runs on (parent: "" = from the power report, "0" = nothing), this
+    device's alert thresholds (blank = the global default, 0 = off), and
+    whether being offline is normal for it (a PC that's switched off)."""
     device = session.get(Device, device_id)
     if device:
+        device.offline_ok = offline_ok
         device.parent_id = int(parent) if parent.strip().lstrip("-").isdigit() and int(parent) != device_id else None
         for key, value in (("cpu", cpu), ("mem", mem), ("disk", disk)):
             v = value.strip()

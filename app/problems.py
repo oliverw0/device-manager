@@ -98,7 +98,7 @@ def detect(d: Device, checks: list[ServiceCheck], now: datetime, host: Device | 
         if host is not None and not host.is_online:
             detail += f" Its host {host.name} is offline too."
         # checks still run against an offline device's services (a check can watch them from outside)
-        out = [_p("offline", "high", "Device", "Offline", detail)]
+        out = [] if d.offline_ok else [_p("offline", "high", "Device", "Offline", detail)]
         for c in checks:
             out += check_problems(c, now)
         return out
@@ -247,6 +247,7 @@ def digest(session: Session, now: datetime, disks_before: dict) -> tuple[str, di
     since = now - timedelta(hours=24)
     devices = {d.id: d for d in session.exec(select(Device)).all()}
     quiet = {i for i, d in devices.items() if d.alerts_muted(now)}
+    switched_off = {i for i, d in devices.items() if d.offline_ok}
     name = lambda i: devices[i].name if i in devices else "?"
     probs = [p for p in session.exec(select(Problem).where(
         (Problem.opened_at >= since) | (Problem.resolved_at >= since) | (Problem.resolved_at == None))).all()  # noqa: E711
@@ -258,6 +259,8 @@ def digest(session: Session, now: datetime, disks_before: dict) -> tuple[str, di
         if p.opened_at < since and p.resolved_at is None:
             continue  # older and still open: already in an earlier summary, on the Problems page
         if p.key == "offline":
+            if p.device_id in switched_off:
+                continue
             took = f"for {ago(((p.resolved_at or now) - p.opened_at).total_seconds())}" if p.resolved_at else "still"
             add("Went offline", f"{name(p.device_id)} at {_hm(p.opened_at)}, {took}" + ("" if p.resolved_at else " offline"))
         elif p.opened_at >= since and p.key != "updates":  # pending updates aren't news
