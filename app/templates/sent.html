@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+{% block title %}Sent alerts - Pulse{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Problems</h1>
+  <span class="muted pb-sub">{{ day_total }} sent in 24h{% if day_failed %} · <span class="sn-bad">{{ day_failed }} failed</span>{% endif %}</span>
+</div>
+{{ ui.problems_tabs('sent') }}
+
+<div class="sn-cards">
+  <section class="panel sn-card">
+    <h2>ntfy</h2>
+    {% if not ntfy_on %}<p class="sn-state bad">Not set up</p><p class="muted">Set <code>NTFY_URL</code>: no alert leaves Pulse until then.</p>
+    {% elif rows and not rows[0].ok %}<p class="sn-state bad">Last push failed</p><p class="muted">{{ rows[0].error }}</p>
+    {% else %}<p class="sn-state ok">Delivering</p><p class="muted">{% if rows %}Last push {{ rows[0].created_at | reltime }}.{% else %}Nothing sent yet.{% endif %}</p>{% endif %}
+  </section>
+  <section class="panel sn-card">
+    <h2>Watchdog</h2>
+    {% if not watchdog.configured %}<p class="sn-state warn">Off</p><p class="muted">Nothing outside the lab notices if Pulse stops. Set <code>WATCHDOG_URL</code> to a healthchecks.io (or Uptime Kuma push) URL.</p>
+    {% elif watchdog.ok is none %}<p class="sn-state">Starting</p><p class="muted">First ping after the next healthy sweep.</p>
+    {% elif watchdog.ok %}<p class="sn-state ok">Pinging</p><p class="muted">Last ping {{ watchdog.last | reltime }}.</p>
+    {% else %}<p class="sn-state bad">Not pinging</p><p class="muted">{{ watchdog.error }}</p>{% endif %}
+  </section>
+  <section class="panel sn-card">
+    <h2>Buttons</h2>
+    {% if public_url %}<p class="sn-state ok">On</p><p class="muted">Device alerts carry <b>Acknowledge</b> and <b>Mute 1h</b>, answered by {{ public_url }}.</p>
+    {% else %}<p class="sn-state warn">Off</p><p class="muted">Set the dashboard's public URL (Users page) to get Acknowledge and Mute buttons on alerts.</p>{% endif %}
+  </section>
+</div>
+
+<section class="panel" aria-label="Sent alerts">
+  <h2>Last {{ rows | length }} pushes</h2>
+  {% for r in rows %}
+  <div class="sn-row{{ ' failed' if not r.ok }}">
+    <span class="sn-time">{{ r.created_at | dt }}</span>
+    <span class="chip {{ 'bad' if not r.ok else 'warn' if r.priority in ('high', 'urgent', 'max') else 'neutral' }}">{{ 'failed' if not r.ok else r.priority }}</span>
+    <span class="sn-msg"><b>{{ r.title }}</b> {{ r.message }}{% if not r.ok %}<span class="sn-err">{{ r.error }}</span>{% endif %}</span>
+  </div>
+  {% else %}
+  <p class="muted" style="margin:0">Nothing sent yet.</p>
+  {% endfor %}
+</section>
+{% endblock %}

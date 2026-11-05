@@ -60,6 +60,42 @@ class Settings(BaseSettings):
     tls_warn_days: int = 14
     digest_hour: int = 8
 
+    # High problems nobody has acknowledged get a "still open" push every this
+    # many hours (0 turns reminders off).
+    reminder_hours: int = 8
+
+    # Watchdog: a URL Pulse calls after every healthy sweep (healthchecks.io,
+    # an Uptime Kuma push monitor, ...), so something outside the lab notices when
+    # Pulse itself, its machine or its alerting stops. Skipped while the last
+    # ntfy push failed, so a broken alert channel also shows up there.
+    watchdog_url: str = ""
+    watchdog_interval_seconds: int = 60
+
+    # Alert storms: when at least this many devices (and most of them) go quiet
+    # in the same sweep, send one push about Pulse's own network instead of one each.
+    storm_min_devices: int = 3
+
+    # SSH: alert when this many failed logins land in one report's window
+    # (SSH_LOG_WINDOW_MINUTES on the client; 0 = off), and on any successful
+    # login from an address outside private, Tailscale and loopback ranges.
+    ssh_failed_alert: int = 20
+    ssh_outside_login_alert: bool = True
+
+    # PBS checks: a backup group whose newest snapshot is older than this many
+    # hours is late; older than PBS_RETIRED_DAYS it's taken as a removed guest.
+    pbs_backup_max_age_hours: int = 26
+    pbs_retired_days: int = 14
+
+    # Hourly averages are kept this long for the 30-day / 90-day / 1-year charts.
+    long_history_days: int = 400
+
+    # Bearer token for /metrics (Prometheus) and /api/v1/summary (Homepage
+    # widget). Empty: both are off.
+    metrics_token: str = ""
+    # A read-only status page at /status/public, outside the login: check
+    # names and uptime only, no addresses or device names.
+    public_status: bool = False
+
     # Sign in with OpenID Connect (e.g. authentik). Set OIDC_ISSUER to the
     # provider's issuer URL (authentik: https://auth.example.com/application/o/<slug>/)
     # plus the client id/secret; the redirect URI to register is

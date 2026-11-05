@@ -22,6 +22,12 @@ _COLUMN_MIGRATIONS = {
         "apt_needs_update": "ALTER TABLE device ADD COLUMN apt_needs_update BOOLEAN",
         "alerts_muted_until": "ALTER TABLE device ADD COLUMN alerts_muted_until DATETIME",
         "alert_state": "ALTER TABLE device ADD COLUMN alert_state VARCHAR",
+        "parent_id": "ALTER TABLE device ADD COLUMN parent_id INTEGER",
+        "offline_quiet": "ALTER TABLE device ADD COLUMN offline_quiet BOOLEAN NOT NULL DEFAULT 0",
+        "alert_cpu_percent": "ALTER TABLE device ADD COLUMN alert_cpu_percent INTEGER",
+        "alert_mem_percent": "ALTER TABLE device ADD COLUMN alert_mem_percent INTEGER",
+        "alert_disk_percent": "ALTER TABLE device ADD COLUMN alert_disk_percent INTEGER",
+        "container_restarts": "ALTER TABLE device ADD COLUMN container_restarts VARCHAR",
     },
     "servicecheck": {
         "grace_seconds": "ALTER TABLE servicecheck ADD COLUMN grace_seconds INTEGER NOT NULL DEFAULT 0",
@@ -30,6 +36,12 @@ _COLUMN_MIGRATIONS = {
         "cert_checked_at": "ALTER TABLE servicecheck ADD COLUMN cert_checked_at DATETIME",
         "secret": "ALTER TABLE servicecheck ADD COLUMN secret VARCHAR NOT NULL DEFAULT ''",
         "summary": "ALTER TABLE servicecheck ADD COLUMN summary VARCHAR NOT NULL DEFAULT ''",
+        "expect": "ALTER TABLE servicecheck ADD COLUMN expect VARCHAR NOT NULL DEFAULT ''",
+        "group": "ALTER TABLE servicecheck ADD COLUMN \"group\" VARCHAR NOT NULL DEFAULT ''",
+        "issues": "ALTER TABLE servicecheck ADD COLUMN issues VARCHAR NOT NULL DEFAULT ''",
+    },
+    "problem": {
+        "reminded_at": "ALTER TABLE problem ADD COLUMN reminded_at DATETIME",
     },
     "reporthistory": {
         "power_w": "ALTER TABLE reporthistory ADD COLUMN power_w FLOAT",

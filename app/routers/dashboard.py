@@ -6,14 +6,14 @@ from zoneinfo import ZoneInfo
 AEST = ZoneInfo("Australia/Sydney")  # handles AEST/AEDT automatically
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, delete, select
 
-from .. import gaming, remote
+from .. import gaming, remote, topology
 from ..config import settings
 from ..database import get_session
-from ..models import AlertEvent, ContainerHistory, Device, ReportHistory, ServiceCheck, generate_api_key
+from ..models import AlertEvent, ContainerHistory, Device, HourlyHistory, ReportHistory, ServiceCheck, generate_api_key
 
 from ..assets import STATIC_VERSION
 
@@ -88,6 +88,9 @@ templates.env.filters["uptime"] = _fmt_uptime
 templates.env.filters["dt"] = _fmt_dt
 templates.env.filters["reltime"] = _fmt_reltime
 templates.env.globals["psu_presets"] = remote.PSU_PRESETS
+templates.env.globals["pbs_late_hours"] = settings.pbs_backup_max_age_hours
+templates.env.globals["sustained_minutes"] = settings.alert_sustained_minutes
+templates.env.filters["fromjson"] = json.loads
 
 
 # Distros with their own icon; anything else Linux gets Tux (see .os-* in style.css).
@@ -156,7 +159,7 @@ def index(request: Request, session: Session = Depends(get_session)):
 def _fleet(session: Session) -> list[dict]:
     """Devices for the front page cards: serialized plus a short CPU sparkline."""
     out = []
-    for d in session.exec(select(Device).order_by(Device.name)).all():
+    for d in sorted(session.exec(select(Device)).all(), key=lambda d: d.name.lower()):
         s = serialize_device(d)
         rows = session.exec(
             select(ReportHistory.timestamp, ReportHistory.cpu_percent).where(ReportHistory.device_id == d.id)
@@ -302,6 +305,9 @@ def device_detail(request: Request, device_id: int, session: Session = Depends(g
     guest_links, power_share = _power_links(session, device)
     # gaming PCs only: on a server the same high-draw plateaus are builds or backups
     gaming_week = gaming.week_summary(session, device.id, settings.history_retention_days) if remote.is_windows(device) else None
+    everyone = sorted(session.exec(select(Device)).all(), key=lambda d: d.name.lower())
+    inferred = topology.inferred_parent(everyone, device)
+    groups = sorted({c.group for c in session.exec(select(ServiceCheck)).all() if c.group})
     return templates.TemplateResponse(
         "device_detail.html",
         {
@@ -316,6 +322,13 @@ def device_detail(request: Request, device_id: int, session: Session = Depends(g
             "alerts": alerts,
             "apt_alert_count": apt_alert_count,
             "checks": checks,
+            "others": [d for d in everyone if d.id != device.id],
+            "parent_id": device.parent_id,
+            "inferred_parent": next((d for d in everyone if d.id == inferred), None),
+            "thresholds": {k: getattr(device, f"alert_{k}_percent") for k in ("cpu", "mem", "disk")},
+            "defaults": {k: getattr(settings, f"alert_{k}_percent") for k in ("cpu", "mem", "disk")},
+            "check_groups": groups,
+            "prefill": {"name": request.query_params.get("check_name", ""), "target": request.query_params.get("check_target", "")},
         },
     )
 
@@ -345,6 +358,44 @@ def _power_links(session: Session, device: Device):
     return names, share
 
 
+@router.post("/devices/{device_id}/rename")
+def rename_device(device_id: int, name: str = Form(...), notes: Optional[str] = Form(None),
+                  session: Session = Depends(get_session)):
+    """Name (and notes) from the device page. Names are unique; the client
+    doesn't care, it reports by API key."""
+    device = session.get(Device, device_id)
+    if device is None:
+        return JSONResponse({"detail": "Unknown device"}, status_code=404)
+    name = name.strip()[:64]
+    if not name:
+        return JSONResponse({"detail": "The name can't be empty."}, status_code=400)
+    taken = session.exec(select(Device).where(Device.name == name, Device.id != device_id)).first()
+    if taken:
+        return JSONResponse({"detail": f"Another device is already called {name}."}, status_code=400)
+    device.name = name
+    if notes is not None:
+        device.notes = notes.strip()[:200]
+    session.add(device)
+    session.commit()
+    return {"ok": True, "name": device.name, "notes": device.notes}
+
+
+@router.post("/devices/{device_id}/alerting")
+def update_alerting(device_id: int, parent: str = Form(""), cpu: str = Form(""), mem: str = Form(""),
+                    disk: str = Form(""), session: Session = Depends(get_session)):
+    """Runs on (parent: "" = from the power report, "0" = nothing) and this
+    device's alert thresholds (blank = the global default, 0 = off)."""
+    device = session.get(Device, device_id)
+    if device:
+        device.parent_id = int(parent) if parent.strip().lstrip("-").isdigit() and int(parent) != device_id else None
+        for key, value in (("cpu", cpu), ("mem", mem), ("disk", disk)):
+            v = value.strip()
+            setattr(device, f"alert_{key}_percent", max(0, min(100, int(v))) if v.isdigit() else None)
+        session.add(device)
+        session.commit()
+    return RedirectResponse(url=f"/devices/{device_id}#settings", status_code=303)
+
+
 @router.post("/devices/{device_id}/mute")
 def mute_device(device_id: int, minutes: int = Form(...), session: Session = Depends(get_session)):
     """minutes > 0 mutes for that long, -1 mutes until unmuted, 0 unmutes."""
@@ -359,8 +410,41 @@ def mute_device(device_id: int, minutes: int = Form(...), session: Session = Dep
     return RedirectResponse(url=f"/devices/{device_id}", status_code=303)
 
 
+# range -> (days, bucket hours) for the long charts, read from HourlyHistory
+RANGES = {"7d": (7, 1), "30d": (30, 2), "90d": (90, 6), "1y": (365, 24)}
+
+
+def long_history(session: Session, device_id: int, days: int, bucket_hours: int, now: datetime | None = None) -> list[dict]:
+    """Hourly averages over `days`, merged into buckets of bucket_hours
+    (averages weighted by samples; disk is the highest)."""
+    now = now or datetime.utcnow()
+    rows = session.exec(select(HourlyHistory).where(HourlyHistory.device_id == device_id,
+                                                    HourlyHistory.hour >= now - timedelta(days=days))
+                        .order_by(HourlyHistory.hour)).all()
+    out: dict[datetime, list] = {}
+    for r in rows:
+        h = r.hour - timedelta(hours=r.hour.hour % bucket_hours) if bucket_hours > 1 else r.hour
+        out.setdefault(h, []).append(r)
+    result = []
+    for start, rs in out.items():
+        n = sum(r.samples for r in rs) or len(rs)
+        w = lambda attr: sum(getattr(r, attr) * (r.samples or 1) for r in rs) / n  # noqa: E731
+        pw = [(r.power_w, r.samples or 1) for r in rs if r.power_w is not None]
+        result.append({
+            "timestamp": start.isoformat(),
+            "cpu_percent": round(w("cpu_percent"), 1),
+            "mem_percent": round(w("mem_percent"), 1),
+            "disk_percent": max(r.disk_percent for r in rs),
+            "power_w": round(sum(p * k for p, k in pw) / sum(k for _, k in pw), 1) if pw else None,
+        })
+    return result
+
+
 @router.get("/devices/{device_id}/history.json")
-def device_history(device_id: int, session: Session = Depends(get_session)):
+def device_history(device_id: int, range: str = "", session: Session = Depends(get_session)):
+    """No range: the newest 500 reports. range=7d|30d|90d|1y: hourly averages."""
+    if range in RANGES:
+        return long_history(session, device_id, *RANGES[range])
     rows = session.exec(
         select(ReportHistory)
         .where(ReportHistory.device_id == device_id)

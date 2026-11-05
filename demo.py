@@ -33,9 +33,19 @@ async def _no_auth(self, request, call_next):
 
 auth_middleware.AdminAuthMiddleware.dispatch = _no_auth
 
+from app import monitor  # noqa: E402
+
+
+async def _no_monitor():  # keep the seeded state: no sweeps marking fake devices offline or running fake checks
+    return None
+
+
+monitor.run_forever = _no_monitor
+
 from app.database import engine, init_db  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models import AlertEvent, CheckDay, ContainerHistory, Device, Problem, ReportHistory, ServiceCheck, User  # noqa: E402
+from app.models import (AlertEvent, CheckDay, ContainerHistory, Device, HourlyHistory, NotificationLog, Problem,  # noqa: E402
+                        ReportHistory, ServiceCheck, User)
 from sqlmodel import Session, delete, select  # noqa: E402
 
 GIB = 1073741824
@@ -70,12 +80,13 @@ def disk(mount, label, percent, total_g):
             "used_bytes": int(total_g * GIB * percent / 100), "total_bytes": total_g * GIB}
 
 
-def container(name, image, running=True, cpu=None, mem=None, stack=None):
+def container(name, image, running=True, cpu=None, mem=None, stack=None, health=None, restarts=0, ports=()):
     return {
         "name": name, "image": image,
         "status": "running" if running else "exited (1) 3 hours ago",
         "started_at": (NOW - timedelta(days=2)).isoformat(),
         "stack": stack, "cpu_percent": cpu, "mem_percent": mem,
+        "health": health, "restart_count": restarts, "ports": list(ports),
     }
 
 
@@ -93,8 +104,8 @@ DEVICES = [
                       "last_accepted_user": "deploy", "last_accepted_ip": "100.64.0.5",
                       "last_accepted_at": NOW.isoformat(), "last_failed_ip": None},
             containers=[
-                container("caddy", "caddy:2", cpu=1.2, mem=3.4, stack="edge"),
-                container("app", "ghcr.io/acme/app:latest", cpu=12.5, mem=22.0, stack="edge"),
+                container("caddy", "caddy:2", cpu=1.2, mem=3.4, stack="edge", ports=(80, 443)),
+                container("app", "ghcr.io/acme/app:latest", cpu=12.5, mem=22.0, stack="edge", health="unhealthy", ports=(8080,)),
                 container("redis", "redis:7", cpu=0.4, mem=1.1, stack="edge"),
                 container("watchtower", "containrrr/watchtower", cpu=0.1, mem=0.6),
             ],
@@ -128,7 +139,7 @@ DEVICES = [
             ssh_auth={"recent_accepted_count": 0, "recent_failed_count": 0,
                       "last_accepted_user": None, "last_failed_ip": None},
             containers=[
-                container("homeassistant", "ghcr.io/home-assistant/home-assistant:stable", cpu=6.0, mem=18.0),
+                container("homeassistant", "ghcr.io/home-assistant/home-assistant:stable", cpu=6.0, mem=18.0, health="healthy", ports=(8123,)),
                 container("mosquitto", "eclipse-mosquitto:2", running=False),
             ],
             apt={"available": True, "last_update_age_seconds": 5 * 86400, "upgradable": 2},
@@ -201,7 +212,7 @@ CHECKS = [
 def seed():
     init_db()
     with Session(engine) as s:
-        for t in (AlertEvent, CheckDay, ContainerHistory, Problem, ReportHistory, ServiceCheck, Device, User):
+        for t in (AlertEvent, CheckDay, ContainerHistory, HourlyHistory, NotificationLog, Problem, ReportHistory, ServiceCheck, Device, User):
             s.exec(delete(t))
         s.commit()
 
@@ -269,6 +280,29 @@ def seed():
                            cert_expires_at=NOW + timedelta(days=9), cert_checked_at=NOW))
         s.commit()
         # 30 days of uptime with a few bad days, and some problems that already cleared
+        # checks for the Status page: DNS, Proxmox and PBS with findings
+        pve, nas = by_name["proxmox-host"].id, by_name["backup-nas"].id
+        s.add(ServiceCheck(device_id=pve, name="adguard primary", kind="dns", target="pulse.wiles.au@192.168.50.146",
+                           last_status="up", last_latency_ms=4.0, last_checked_at=NOW))
+        s.add(ServiceCheck(device_id=pve, name="adguard secondary", kind="dns", target="pulse.wiles.au@192.168.50.225",
+                           last_status="up", last_latency_ms=6.0, last_checked_at=NOW))
+        s.add(ServiceCheck(device_id=pve, name="authentik", kind="http", target="https://auth.wiles.au", expect="authentik",
+                           group="Auth", last_status="up", last_latency_ms=120.0, last_checked_at=NOW))
+        s.add(ServiceCheck(device_id=pve, name="pve", kind="proxmox", target="https://192.168.50.30:8006", secret="x",
+                           interval_seconds=300, last_status="down", last_checked_at=NOW,
+                           summary="9/11 guests running, fullest storage 95%, 1 stopped that should run",
+                           last_error="Storage local-lvm is 95% full; adguard (105) is stopped",
+                           issues=json.dumps([
+                               {"key": "storage:pve/local-lvm", "severity": "high", "title": "Storage local-lvm is 95% full",
+                                "detail": "lvmthin on pve: 7 GiB left of 141 GiB."},
+                               {"key": "guest:pve:105", "severity": "warning", "title": "adguard (105) is stopped",
+                                "detail": "Set to start at boot on pve, but not running."}])))
+        s.add(ServiceCheck(device_id=nas, name="pbs", kind="pbs", target="https://192.168.50.81:8007", secret="x",
+                           interval_seconds=300, last_status="down", last_checked_at=NOW,
+                           summary="9 backups, 1 GC, all OK; 1 guest late",
+                           issues=json.dumps([{"key": "late:nas:ct/101", "severity": "warning",
+                                               "title": "authentik: last backup 31h ago", "detail": "ct/101 on datastore nas."}])))
+        s.commit()
         for c in s.exec(select(ServiceCheck)).all():
             for i in range(30):
                 bad = random.random() < 0.08
@@ -282,11 +316,43 @@ def seed():
             s.add(Problem(device_id=by_name[name].id, key=key, severity=sev, source=src, title=title,
                           opened_at=NOW - timedelta(hours=opened, minutes=lasted),
                           resolved_at=NOW - timedelta(hours=opened)))
+        # a week of incidents for the Timeline
+        for name, key, sev, title, hours_ago, minutes in [
+            ("proxmox-host", "offline", "high", "Offline", 70, 25), ("web-vm-01", "offline", "high", "Offline", 70, 26),
+            ("db-vm-01", "cpu", "warning", "CPU high", 50, 95), ("pi-livingroom", "container:mosquitto", "warning", "mosquitto exited", 120, 300),
+            ("db-vm-01", "check:1", "high", "postgres TCP is down", 26, 12), ("gaming-pc", "restarts:steam", "high", "steam keeps restarting", 100, 40),
+            ("web-vm-01", "health:app", "warning", "app unhealthy", 3, 0),
+        ]:
+            s.add(Problem(device_id=by_name[name].id, key=key, severity=sev, source="Demo", title=title,
+                          opened_at=NOW - timedelta(hours=hours_ago, minutes=minutes),
+                          resolved_at=None if minutes == 0 else NOW - timedelta(hours=hours_ago)))
+        # pushes for Sent alerts, one that failed
+        for i, (title, msg, prio, ok) in enumerate([
+            ("Container unhealthy", "web-vm-01: app unhealthy. Running, but its Docker healthcheck is failing.", "default", True),
+            ("Proxmox", "proxmox-host: pve: Storage local-lvm is 95% full. lvmthin on pve: 7 GiB left of 141 GiB.", "high", True),
+            ("Daily summary", "Backups\n· pbs: 9 backups, 1 GC, all OK", "default", False),
+            ("Device offline", "proxmox-host stopped responding. Its guests are unreachable too: db-vm-01, web-vm-01", "high", True),
+        ]):
+            s.add(NotificationLog(created_at=NOW - timedelta(hours=i * 9 + 1), title=title, message=msg, priority=prio, ok=ok,
+                                  error="" if ok else "ntfy answered 502: Bad Gateway"))
+        # 30 days of hourly averages for the long charts
+        for h in range(30 * 24):
+            hour = (NOW - timedelta(hours=h)).replace(minute=0, second=0, microsecond=0)
+            for dev in by_name.values():
+                sys = json.loads(dev.last_report_json)["system"]
+                wave = 10 * __import__("math").sin(h / 24 * 6.283)
+                s.add(HourlyHistory(device_id=dev.id, hour=hour, samples=12,
+                                    cpu_percent=max(0, min(100, sys["cpu_percent"] + wave + random.uniform(-4, 4))),
+                                    mem_percent=max(0, min(100, sys["mem_percent"] + random.uniform(-3, 3))),
+                                    disk_percent=max(0, sys["disk_percent"] - h / 100)))
         s.commit()
 
 
 if __name__ == "__main__":
     seed()
+    from app import problems as _problems
+    with Session(engine) as _s:
+        _problems.sync(_s)  # open problems from the seeded state (the monitor loop is off here)
     import uvicorn
     print("\n  Demo UI:  http://127.0.0.1:8000   (auth bypassed, fake data)\n")
     uvicorn.run(app, host="127.0.0.1", port=8000)

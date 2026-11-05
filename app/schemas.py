@@ -58,6 +58,9 @@ class DockerContainerInfo(BaseModel):
     stack: Optional[str] = None  # docker compose project name
     cpu_percent: Optional[float] = None
     mem_percent: Optional[float] = None
+    health: Optional[str] = None         # Docker healthcheck: healthy | unhealthy | starting; None = no healthcheck
+    restart_count: Optional[int] = None  # restarts by the restart policy since created (loops show here)
+    ports: List[int] = []                # published host ports
 
 
 class AptInfo(BaseModel):

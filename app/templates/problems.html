@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_macros.html" as ui %}
 {% block title %}Problems - Pulse{% endblock %}
 
 {# Terminal (when SSH is set up) and acknowledge: the row itself says what's wrong. #}
@@ -18,6 +19,7 @@
   <span class="spacer"></span>
   {% if new_count %}<button type="button" class="secondary" onclick="ackAll(this)">Ack all new</button>{% endif %}
 </div>
+{{ ui.problems_tabs('now') }}
 
 
 {% macro row(r) %}
@@ -48,7 +50,7 @@
 
 <div class="pb-cols">
   <section class="panel pb-checks" id="checks" aria-label="Checks">
-    <h2>Checks · 30 days</h2>
+    <h2>Checks · 30 days <a class="linkish pb-more" href="/status">Status page →</a></h2>
     {% for x in checks %}{% set c = x.c %}
     <div class="pb-check{{ ' paused' if not c.enabled }}">
       <span class="pb-sq st-{{ c.last_status if c.enabled else 'unknown' }}"></span>

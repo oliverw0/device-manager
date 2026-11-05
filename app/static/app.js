@@ -302,10 +302,9 @@ function renderFleet() {
 }
 
 function renderDeviceRows(devices) {
-  // worst first: offline / red issues, then amber, then healthy; name within a group
+  // A-Z by name (the grid fills left to right, then down); case-insensitive, "lxc-9" before "lxc-10"
   devices.forEach((d) => { d._issues = deviceIssues(d); });
-  const rank = (d) => (d._issues.length ? SEV_RANK[d._issues[0].sev] : 2);
-  FLEET.devices = devices.slice().sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+  FLEET.devices = devices.slice().sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true }));
   renderFleet();
   renderClientBanner();
 
@@ -566,7 +565,27 @@ function loadHistoryChart(url, canvasId, opts = {}) {
     draw();
   });
 
-  const render = () => fetch(url).then((r) => r.json()).then((rows) => {
+  // opts.rangeToggle: id of a Live / 7d / 30d / 90d / 1y button group; the long
+  // ranges are hourly averages (?range=), so they refresh rarely
+  let src = url, lastLong = 0;
+  const toggle = opts.rangeToggle && document.getElementById(opts.rangeToggle);
+  if (toggle) {
+    toggle.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-range]");
+      if (!b) return;
+      toggle.querySelectorAll("[data-range]").forEach((x) => x.classList.toggle("active", x === b));
+      src = b.dataset.range ? `${url}?range=${b.dataset.range}` : url;
+      const note = document.getElementById("history-note");
+      if (note) note.textContent = b.dataset.range ? " · hourly averages, disk at its highest" : "";
+      lastLong = 0;
+      render();
+    });
+  }
+
+  const render = () => {
+    if (src !== url && Date.now() - lastLong < 300000) return Promise.resolve();
+    if (src !== url) lastLong = Date.now();
+    return fetch(src).then((r) => r.json()).then((rows) => {
     // the time range comes from the whole history (every chart of this device
     // fetches the same rows), so Hardware usage and Power line up in time
     state.range = rows.length > 1 ? [toMs(rows[0].timestamp), toMs(rows[rows.length - 1].timestamp)] : null;
@@ -575,6 +594,7 @@ function loadHistoryChart(url, canvasId, opts = {}) {
     if (opts.onData) opts.onData(state.rows, state.max);
     draw();
   }).catch(() => {});
+  };
   render();
   PAGE_TIMERS.push(setInterval(render, 10000));
 }
@@ -1571,4 +1591,50 @@ function closeLogs() {
   clearInterval(LOGS_TIMER);
   LOGS_TIMER = null;
   hideSection("logs-section");
+}
+
+/* ---------- rename a device (device page pencil) ---------- */
+function openRename() {
+  const dlg = document.getElementById("rename-dialog");
+  if (!dlg) return;
+  const form = document.getElementById("rename-form");
+  document.getElementById("rename-error").hidden = true;
+  if (!form.dataset.wired) {
+    form.dataset.wired = "1";
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const err = document.getElementById("rename-error");
+      const btn = form.querySelector('button[type="submit"]');
+      btn.disabled = true;
+      try {
+        const r = await fetch(`/devices/${form.dataset.deviceId}/rename`, { method: "POST", body: new FormData(form) });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) { err.textContent = data.detail || "Couldn't rename it."; err.hidden = false; return; }
+        location.reload();
+      } finally { btn.disabled = false; }
+    });
+  }
+  dlg.showModal();
+  form.elements.name.select();
+}
+
+/* ---------- live pages: refetch one region every few seconds ---------- */
+function initLiveRegion(id, ms) {
+  const tick = () => fetch(location.pathname + location.search, { headers: { "X-Boost": "1" } }).then((r) => r.text()).then((html) => {
+    const next = new DOMParser().parseFromString(html, "text/html").getElementById(id);
+    const cur = document.getElementById(id);
+    if (!next || !cur || document.querySelector("dialog[open]")) return;
+    if (cur.contains(document.activeElement) && document.activeElement !== document.body) return;  // don't yank focus
+    cur.replaceWith(next);
+  }).catch(() => {});
+  if (document.getElementById(id)) PAGE_TIMERS.push(setInterval(tick, ms));
+}
+
+/* ---------- device page: edit a check in place ---------- */
+function toggleCheckEdit(btn) {
+  const form = btn.closest(".check-item").nextElementSibling;
+  if (!form || !form.classList.contains("check-edit")) return;
+  form.hidden = !form.hidden;
+  btn.setAttribute("aria-expanded", String(!form.hidden));
+  if (!form.hidden) form.elements.name.focus();
 }

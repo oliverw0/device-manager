@@ -2,9 +2,12 @@
 
 detect() turns a device's latest report, its checks and alert state into a list
 of problems; sync() runs every monitor sweep, opening new ones and resolving
-ones that have cleared. Offline, thresholds, containers, updates and service
-checks already push to ntfy where they're detected (api.py, monitor.py), so
-sync() only pushes for what's new here: missed heartbeats and certificates.
+ones that have cleared. Offline, thresholds, stopped containers, updates and
+http/tcp/dns checks already push to ntfy where they're detected (api.py,
+monitor.py), so sync() only pushes problems marked "push" here: missed
+heartbeats, certificates, PBS and Proxmox findings, unhealthy or restart-looping
+containers. High problems nobody acknowledges get a reminder every
+REMINDER_HOURS.
 """
 import json
 import logging
@@ -35,8 +38,24 @@ def ago(seconds: float) -> str:
     return f"{s // 86400}d" + (f" {s % 86400 // 3600}h" if s % 86400 // 3600 else "")
 
 
-def _p(key, severity, source, title, detail=""):
-    return {"key": key, "severity": severity, "source": source, "title": title, "detail": detail}
+def _p(key, severity, source, title, detail="", push=False):
+    return {"key": key, "severity": severity, "source": source, "title": title, "detail": detail, "push": push}
+
+
+RESTART_WINDOW = 30 * 60
+RESTART_LOOP = 3  # restarts within the window
+
+
+def restart_loops(d: Device, now: float | None = None) -> dict[str, int]:
+    """{container: restarts in the last 30 minutes} for those over RESTART_LOOP.
+    From Device.container_restarts, which api.py keeps: [[epoch, count], ...]."""
+    now = now or datetime.utcnow().replace(tzinfo=timezone.utc).timestamp()
+    out = {}
+    for name, pts in (json.loads(d.container_restarts) if d.container_restarts else {}).items():
+        counts = [c for t, c in pts if now - t <= RESTART_WINDOW]
+        if counts and max(counts) - min(counts) >= RESTART_LOOP:
+            out[name] = max(counts) - min(counts)
+    return out
 
 
 def check_problems(c: ServiceCheck, now: datetime) -> list[dict]:
@@ -47,12 +66,17 @@ def check_problems(c: ServiceCheck, now: datetime) -> list[dict]:
         if c.last_status == "down":
             last = f"Last ping {ago((now - c.last_checked_at).total_seconds())} ago." if c.last_checked_at else "No ping yet."
             out.append(_p(f"check:{c.id}", "warning", "Heartbeat", f"{c.name} missed",
-                          f"Expected every {ago(c.interval_seconds)} (+{ago(c.grace_seconds)} grace). {last}"))
+                          f"Expected every {ago(c.interval_seconds)} (+{ago(c.grace_seconds)} grace). {last}", push=True))
         return out
-    if c.kind == "pbs":
-        if c.last_status == "down":
-            title = f"{c.name}: backup task failed" if c.summary else f"{c.name}: can't read PBS"
-            out.append(_p(f"check:{c.id}", "high", "Backups", title, c.last_error or ""))
+    if c.kind in ("pbs", "proxmox"):
+        source = "Backups" if c.kind == "pbs" else "Proxmox"
+        issues = json.loads(c.issues) if c.issues else []
+        for i in issues:
+            out.append(_p(f"check:{c.id}:{i['key']}", i.get("severity") or "warning", source,
+                          f"{c.name}: {i['title']}", i.get("detail") or "", push=True))
+        if c.last_status == "down" and not issues:
+            what = "PBS" if c.kind == "pbs" else "Proxmox"
+            out.append(_p(f"check:{c.id}", "high", source, f"{c.name}: can't read {what}", c.last_error or "", push=True))
         return out
     if c.last_status == "down":
         out.append(_p(f"check:{c.id}", "high", "Check", f"{c.name} is down", c.last_error or c.target))
@@ -61,23 +85,30 @@ def check_problems(c: ServiceCheck, now: datetime) -> list[dict]:
         if days < settings.tls_warn_days:
             when = "has expired" if days < 0 else f"expires in {int(days)} day{'s' if int(days) != 1 else ''}"
             out.append(_p(f"cert:{c.id}", "high" if days < 3 else "warning", "Certificate",
-                          f"{c.name} certificate {when}", f"{c.target} · {c.cert_expires_at:%Y-%m-%d}"))
+                          f"{c.name} certificate {when}", f"{c.target} · {c.cert_expires_at:%Y-%m-%d}", push=True))
     return out
 
 
-def detect(d: Device, checks: list[ServiceCheck], now: datetime) -> list[dict]:
+def detect(d: Device, checks: list[ServiceCheck], now: datetime, host: Device | None = None) -> list[dict]:
+    """host: the machine d runs on (topology.parents), to say so when both are down."""
     if not d.last_seen_at:
         return []  # never reported: a device being set up, not a problem yet
     if not d.is_online:
-        return [_p("offline", "high", "Device", "Offline",
-                   f"No report for {ago((now - d.last_seen_at).total_seconds())} (last seen {d.last_seen_at:%Y-%m-%d %H:%M} UTC).")]
+        detail = f"No report for {ago((now - d.last_seen_at).total_seconds())} (last seen {d.last_seen_at:%Y-%m-%d %H:%M} UTC)."
+        if host is not None and not host.is_online:
+            detail += f" Its host {host.name} is offline too."
+        # checks still run against an offline device's services (a check can watch them from outside)
+        out = [_p("offline", "high", "Device", "Offline", detail)]
+        for c in checks:
+            out += check_problems(c, now)
+        return out
     rep = json.loads(d.last_report_json) if d.last_report_json else {}
     sys = rep.get("system") or {}
     out = []
     disks = sys.get("disks") or [{"mount": "Disk", "percent": sys.get("disk_percent") or 0,
                                   "used_bytes": sys.get("disk_used_bytes"), "total_bytes": sys.get("disk_total_bytes")}]
     for dk in disks:
-        if (dk.get("percent") or 0) >= settings.alert_disk_percent > 0:
+        if (dk.get("percent") or 0) >= d.threshold("disk") > 0:
             mount = (dk.get("mount") or "Disk").rstrip("\\") or "/"
             left = f"About {(dk['total_bytes'] - dk['used_bytes']) / GIB:.1f} GiB left." if dk.get("total_bytes") and dk.get("used_bytes") is not None else ""
             out.append(_p(f"disk:{dk.get('mount')}", "high", f"Disk {mount}", f"{mount} is {dk['percent']:.0f}% full", left))
@@ -95,9 +126,20 @@ def detect(d: Device, checks: list[ServiceCheck], now: datetime) -> list[dict]:
         title = f"{n} {'Windows ' if windows else ''}updates pending" if n else "Package list is stale" if n == 0 else "Updates pending"
         age = apt.get("last_update_age_seconds")
         out.append(_p("updates", "warning", "Updates", title, f"Package list refreshed {ago(age)} ago." if age and not windows else ""))
+    loops = restart_loops(d, now.replace(tzinfo=timezone.utc).timestamp())
     for c in rep.get("docker_containers") or []:
+        if c["name"] in loops:
+            out.append(_p(f"restarts:{c['name']}", "high", "Container", f"{c['name']} keeps restarting",
+                          f"{loops[c['name']]} restarts in the last 30 minutes. Check its logs.", push=True))
         if c.get("status") != "running":
             out.append(_p(f"container:{c['name']}", "warning", "Container", f"{c['name']} {c.get('status') or 'stopped'}", c.get("image") or ""))
+        elif c.get("health") == "unhealthy":
+            out.append(_p(f"health:{c['name']}", "warning", "Container", f"{c['name']} unhealthy",
+                          "Running, but its Docker healthcheck is failing.", push=True))
+    if state.get("ssh_fail"):
+        auth = rep.get("ssh_auth") or {}
+        out.append(_p("ssh_fail", "warning", "SSH", f"{auth.get('recent_failed_count') or 'Many'} failed SSH logins",
+                      f"Latest from {auth.get('last_failed_ip') or '?'}. Someone may be guessing passwords."))
     for c in checks:
         out += check_problems(c, now)
     return out
@@ -106,14 +148,18 @@ def detect(d: Device, checks: list[ServiceCheck], now: datetime) -> list[dict]:
 def sync(session: Session, now: datetime | None = None) -> list[Problem]:
     """Open/refresh/resolve problems. Returns the newly opened ones."""
     now = now or datetime.utcnow()
+    from .topology import parents
     devices = {d.id: d for d in session.exec(select(Device)).all()}
+    parent_of = parents(list(devices.values()))
     checks = session.exec(select(ServiceCheck)).all()
     open_ = {(p.device_id, p.key): p for p in session.exec(select(Problem).where(Problem.resolved_at == None)).all()}  # noqa: E711
-    seen, new = set(), []
+    seen, new, push = set(), [], set()
     for d in devices.values():
-        for f in detect(d, [c for c in checks if c.device_id == d.id], now):
+        for f in detect(d, [c for c in checks if c.device_id == d.id], now, devices.get(parent_of.get(d.id))):
             k = (d.id, f["key"])
             seen.add(k)
+            if f.pop("push"):
+                push.add(k)
             p = open_.get(k)
             if p is None:
                 p = Problem(device_id=d.id, opened_at=now, **f)
@@ -128,10 +174,34 @@ def sync(session: Session, now: datetime | None = None) -> list[Problem]:
     session.commit()
     for p in new:
         d = devices[p.device_id]
-        if p.source in ("Heartbeat", "Certificate") and not d.alerts_muted(now):
-            notifier.send(f"{d.name}: {p.title}. {p.detail}", title=p.source,
-                          priority="high" if p.severity == "high" else "default", tags="warning")
+        if (p.device_id, p.key) in push and not d.alerts_muted(now):
+            notifier.send(f"{d.name}: {p.title}. {p.detail}".strip(), title=p.source,
+                          priority="high" if p.severity == "high" else "default", tags="warning",
+                          device_id=d.id, key=p.key)
+    remind(session, devices, now)
     return new
+
+
+def remind(session: Session, devices: dict, now: datetime) -> list[str]:
+    """One "still open" push per REMINDER_HOURS for each high problem nobody
+    has acknowledged. Returns the messages."""
+    hours = settings.reminder_hours
+    if hours <= 0:
+        return []
+    due = now - timedelta(hours=hours)
+    out = []
+    for p in session.exec(select(Problem).where(Problem.resolved_at == None, Problem.acked_at == None,  # noqa: E711
+                                                Problem.severity == "high")).all():
+        d = devices.get(p.device_id)
+        if d is None or (p.reminded_at or p.opened_at) > due or d.alerts_muted(now):
+            continue
+        msg = f"{d.name}: {p.title}, still open after {ago((now - p.opened_at).total_seconds())}. Acknowledge it if it can wait."
+        notifier.send(msg, title="Still open", priority="default", tags="hourglass", device_id=d.id, key=p.key)
+        p.reminded_at = now
+        session.add(p)
+        out.append(msg)
+    session.commit()
+    return out
 
 
 def record_check(session: Session, check_id: int, ok: bool, now: datetime) -> None:
@@ -217,16 +287,16 @@ def digest(session: Session, now: datetime, disks_before: dict) -> tuple[str, di
 
     checks = {c.id: c for c in session.exec(select(ServiceCheck)).all()}
     for c in checks.values():
-        if c.kind == "pbs" and c.enabled:
-            add("Backups", f"{c.name}: {c.summary or c.last_error or 'not read yet'}"
-                           + (f" ({c.last_error})" if c.summary and c.last_error else ""))
+        if c.kind in ("pbs", "proxmox") and c.enabled:
+            add("Backups" if c.kind == "pbs" else "Proxmox", f"{c.name}: {c.summary or c.last_error or 'not read yet'}"
+                + (f" ({c.last_error})" if c.summary and c.last_error else ""))
     days = {since.strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d")}
     for r in session.exec(select(CheckDay).where(CheckDay.day.in_(days))).all():
         c = checks.get(r.check_id)
-        if c and c.kind != "pbs" and r.ok < r.total and c.device_id not in quiet:
+        if c and c.kind not in ("pbs", "proxmox") and r.ok < r.total and c.device_id not in quiet:
             add("Errors", f"{c.name}: {r.total - r.ok} failed check{'s' if r.total - r.ok != 1 else ''} ({r.day[5:]})")
 
-    order = ["Backups", "Errors", "Went offline", "Restarted", "Storage"]
+    order = ["Backups", "Proxmox", "Errors", "Went offline", "Restarted", "Storage"]
     text = "\n\n".join(f"{k}\n" + "\n".join(f"· {line}" for line in sections[k]) for k in order if k in sections)
     return text or "All quiet: no outages, restarts or errors, and storage is steady.", disks_now
 
@@ -294,10 +364,31 @@ if __name__ == "__main__":  # ponytail: self-check
     assert got["disk:/"]["severity"] == "high" and "7.0 GiB left" in got["disk:/"]["detail"]
     assert got["cert:8"]["severity"] == "high" and "2 days" in got["cert:8"]["title"]
     assert "Last ping 1d 3h ago" in got["check:7"]["detail"]
-    bad = ServiceCheck(id=9, device_id=1, name="pbs", kind="pbs", last_status="down", summary="3 backups; 1 failed", last_error="backup vm/101 failed: x")
-    assert check_problems(bad, now)[0]["title"] == "pbs: backup task failed"
+    bad = ServiceCheck(id=9, device_id=1, name="pbs", kind="pbs", last_status="down", summary="3 backups; 1 failed",
+                       issues=json.dumps([{"key": "task:backup:x", "severity": "high", "title": "backup vm/101 failed", "detail": "x"},
+                                          {"key": "late:nas:ct/103", "severity": "warning", "title": "services: last backup 30h ago"}]))
+    got_pbs = check_problems(bad, now)
+    assert [g["key"] for g in got_pbs] == ["check:9:task:backup:x", "check:9:late:nas:ct/103"], got_pbs
+    assert got_pbs[0]["title"] == "pbs: backup vm/101 failed" and got_pbs[0]["source"] == "Backups" and got_pbs[0]["push"]
+    unread = ServiceCheck(id=10, device_id=1, name="pve", kind="proxmox", last_status="down", last_error="401")
+    assert check_problems(unread, now)[0]["title"] == "pve: can't read Proxmox"
     d.is_online = False
-    assert [p["key"] for p in detect(d, [hb], now)] == ["offline"]
+    assert [p["key"] for p in detect(d, [hb], now)] == ["offline", "check:7"]  # checks still count while it's offline
+    host = Device(id=9, name="pve", is_online=False)
+    assert "Its host pve is offline too." in detect(d, [], now, host)[0]["detail"]
+    d.is_online = True
+    t0 = now.replace(tzinfo=timezone.utc).timestamp()
+    d.container_restarts = json.dumps({"mqtt": [[t0 - 1500, 4], [t0 - 600, 6], [t0, 8]], "web": [[t0 - 3000, 1], [t0, 2]]})
+    d.last_report_json = json.dumps({"system": {}, "docker_containers": [
+        {"name": "mqtt", "status": "running"}, {"name": "web", "status": "running", "health": "unhealthy"}]})
+    d.alert_state = json.dumps({"ssh_fail": True})
+    got = {p["key"]: p for p in detect(d, [], now)}
+    assert set(got) == {"restarts:mqtt", "health:web", "ssh_fail", "updates"}, got
+    assert got["restarts:mqtt"]["detail"].startswith("4 restarts") and got["restarts:mqtt"]["push"]
+    d.alert_disk_percent = 95  # per-device threshold
+    d.last_report_json = json.dumps({"system": {"disks": [{"mount": "/", "percent": 93}]}})
+    assert "disk:/" not in {p["key"] for p in detect(d, [], now)}
+    d.is_online = False
     assert detect(Device(id=2, name="new"), [], now) == []
     ratios, overall = uptime([CheckDay(check_id=1, day="2026-11-03", ok=9, total=10)], date(2026, 11, 3), 3)
     assert ratios == [None, None, 0.9] and overall == 0.9

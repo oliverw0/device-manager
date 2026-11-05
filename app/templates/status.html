@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+{% block title %}Status - Pulse{% endblock %}
+{% block content %}
+<div id="status-live">
+<div class="page-head">
+  <h1>Status</h1>
+  {% if not public %}<span class="live"><span class="pulse"></span> Live</span>{% endif %}
+  <span class="spacer"></span>
+  {% if not public and public_on %}<a class="linkish" href="/status/public" target="_blank" rel="noopener">Public page ↗</a>{% endif %}
+</div>
+
+{% set all_up = totals.down == 0 %}
+<section class="st-banner {{ 'ok' if all_up else 'bad' }}" aria-live="polite">
+  <span class="st-led"></span>
+  <b>{% if not totals.on %}No checks set up yet{% elif all_up %}All systems normal{% else %}{{ totals.down }} of {{ totals.on }} check{{ 's' if totals.on != 1 }} failing{% endif %}</b>
+  {% if totals.on %}<span class="muted">{{ totals.up }}/{{ totals.on }} up · 30-day history per check</span>{% endif %}
+</section>
+
+{% if not groups %}
+<section class="panel"><p class="muted" style="margin:0">Checks are added on a device's <b>Checks</b> tab. Give them a group there (DNS, Auth, Media, ...) to sort them into sections here.</p></section>
+{% endif %}
+
+<div class="st-groups">
+{% for g in groups %}
+<section class="panel st-group" aria-label="{{ g.name }}">
+  <h2 class="st-gh"><span class="st-sq st-{{ g.state }}"></span>{{ g.name }}<span class="spacer"></span><span class="muted">{{ g.on - g.down }}/{{ g.on }} up</span></h2>
+  {% for x in g.checks %}{% set c = x.c %}
+  <div class="st-row{{ ' paused' if x.state == 'paused' }}">
+    <span class="pb-sq st-{{ x.state if x.state in ('up', 'down') else 'unknown' }}"></span>
+    <span class="pb-cname">
+      {% if public %}<span class="st-name">{{ c.name }}</span>{% else %}<a href="/devices/{{ c.device_id }}#checks">{{ c.name }}</a>{% endif %}
+      <span class="muted">
+        {%- if x.state == 'paused' %}Paused
+        {%- elif x.state == 'down' %}{% if public %}Down{% else %}{{ (x.issues | length ~ ' issue' ~ ('s' if x.issues | length != 1 else '') ~ ' · ') if x.issues }}{{ c.last_error or 'Down' }}{% endif %}
+        {%- elif c.kind in ('pbs', 'proxmox') and c.summary and not public %}{{ c.summary }}
+        {%- elif x.state == 'up' %}Up{% if c.last_latency_ms is not none %} · {{ c.last_latency_ms | round | int }} ms{% endif %}{% if x.cert_days is not none and not public %} · cert {{ x.cert_days }}d{% endif %}
+        {%- else %}Waiting for the first check{% endif %}
+        {%- if not public and x.device %} · {{ x.device.name }}{% endif %}
+      </span>
+    </span>
+    {{ ui.uptime_bars(x.bars) }}
+    <span class="pb-up">{{ ui.uptime_pct(x.uptime) }}</span>
+  </div>
+  {% endfor %}
+</section>
+{% endfor %}
+</div>
+{% if public %}<p class="muted st-foot">Checks run every minute or so. Reload for the latest.</p>{% endif %}
+</div>
+{% endblock %}
+{% block scripts %}
+{% if not public %}<script>initLiveRegion("status-live", 20000);</script>{% endif %}
+{% endblock %}

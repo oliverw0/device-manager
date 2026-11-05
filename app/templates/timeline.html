@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+{% block title %}Timeline - Pulse{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Problems</h1>
+  <span class="spacer"></span>
+  <div class="spark-toggle" role="group" aria-label="Time span">
+    {% for s in spans %}<a href="/problems/timeline?span={{ s }}" class="seg{{ ' active' if s == span }}"{% if s == span %} aria-current="true"{% endif %}>{{ s }}</a>{% endfor %}
+  </div>
+</div>
+{{ ui.problems_tabs('timeline') }}
+
+<section class="panel tl" aria-label="Problems over the last {{ span }}">
+  {% if not lanes %}
+  <p class="pb-clear" style="margin:0"><span class="brand-mark"></span> Nothing went wrong in the last {{ span }}.</p>
+  {% else %}
+  <div class="tl-grid">
+    <div class="tl-axis" aria-hidden="true">
+      <span class="tl-name"></span>
+      <div class="tl-track">{% for t in ticks %}<span class="tl-tick" style="left:{{ '%.3f' | format(t.left) }}%">{{ t.label }}</span>{% endfor %}<span class="tl-now">now</span></div>
+    </div>
+    {% for l in lanes %}
+    <div class="tl-lane">
+      <a class="tl-name" href="/devices/{{ l.d.id }}">{{ l.d.name }}<span class="muted">{{ l.count }}</span></a>
+      <div class="tl-track">
+        {% for t in ticks %}<span class="tl-grid-line" style="left:{{ '%.3f' | format(t.left) }}%"></span>{% endfor %}
+        {% for row in l.rows %}
+        <div class="tl-row">
+          {% for b in row %}{% set p = b.p %}
+          <span class="tl-bar sev-{{ p.severity }}{{ ' off' if p.key == 'offline' }}{{ ' open' if not p.resolved_at }}{{ ' acked' if p.acked_at }}"
+                style="left:{{ '%.3f' | format(b.left) }}%;width:{{ '%.3f' | format(b.width) }}%"
+                tabindex="0" data-tip="{{ p.title }} · {{ b.lasted }}{{ ' (still open)' if not p.resolved_at }}"></span>
+          {% endfor %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  <p class="muted tl-legend">
+    <span class="tl-key sev-high"></span> High <span class="tl-key sev-warning"></span> Warning <span class="tl-key off"></span> Offline
+    {% if quiet %}<span class="tl-sep">·</span> {{ quiet }} other device{{ 's' if quiet != 1 }} had nothing{% endif %}
+    <span class="tl-sep">·</span> package updates left out
+  </p>
+  {% endif %}
+</section>
+
+{% if incidents %}
+<section class="panel" aria-label="Incidents">
+  <h2>Incidents</h2>
+  {% set ns = namespace(day='') %}
+  {% for x in incidents %}
+  {% set day = x.when.strftime('%A %d %B') %}
+  {% if day != ns.day %}{% set ns.day = day %}<h3 class="tl-day">{{ day }}</h3>{% endif %}
+  <div class="tl-inc sev-{{ x.p.severity }}">
+    <span class="tl-time">{{ x.when.strftime('%H:%M') }}</span>
+    <a class="pb-who" href="/devices/{{ x.d.id }}">{{ x.d.name }}</a>
+    <span class="tl-what"{% if x.p.detail %} title="{{ x.p.detail }}"{% endif %}>{{ x.p.title }}</span>
+    <span class="tl-lasted">{% if x.p.resolved_at %}{{ x.lasted }}{% else %}<span class="chip {{ 'bad' if x.p.severity == 'high' else 'warn' }}">open {{ x.lasted }}</span>{% endif %}</span>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+{% endblock %}

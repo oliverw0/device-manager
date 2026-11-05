@@ -36,6 +36,10 @@
         </a>
         <a class="apt-badge pb-badge" href="/problems" title="{{ open_problems }} open, not acknowledged" {{ '' if open_problems else 'hidden' }}><span>{{ open_problems }}</span></a>
       </div>
+      <a class="nav-item {{ 'active' if p.startswith('/status') }}" href="/status" title="Status">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="2 12 6 12 9 4 15 20 18 12 22 12"/></svg>
+        <span class="nav-label">Status</span>
+      </a>
       <div class="nav-slot">
         <a class="nav-item {{ 'active' if p == '/' or p.startswith('/devices') }}" href="/" title="Devices">
           <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="6" rx="1"/><rect x="2" y="15" width="20" height="6" rx="1"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
@@ -46,6 +50,10 @@
           <span id="apt-alert-count">{{ apt_alert_count | default(0) }}</span>
         </a>
       </div>
+      <a class="nav-item {{ 'active' if p.startswith('/map') }}" href="/map" title="Map">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="5" rx="1"/><rect x="2" y="17" width="6" height="5" rx="1"/><rect x="16" y="17" width="6" height="5" rx="1"/><path d="M12 7v5M5 17v-5h14v5"/></svg>
+        <span class="nav-label">Map</span>
+      </a>
       <a class="nav-item {{ 'active' if p.startswith('/containers') }}" href="/containers" title="Containers">
         <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v8a2 2 0 0 1-1 1.73l-7 4a2 2 0 0 1-2 0l-7-4A2 2 0 0 1 3 16V8a2 2 0 0 1 1-1.73l7-4a2 2 0 0 1 2 0l7 4A2 2 0 0 1 21 8z"/><polyline points="3.3 7 12 12 20.7 7"/><line x1="12" y1="22" x2="12" y2="12"/></svg>
         <span class="nav-label">Containers</span>

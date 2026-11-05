@@ -1,5 +1,6 @@
+import ipaddress
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse
@@ -19,10 +20,60 @@ def _is_running(status) -> bool:
     return "running" in (status or "").lower()
 
 
-def _notify(device: Device, message: str, **kw) -> None:
+def _notify(device: Device, message: str, key: str | None = None, **kw) -> None:
     """ntfy push unless the device is in a mute/maintenance window."""
     if not device.alerts_muted():
-        notifier.send(message, **kw)
+        notifier.send(message, device_id=device.id, key=key, **kw)
+
+
+_TAILNET = ipaddress.ip_network("100.64.0.0/10")
+
+
+def is_outside(ip: str | None) -> bool:
+    """An address from outside the LAN, the tailnet and loopback."""
+    try:
+        a = ipaddress.ip_address((ip or "").strip())
+    except ValueError:
+        return False
+    return not (a.is_private or a.is_loopback or a.is_link_local or a in _TAILNET)
+
+
+def track_restarts(previous: str | None, containers, now: float) -> str | None:
+    """Device.container_restarts: each container's restart_count over the last
+    30 minutes, [[epoch, count], ...], for spotting restart loops."""
+    from ..problems import RESTART_WINDOW
+    old = json.loads(previous) if previous else {}
+    out = {}
+    for c in containers:
+        if c.restart_count is None:
+            continue
+        pts = [p for p in old.get(c.name, []) if now - p[0] <= RESTART_WINDOW] + [[int(now), c.restart_count]]
+        out[c.name] = pts[-40:]
+    return json.dumps(out) if out else None
+
+
+def ssh_alerts(device: Device, auth, state: dict) -> list[tuple[str, dict]]:
+    """Updates alert_state for SSH and returns the pushes to send:
+    a login from outside (once per login), and a burst of failed logins (once,
+    until it calms down)."""
+    out = []
+    if auth is None:
+        return out
+    if settings.ssh_outside_login_alert and auth.last_accepted_ip and is_outside(auth.last_accepted_ip):
+        sig = f"{auth.last_accepted_ip}|{auth.last_accepted_at}"
+        if state.get("ssh_ok") != sig:
+            state["ssh_ok"] = sig
+            out.append((f"{device.name}: SSH login as {auth.last_accepted_user or '?'} from {auth.last_accepted_ip}, "
+                        "an address outside your networks. If that wasn't you, act now.",
+                        {"title": "SSH login from outside", "priority": "high", "tags": "key,warning"}))
+    limit = settings.ssh_failed_alert
+    if limit > 0 and auth.recent_failed_count >= limit and not state.get("ssh_fail"):
+        state["ssh_fail"] = True
+        out.append((f"{device.name}: {auth.recent_failed_count} failed SSH logins recently, latest from {auth.last_failed_ip or '?'}.",
+                    {"title": "SSH login failures", "priority": "default", "tags": "key", "key": "ssh_fail"}))
+    elif state.get("ssh_fail") and auth.recent_failed_count < max(1, limit // 2):
+        del state["ssh_fail"]
+    return out
 
 
 @router.get("/healthz")
@@ -75,7 +126,11 @@ def submit_report(
             message=f"{device.name} is responding again",
         )
         session.add(event)
-        _notify(device, event.message, title="Device back online", priority="default", tags="white_check_mark")
+        if device.offline_quiet:
+            # its going offline was folded into its host's push, or a "lost contact" one
+            device.offline_quiet = False
+        else:
+            _notify(device, event.message, title="Device back online", priority="default", tags="white_check_mark")
 
     if report.tailscale is not None:
         # "connected" is False both when Tailscale is genuinely down AND when the
@@ -93,6 +148,7 @@ def submit_report(
                 _notify(
                     device,
                     message,
+                    key="tailscale",
                     title="Tailscale status change",
                     priority="high" if not new_state else "default",
                     tags="satellite",
@@ -111,7 +167,7 @@ def submit_report(
             session.add(AlertEvent(device_id=device.id, device_name=device.name, kind="apt_stale", message=message))
             # low priority: not urgent like offline/down — no sound/vibration so it
             # won't wake anyone; still lands in the feed to action in the morning.
-            _notify(device, message, title="Packages out of date", priority="low", tags="package,warning")
+            _notify(device, message, key="updates", title="Packages out of date", priority="low", tags="package,warning")
         device.apt_needs_update = needs_update
 
     # container running -> exited/dead transitions (only for names in both reports)
@@ -120,7 +176,16 @@ def submit_report(
         if was and _is_running(was) and not _is_running(container.status):
             message = f"{device.name}: container {container.name} is {container.status}"
             session.add(AlertEvent(device_id=device.id, device_name=device.name, kind="container_down", message=message))
-            _notify(device, message, title="Container stopped", priority="high", tags="whale,warning")
+            _notify(device, message, key=f"container:{container.name}", title="Container stopped", priority="high", tags="whale,warning")
+
+    device.container_restarts = track_restarts(device.container_restarts, report.docker_containers,
+                                               now.replace(tzinfo=timezone.utc).timestamp())
+
+    state = json.loads(device.alert_state) if device.alert_state else {}
+    for message, kw in ssh_alerts(device, report.ssh_auth, state):
+        session.add(AlertEvent(device_id=device.id, device_name=device.name, kind="ssh", message=message))
+        _notify(device, message, **kw)
+    device.alert_state = json.dumps(state) if state else None
 
     session.add(device)
     session.add(

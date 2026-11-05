@@ -19,7 +19,8 @@
     <span class="hero-os">{% if device.os_key %}<span class="os-icon os-{{ device.os_key }}"></span>{% endif %}</span>
     <div class="hero-title">
       <div class="hero-name">
-        <h1>{{ device.name }}</h1>
+        <h1 id="device-name">{{ device.name }}</h1>
+        <button type="button" class="icon-btn icon-btn-sm rename-btn tip-below" data-tip="Rename" aria-label="Rename {{ device.name }}" onclick="openRename()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg></button>
         <span class="fc-status {{ 'on' if device.is_online else 'off' }}" title="Last seen {{ device.last_seen_at | dt }}"><span class="dot"></span>{{ 'Online' if device.is_online else 'Offline' }} · {{ device.seconds_since_seen | reltime }}</span>
         {% if device.alerts_muted %}<span class="chip warn" title="{% if device.alerts_muted_forever %}Until unmuted{% else %}Until {{ device.alerts_muted_until | dt }}{% endif %}">alerts muted</span>{% endif %}
       </div>
@@ -107,7 +108,16 @@
       {% endif %}
 
       <section class="panel">
-        <h2>Hardware usage</h2>
+        <div class="panel-head">
+          <h2 style="margin:0">Hardware usage</h2>
+          <div class="spark-toggle" id="history-range" role="group" aria-label="Time span">
+            <button type="button" class="active" data-range="">Live</button>
+            <button type="button" data-range="7d">7d</button>
+            <button type="button" data-range="30d">30d</button>
+            <button type="button" data-range="90d">90d</button>
+            <button type="button" data-range="1y">1y</button>
+          </div>
+        </div>
         <div class="chart-wrap">
           <canvas id="history-chart" width="1040" height="180" style="max-width:100%"></canvas>
         </div>
@@ -115,6 +125,7 @@
           <span style="color:var(--red)">■</span> CPU &nbsp;
           <span style="color:var(--green)">■</span> Memory &nbsp;
           <span style="color:var(--amber)">■</span> Disk
+          <span id="history-note"></span>
         </p>
       </section>
 
@@ -282,44 +293,65 @@
 <div class="dtab" data-tab="checks" role="tabpanel" hidden>
   <section class="panel">
     <h2>Service checks {% if checks %}<span class="chip neutral">{{ checks | length }}</span>{% endif %}</h2>
+    {% set kind_label = {'http': 'HTTP', 'tcp': 'TCP', 'dns': 'DNS', 'heartbeat': 'Heartbeat', 'pbs': 'PBS', 'proxmox': 'Proxmox'} %}
     {% for c in checks %}
+    {% set issues = (c.issues | fromjson) if c.issues else [] %}
     <div class="check-item">
       <span class="chip {{ 'ok' if c.last_status == 'up' else 'bad' if c.last_status == 'down' else 'neutral' }}">{{ c.last_status }}</span>
-      <span class="c-name">{{ c.name }}{% if not c.enabled %} <span class="chip neutral">paused</span>{% endif %}</span>
+      <span class="c-name">{{ c.name }}{% if not c.enabled %} <span class="chip neutral">paused</span>{% endif %}{% if c.group %} <span class="chip info chip-sm">{{ c.group }}</span>{% endif %}</span>
       {% if c.kind == 'heartbeat' %}
       <span class="check-target">heartbeat · every {{ c.interval_seconds | dur }}{% if c.grace_seconds %} + {{ c.grace_seconds | dur }} grace{% endif %} · {% if c.last_checked_at %}last ping {{ c.last_checked_at | reltime }}{% else %}waiting for the first ping{% endif %}</span>
       {% else %}
-      <span class="check-target">{{ c.kind }} · {{ c.target }}{% if c.cert_expires_at %} · cert until {{ c.cert_expires_at.strftime('%Y-%m-%d') }}{% endif %}</span>
+      <span class="check-target">{{ kind_label.get(c.kind, c.kind) }} · {{ c.target }}{% if c.expect %} · expects {{ c.expect }}{% endif %}{% if c.cert_expires_at %} · cert until {{ c.cert_expires_at.strftime('%Y-%m-%d') }}{% endif %}</span>
       {% endif %}
       {% if c.last_status == 'up' and c.last_latency_ms is not none %}<span class="muted" style="font-size:12px">{{ c.last_latency_ms | round | int }}ms</span>{% endif %}
       <span class="spacer"></span>
+      <button type="button" class="term-btn" title="Edit" aria-label="Edit {{ c.name }}" aria-expanded="false" onclick="toggleCheckEdit(this)"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg></button>
       <form method="post" action="/checks/{{ c.id }}/toggle"><button type="submit" class="term-btn" title="{{ 'Pause' if c.enabled else 'Resume' }}">{% if c.enabled %}❚❚{% else %}▶{% endif %}</button></form>
       <form method="post" action="/checks/{{ c.id }}/delete" data-confirm="Delete this check?" data-ok="Delete" data-danger><button type="submit" class="term-btn" title="Delete">✕</button></form>
     </div>
-    {% if c.last_status == 'down' and c.last_error %}<div class="check-err">{{ c.last_error }}</div>{% endif %}
-    {% if c.kind == 'pbs' and c.summary %}<div class="ping-url"><span class="muted">Last 24h:</span> {{ c.summary }}</div>{% endif %}
+    <form method="post" action="/checks/{{ c.id }}/edit" class="check-form check-edit" hidden>
+      <label>Name <input type="text" name="name" value="{{ c.name }}" required maxlength="80" /></label>
+      {% if c.kind != 'heartbeat' %}<label class="cf-wide">{{ 'URL' if c.kind == 'http' else 'name@server' if c.kind == 'dns' else 'Host:port' if c.kind == 'tcp' else 'Address' }} <input type="text" name="target" value="{{ c.target }}" required /></label>{% endif %}
+      {% if c.kind in ('http', 'dns') %}<label>Expect <input type="text" name="expect" value="{{ c.expect }}" placeholder="{{ 'status or text' if c.kind == 'http' else 'an address' }}" /></label>{% endif %}
+      {% if c.kind in ('pbs', 'proxmox') %}<label class="cf-wide">API token <input type="password" name="secret" autocomplete="off" placeholder="blank keeps the saved token" /></label>{% endif %}
+      <label>Group <input type="text" name="group" value="{{ c.group }}" list="check-groups" maxlength="40" placeholder="by type" /></label>
+      <button type="submit">Save</button>
+    </form>
+    {% if c.last_status == 'down' and c.last_error and not issues %}<div class="check-err">{{ c.last_error }}</div>{% endif %}
+    {% if issues %}
+    <ul class="check-issues">{% for i in issues %}<li class="sev-{{ i.severity }}"><b>{{ i.title }}</b>{% if i.detail %} <span class="muted">{{ i.detail }}</span>{% endif %}</li>{% endfor %}</ul>
+    {% endif %}
+    {% if c.kind in ('pbs', 'proxmox') and c.summary %}<div class="ping-url"><span class="muted">{{ 'Last 24h:' if c.kind == 'pbs' else 'Now:' }}</span> {{ c.summary }}</div>{% endif %}
     {% if c.kind == 'heartbeat' %}<div class="ping-url"><span class="muted">Add to the end of the job:</span> <code>curl -fsS -m 10 {{ request.base_url }}ping/{{ c.token }}</code></div>{% endif %}
     {% else %}
-    <p class="muted">No checks yet. HTTP and TCP checks watch a service; a heartbeat watches a job (backup, cron) that pings when it finishes; PBS backups reads a Proxmox Backup Server's task results.</p>
+    <p class="muted">No checks yet. HTTP, TCP and DNS checks watch a service; a heartbeat watches a job (backup, cron) that pings when it finishes; PBS and Proxmox read those servers' own state.</p>
     {% endfor %}
-    <details style="margin-top:12px">
+    <datalist id="check-groups">{% for g in check_groups %}<option value="{{ g }}">{% endfor %}{% for g in ['DNS', 'Auth', 'Proxy', 'Media', 'Backups', 'Proxmox', 'Home'] if g not in check_groups %}<option value="{{ g }}">{% endfor %}</datalist>
+    <details style="margin-top:12px" id="add-check"{{ ' open' if prefill.target }}>
       <summary class="muted" style="cursor:pointer;font-size:13px">+ Add check</summary>
       {# fields are shown per type (data-kind); hidden ones are disabled so they aren't sent #}
       <form method="post" action="/devices/{{ device.id }}/checks" class="check-form" id="check-form">
         <label class="cf-type">Type
           <select name="kind">
             <option value="http" data-name="nginx">HTTP</option>
-            <option value="tcp" data-name="postgres">TCP port</option>
+            <option value="tcp" data-name="postgres"{{ ' selected' if prefill.target }}>TCP port</option>
+            <option value="dns" data-name="adguard">DNS</option>
             <option value="heartbeat" data-name="nightly backup">Heartbeat</option>
             <option value="pbs" data-name="pbs">PBS backups</option>
+            <option value="proxmox" data-name="pve">Proxmox VE</option>
           </select>
         </label>
-        <label>Name <input type="text" name="name" placeholder="nginx" required /></label>
+        <label>Name <input type="text" name="name" placeholder="nginx" required value="{{ prefill.name }}" /></label>
         <label class="cf-wide" data-kind="http">URL <input type="text" name="target" placeholder="http://100.x:8080" required /></label>
-        <label class="cf-wide" data-kind="tcp">Host:port <input type="text" name="target" placeholder="100.x:5432" required /></label>
-        <label class="cf-wide" data-kind="pbs">Address <input type="text" name="target" placeholder="192.168.1.20" required /></label>
+        <label class="cf-wide" data-kind="tcp">Host:port <input type="text" name="target" placeholder="100.x:5432" required value="{{ prefill.target }}" /></label>
+        <label class="cf-wide" data-kind="dns">Name@server <input type="text" name="target" placeholder="pulse.wiles.au@192.168.50.146" required /></label>
+        <label class="cf-wide" data-kind="pbs proxmox">Address <input type="text" name="target" placeholder="192.168.1.20" required /></label>
         <label class="cf-wide" data-kind="pbs">API token <input type="password" name="secret" autocomplete="off" placeholder="root@pam!pulse:secret" required /></label>
-        <label data-kind="http tcp">Every
+        <label class="cf-wide" data-kind="proxmox">API token <input type="password" name="secret" autocomplete="off" placeholder="root@pam!pulse=secret" required /></label>
+        <label data-kind="http">Expect <input type="text" name="expect" placeholder="optional: 200, or page text" /></label>
+        <label data-kind="dns">Expect <input type="text" name="expect" placeholder="optional: an address" /></label>
+        <label data-kind="http tcp dns">Every
           <select name="interval_seconds"><option value="30">30 s</option><option value="60" selected>1 min</option><option value="300">5 min</option><option value="900">15 min</option></select>
         </label>
         <label data-kind="heartbeat">Job runs
@@ -328,11 +360,14 @@
         <label data-kind="heartbeat">Late after
           <select name="grace_minutes"><option value="5">5 min</option><option value="15" selected>15 min</option><option value="60">1 h</option><option value="240">4 h</option></select>
         </label>
+        <label>Group <input type="text" name="group" list="check-groups" maxlength="40" placeholder="by type" /></label>
         <button type="submit">Add</button>
-        <p class="cf-hint" data-kind="http">Up when the URL answers with a status under 400. https certificates are watched for expiry too.</p>
+        <p class="cf-hint" data-kind="http">Up when the URL answers with a status under 400. <b>Expect</b> tightens it: a status (<code>200</code>), or text the page must contain, so an error page served with a 200 still fails. https certificates are watched for expiry too.</p>
         <p class="cf-hint" data-kind="tcp">Up when the port accepts a connection.</p>
+        <p class="cf-hint" data-kind="dns">Asks that one server for the name's address: proves the resolver answers, which a check on its web page doesn't. Add one per DNS server (primary and secondary AdGuard).</p>
         <p class="cf-hint" data-kind="heartbeat">For a job like a backup or cron script: you'll get a URL to call when it finishes. Down if it doesn't call in time.</p>
-        <p class="cf-hint" data-kind="pbs">Reads the last 24 h of backup, verify and GC results. Port 8007 is added. Token: in PBS, <b>Access Control → API Token → Add</b> (root@pam, name pulse), then <b>Permissions → Add → API Token Permission</b>: path <code>/</code>, role <b>Audit</b>. Paste it as <code>root@pam!pulse:</code> followed by the secret.</p>
+        <p class="cf-hint" data-kind="pbs">Reads backup, verify and GC results from the last 24 h, how old each guest's newest backup is (late after {{ pbs_late_hours }} h), and how full each datastore is. Port 8007 is added. Token: in PBS, <b>Access Control → API Token → Add</b> (root@pam, name pulse), then <b>Permissions → Add → API Token Permission</b>: path <code>/</code>, role <b>Audit</b>. Paste it as <code>root@pam!pulse:</code> followed by the secret.</p>
+        <p class="cf-hint" data-kind="proxmox">Reads storage and thin pool use, disk SMART health and guests set to start at boot that are stopped. Port 8006 is added. Token: <b>Datacenter → Permissions → API Tokens → Add</b> (user root@pam, ID pulse, Privilege Separation on), then <b>Permissions → Add → API Token Permission</b>: path <code>/</code>, role <b>PVEAuditor</b>. Paste it as <code>root@pam!pulse=</code> followed by the secret.</p>
       </form>
     </details>
   </section>
@@ -400,6 +435,24 @@
     </details>
   </section>
 
+<section class="panel" aria-label="Alerting" id="alerting">
+  <h2>Alerting</h2>
+  <form method="post" action="/devices/{{ device.id }}/alerting" class="check-form alert-form">
+    <label class="cf-wide">Runs on
+      <select name="parent">
+        <option value="" {{ 'selected' if parent_id is none }}>{% if inferred_parent %}{{ inferred_parent.name }} (from its power report){% else %}Nothing found: its own machine{% endif %}</option>
+        <option value="0" {{ 'selected' if parent_id == 0 }}>Nothing: it's its own machine</option>
+        {% for o in others %}<option value="{{ o.id }}" {{ 'selected' if parent_id == o.id }}>{{ o.name }}</option>{% endfor %}
+      </select>
+    </label>
+    {% for key, label in [('cpu', 'CPU %'), ('mem', 'Memory %'), ('disk', 'Disk %')] %}
+    <label>{{ label }} <input type="number" name="{{ key }}" min="0" max="100" value="{{ thresholds[key] if thresholds[key] is not none else '' }}" placeholder="{{ defaults[key] }} (default)" /></label>
+    {% endfor %}
+    <button type="submit">Save</button>
+    <p class="cf-hint">While the machine this one runs on is offline too, this device's offline alert goes into that machine's alert instead of a push of its own. Thresholds: blank uses the default, <code>0</code> turns that alert off. A push goes out after {{ sustained_minutes }} minutes over the line.</p>
+  </form>
+</section>
+
 <section class="panel" aria-label="Client updates">
   <h2>Client updates</h2>
   <p class="muted" style="margin:0 0 12px;font-size:13px">This device runs client {{ device.agent_version or '1.0.0' }}. Updating pulls the latest client code and restarts it; it needs SSH enabled above.</p>
@@ -446,6 +499,26 @@
   </section>
 </div>
 
+<dialog id="rename-dialog" class="add-dialog" aria-labelledby="rename-title">
+  <form id="rename-form" data-device-id="{{ device.id }}">
+    <div class="dialog-head">
+      <h2 id="rename-title">Rename device</h2>
+      <span class="spacer"></span>
+      <button type="button" class="secondary" onclick="this.closest('dialog').close()" title="Close">✕</button>
+    </div>
+    <p class="form-error" id="rename-error" hidden></p>
+    <div class="form-grid">
+      <label>Name <input type="text" name="name" value="{{ device.name }}" required maxlength="64" /></label>
+      <label>Notes <input type="text" name="notes" value="{{ device.notes }}" maxlength="200" placeholder="optional" /></label>
+    </div>
+    <p class="muted hint">The client keeps reporting under its API key, so nothing changes on the machine.</p>
+    <div class="dialog-actions">
+      <button type="button" class="secondary" onclick="this.closest('dialog').close()">Cancel</button>
+      <button type="submit">Save</button>
+    </div>
+  </form>
+</dialog>
+
 {# "What's using space?" side panel, filled by openDiskDrawer() in app.js. #}
 <dialog id="disk-drawer" class="drawer" aria-labelledby="disk-drawer-title">
   <div class="drawer-head">
@@ -471,7 +544,7 @@
 {% endblock %}
 {% block scripts %}
 <script>
-  loadHistoryChart('/devices/{{ device.id }}/history.json', 'history-chart');
+  loadHistoryChart('/devices/{{ device.id }}/history.json', 'history-chart', { rangeToggle: 'history-range' });
   loadContainerSparks('/devices/{{ device.id }}/containers/history.json');
   initContainerActionSheet();
   initDeviceTabs();

@@ -23,6 +23,31 @@ Companion agent: [device-manager-client](https://github.com/oliverw0/device-mana
   PowerShell console, Windows Update in place of apt, and the same container
   controls; the host picks the commands from the OS each client reports.
 
+## Monitoring features
+
+- **Checks**: HTTP (optionally expecting a status or page text), TCP, DNS
+  (asks one server for a name), heartbeats for cron jobs, **PBS** (failed
+  tasks, no backups in 24h, each guest's newest backup age, datastore space) and
+  **Proxmox VE** (storage and thin-pool metadata, SMART health, guests set to
+  start at boot that are stopped). Each PBS/Proxmox finding is its own problem.
+- **Status** page with the checks grouped (DNS, Proxmox, Backups, or your own
+  groups) and 30-day uptime; optional read-only public version.
+- **Problems**: what's open now, a **Timeline** of the last 24h / 7d / 30d,
+  and **Sent alerts** (every ntfy push, whether it was delivered, watchdog state).
+- **Map** of what runs where (LXCs under their Proxmox host).
+- **Alerts that don't pile up**: a guest whose host is down is named in the
+  host's push; when most machines go quiet at once, one "lost contact" push.
+  Unhealthy and restart-looping containers, SSH logins from outside your
+  networks and bursts of failed logins also alert. Unacknowledged high
+  problems get a reminder every `REMINDER_HOURS`.
+- **Acknowledge / Mute 1h buttons** on the phone notification (needs `PUBLIC_URL`).
+- **Watchdog**: pings `WATCHDOG_URL` (healthchecks.io etc.) while Pulse is
+  sweeping and ntfy works, so an outside service notices when Pulse stops.
+- Per-device alert thresholds and "runs on" on each device's Settings tab;
+  hourly history kept for a year (7d / 30d / 90d / 1y charts).
+- `/metrics` (Prometheus) and `/api/v1/summary` (Homepage widget), both behind
+  `METRICS_TOKEN`.
+
 ## Requirements
 
 - Docker and Docker Compose v2.
@@ -60,6 +85,17 @@ The dashboard is served on port 8000. Log in with the admin credentials from
 | `DATABASE_URL` | SQLite in `./data` | Point at Postgres if you outgrow SQLite. |
 | `CHECK_INTERVAL_SECONDS` | `15` | How often the host checks for devices that went silent. |
 | `HISTORY_RETENTION_DAYS` | `7` | How long per-report history is kept. |
+| `LONG_HISTORY_DAYS` | `400` | How long hourly averages are kept (30d / 90d / 1y charts). |
+| `ALERT_CPU_PERCENT` / `ALERT_MEM_PERCENT` / `ALERT_DISK_PERCENT` | `95` / `90` / `90` | Default thresholds; each device can override them. |
+| `REMINDER_HOURS` | `8` | Re-push unacknowledged high problems this often. `0` = off. |
+| `WATCHDOG_URL` | (empty) | Called after every healthy sweep (at most every `WATCHDOG_INTERVAL_SECONDS`, 60), e.g. a healthchecks.io ping URL. |
+| `STORM_MIN_DEVICES` | `3` | Machines going quiet at once (and most of the fleet) that count as Pulse's own network. |
+| `SSH_FAILED_ALERT` | `20` | Failed SSH logins in one report window that alert. `0` = off. |
+| `SSH_OUTSIDE_LOGIN_ALERT` | `true` | Alert on a successful SSH login from outside private, Tailscale and loopback ranges. |
+| `PBS_BACKUP_MAX_AGE_HOURS` | `26` | A guest's newest PBS backup older than this is late. |
+| `PBS_RETIRED_DAYS` | `14` | Backup groups silent longer than this are taken as removed guests. |
+| `METRICS_TOKEN` | (empty) | Bearer token for `/metrics` and `/api/v1/summary`. Empty turns both off. |
+| `PUBLIC_STATUS` | `false` | Serve a read-only status page at `/status/public`, outside the login. |
 
 Passwords containing `$`: Docker Compose interpolates `${...}` in `.env`, so a
 `$` in `ADMIN_PASSWORD` is eaten. Escape it as `$$`, or put the password in a
