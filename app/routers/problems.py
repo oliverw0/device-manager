@@ -77,7 +77,21 @@ def remove_download(problem_id: int, session: Session = Depends(get_session)):
     p = session.get(Problem, problem_id)
     if not p or not arr.split_key(p.key):
         return JSONResponse({"detail": "Not a download problem"}, status_code=404)
-    return {"ok": True, "message": problems.remove_downloads(session, [p.key])}
+    answer, watches = problems.remove_downloads(session, [p.key])
+    from .. import downloads
+    return {"ok": True, "message": answer, "watches": [downloads.public(w) for w in watches]}
+
+
+@router.get("/downloads/{watch_id}.json")
+def download_progress(watch_id: str, session: Session = Depends(get_session)):
+    """The progress card's poll for a Remove & search again."""
+    from .. import downloads
+
+    def secret_of(cid):
+        c = session.get(ServiceCheck, cid)
+        return c.secret if c else None
+    job = downloads.poll(watch_id, secret_of)
+    return job if job else JSONResponse({"detail": "unknown or finished"}, status_code=404)
 
 
 @router.post("/problems/ack-all")

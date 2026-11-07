@@ -247,37 +247,44 @@ def match_keys(key: str, patterns: list[str]) -> bool:
     return any(key == p or (p.endswith("*") and key.startswith(p[:-1])) for p in patterns)
 
 
-def remove_downloads(session: Session, keys: list[str]) -> str:
-    """Remove & search again for these download problems: out of the queue
-    and the torrent client, release blocklisted, a search for another started.
-    Blocking (Sonarr/Radarr over HTTP). Returns a short answer."""
+def remove_downloads(session: Session, keys: list[str], notify: bool = False) -> tuple[str, list[dict]]:
+    """Remove & search again for these download problems: each show out of the
+    queue and the torrent client, its releases blocklisted, and a search for it
+    that a watch follows (downloads.py). notify: from the phone, so the sweep
+    pushes how it ends. Blocking. -> (short answer, watches started)."""
+    from . import downloads
     by_check: dict[int, list[str]] = {}
     for k in keys:
         parts = k.split(":", 2)
         if len(parts) == 3 and parts[0] == "check" and parts[1].isdigit():
             by_check.setdefault(int(parts[1]), []).append(k)
-    answers = []
+    answers, watches = [], []
     for cid, ks in by_check.items():
         c = session.get(ServiceCheck, cid)
         if not c or c.kind != "arr":
             continue
         issues = [i for i in (json.loads(c.issues) if c.issues else []) if match_keys(f"check:{c.id}:{i['key']}", ks)]
-        ids = [d for i in issues for d in i.get("ids", [])]
-        if not ids:
+        if not issues:
             answers.append(f"{c.name}: nothing left to remove")
             continue
-        try:
-            n, _ = arr.remove(c.target, c.secret, ids)
-        except (arr.ArrError, Exception) as exc:  # noqa: BLE001 — answer the button, don't 500
-            logger.warning("remove & search again on %s failed: %s", c.name, exc)
-            answers.append(f"{c.name}: couldn't remove ({exc})")
-            continue
+        removed, names = 0, []
+        for i in issues:
+            try:
+                result = arr.remove(c.target, c.secret, i.get("ids", []))
+            except Exception as exc:  # noqa: BLE001 — answer the button, don't 500
+                logger.warning("remove & search again on %s failed: %s", c.name, exc)
+                answers.append(f"{c.name}: couldn't remove {i.get('name') or i['title']} ({exc})")
+                continue
+            removed += result["removed"]
+            names.append(i.get("name") or i["title"])
+            watches.append(downloads.start(c, i, result, notify))
         c.last_checked_at = None  # read the queue again on the next sweep
         session.add(c)
-        what = ", ".join(i.get("name") or i["title"] for i in issues[:3]) + (f" +{len(issues) - 3} more" if len(issues) > 3 else "")
-        answers.append(f"{c.name}: removed {n} download{'s' if n != 1 else ''} ({what}), searching again")
+        if names:
+            what = ", ".join(names[:3]) + (f" +{len(names) - 3} more" if len(names) > 3 else "")
+            answers.append(f"{c.name}: removed {removed} download{'s' if removed != 1 else ''} ({what}), searching again")
     session.commit()
-    return "; ".join(answers) or "nothing to remove"
+    return "; ".join(answers) or "nothing to remove", watches
 
 
 def remind(session: Session, devices: dict, now: datetime) -> list[str]:
@@ -445,6 +452,12 @@ def run() -> None:
             text, disks = digest(session, now, json.loads(_read(snap) or "{}"))
             snap.write_text(json.dumps(disks), encoding="utf-8")
             notifier.send(text, title="Daily summary", tags="clipboard")
+        from . import downloads  # Remove & search again from the phone: say how it ended
+        secrets_ = {c.id: c.secret for c in session.exec(select(ServiceCheck).where(ServiceCheck.kind == "arr")).all()}
+        try:
+            downloads.sweep(secrets_.get)
+        except Exception:  # noqa: BLE001 — never stop the sweep
+            logger.exception("download watches")
 
 
 def _read(path: Path) -> str:

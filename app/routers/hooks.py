@@ -52,7 +52,8 @@ def apply(token: str, now: datetime | None = None) -> str:
         keys = data.get("k")
         keys = [keys] if isinstance(keys, str) else keys or []
         if data.get("a") == "remove":
-            return problems.remove_downloads(s, keys)
+            answer, watches = problems.remove_downloads(s, keys, notify=True)
+            return answer + (". You'll get a push when it's done." if watches else "")
         q = select(Problem).where(Problem.device_id == device.id, Problem.resolved_at == None, Problem.acked_at == None)  # noqa: E711
         found = [p for p in s.exec(q).all() if not keys or problems.match_keys(p.key, keys)]
         for p in found:

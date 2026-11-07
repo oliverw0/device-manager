@@ -232,32 +232,156 @@ async def check(url: str, api_key: str, now: float | None = None) -> tuple[bool,
     return True, summary, None, issues
 
 
-def remove(url: str, api_key: str, download_ids: list[str]) -> tuple[int, str]:
+# what each app's queue records point at, and the search command for them
+TARGETS = (("episodeId", "episodeIds", "EpisodeSearch"), ("movieId", "movieIds", "MoviesSearch"),
+           ("albumId", "albumIds", "AlbumSearch"))
+
+
+def _sync_base(c: httpx.Client, url: str) -> tuple[str, str]:
+    r = None
+    for v in ("v3", "v1"):
+        r = c.get(f"{url}/api/{v}/system/status")
+        if r.status_code < 400:
+            return f"{url}/api/{v}", r.json().get("appName") or "the app"
+    raise ArrError(f"Couldn't read {url} (HTTP {r.status_code if r is not None else '?'}).")
+
+
+def _files(c: httpx.Client, base: str, field: str, ids: list[int]) -> dict[int, int] | None:
+    """{episode/movie id: its file id (0 = none)}; None for apps where it isn't read (Lidarr)."""
+    if field == "episodeId":
+        r = c.get(f"{base}/episode", params=[("episodeIds", i) for i in ids])
+        return {e["id"]: e.get("episodeFileId") or 0 for e in r.json()} if r.status_code < 400 else None
+    if field == "movieId":
+        out = {}
+        for i in ids:
+            r = c.get(f"{base}/movie/{i}")
+            if r.status_code < 400:
+                out[i] = (r.json().get("movieFile") or {}).get("id") or 0
+        return out
+    return None
+
+
+def remove(url: str, api_key: str, download_ids: list[str]) -> dict:
     """Remove these downloads from the queue and the torrent client, blocklist
-    the releases and let the app search again. Blocking (called from the ntfy
-    button and the Health page). -> (removed, app name)."""
+    the releases, and start a search for what they were meant to be. Pulse
+    starts that search itself (not the app's automatic redownload) so it can
+    follow it: the result is what downloads.track() needs. Blocking (called
+    from the ntfy button and the Health page).
+    -> {removed, app, base, field, ids, command_id, old, files}."""
     want = set(download_ids)
     with httpx.Client(timeout=20, headers={"X-Api-Key": api_key}) as c:
-        app, base = "the app", None
-        for v in ("v3", "v1"):
-            r = c.get(f"{url}/api/{v}/system/status")
-            if r.status_code < 400:
-                base, app = f"{url}/api/{v}", r.json().get("appName") or app
-                break
-        if base is None:
-            raise ArrError(f"Couldn't read {url} (HTTP {r.status_code}).")
+        base, app = _sync_base(c, url)
         records = c.get(f"{base}/queue", params=QUEUE_PARAMS).json().get("records") or []
+        hit = [r for r in records if (r.get("downloadId") or f"id{r.get('id')}") in want]
+        field, ids_key, command = next(((f, k, cmd) for f, k, cmd in TARGETS if any(r.get(f) for r in hit)), TARGETS[0])
+        targets = sorted({r[field] for r in hit if r.get(field)})
+        files = _files(c, base, field, targets) if targets else None
         done, removed = set(), 0
-        for rec in records:
+        for rec in hit:
             did = rec.get("downloadId") or f"id{rec.get('id')}"
-            if did not in want or did in done:
+            if did in done:
                 continue
             d = c.delete(f"{base}/queue/{rec['id']}",
-                         params={"removeFromClient": "true", "blocklist": "true", "skipRedownload": "false"})
+                         params={"removeFromClient": "true", "blocklist": "true", "skipRedownload": "true"})
             if d.status_code < 400 or d.status_code == 404:  # 404: already gone
                 done.add(did)
                 removed += d.status_code < 400
-    return removed, app
+        command_id = None
+        if targets:
+            r = c.post(f"{base}/command", json={"name": command, ids_key: targets})
+            command_id = r.json().get("id") if r.status_code < 400 else None
+    return {"removed": removed, "app": app, "base": base, "field": field, "ids": targets,
+            "command_id": command_id, "old": sorted(done), "files": files}
+
+
+_REPORTS = re.compile(r"(\d+) reports? downloaded", re.I)
+
+
+def _seconds(timeleft: str | None) -> int | None:
+    """Sonarr's timeleft "1.02:03:04" / "02:03:04" -> seconds."""
+    m = re.fullmatch(r"(?:(\d+)\.)?(\d+):(\d+):(\d+)(?:\.\d+)?", timeleft or "")
+    if not m:
+        return None
+    d, h, mi, sec = (int(x or 0) for x in m.groups())
+    return d * 86400 + h * 3600 + mi * 60 + sec
+
+
+def progress(w: dict, command: dict | None, records: list[dict], files: dict | None, now: float) -> dict:
+    """Where a re-search stands, as a progress card's job:
+    {status: running | done | error, percent, stage, eta_seconds, error, done_label, tone}.
+    w: the watch (from remove(), plus 'grabbed' once a new download was seen;
+    this sets it). command: the search command; records: the queue, every
+    record; files: {id: file id} now. Pure, for testing."""
+    app = w.get("app") or "Sonarr"
+    mine = [r for r in records if r.get(w["field"]) in w["ids"]
+            and (r.get("downloadId") or f"id{r.get('id')}") not in w["old"]]
+    job = {"status": "running", "percent": None, "stage": "", "eta_seconds": None, "error": None,
+           "done_label": None, "tone": None}
+    total = len(w["ids"]) or 1
+    before = w.get("files") or {}
+    got = sum(1 for i in w["ids"] if files and files.get(i) and files.get(i) != before.get(i)) if files is not None else None
+    if mine:
+        w["grabbed"] = True
+        _, issues = assess(mine, now, app)
+        bad = [i for i in issues if i["key"].startswith("blocked:")]
+        stuck = [i for i in issues if i["key"].startswith("stuck:")]
+        if bad:
+            return {**job, "status": "error", "error": f"Fake again: {bad[0]['reason']}"}
+        if stuck:
+            return {**job, "status": "error", "error": f"Didn't import: {stuck[0]['reason']}"}
+        size = sum(r.get("size") or 0 for r in mine)
+        left = sum(r.get("sizeleft") or 0 for r in mine)
+        etas = [x for x in (_seconds(r.get("timeleft")) for r in mine) if x is not None]
+        if size and left == 0:
+            return {**job, "percent": 100, "stage": f"Importing into {app}…"}
+        paused = all((r.get("status") or "").lower() in ("queued", "paused", "delay") for r in mine)
+        stage = "Waiting in the download client" if paused else "Downloading"
+        if total > 1 and got:
+            stage += f" · {got} of {total} done"
+        return {**job, "percent": round((size - left) / size * 100) if size else None,
+                "stage": stage, "eta_seconds": max(etas) if etas else None}
+    if got is not None and got >= total:
+        return {**job, "status": "done", "done_label": "Downloaded", "tone": "ok", "stage": f"Imported into {app}"}
+    if got is None and w.get("grabbed"):  # Lidarr: no file ids read; left the queue after a grab
+        return {**job, "status": "done", "done_label": "Downloaded", "tone": "ok", "stage": f"Left {app}'s queue"}
+    status = (command or {}).get("status")
+    if command is None or status in ("queued", "started"):
+        return {**job, "stage": "Searching indexers…"}
+    if status in ("failed", "aborted", "cancelled", "orphaned"):
+        return {**job, "status": "error", "error": f"The search {status}: {(command.get('message') or '')[:80]}".rstrip(": ")}
+    found = _REPORTS.search(command.get("message") or "")
+    n = int(found.group(1)) if found else None
+    if got:
+        return {**job, "status": "done", "done_label": f"{got} of {total} downloaded", "tone": "ok",
+                "stage": "No release found for the rest"}
+    if w.get("grabbed"):
+        return {**job, "status": "error", "error": f"Left {app}'s queue without importing"}
+    if n == 0:
+        return {**job, "status": "done", "done_label": "Nothing found", "tone": "neutral",
+                "stage": f"No other release yet. {app} keeps looking."}
+    ended = (command or {}).get("ended")
+    try:
+        waited = now - datetime.fromisoformat(ended.replace("Z", "+00:00")).timestamp() if ended else 0
+    except ValueError:
+        waited = 0
+    if waited > 600:
+        return {**job, "status": "error", "error": "Grabbed, but it never reached the download client"}
+    return {**job, "stage": "Sending to the download client…"}
+
+
+def track(url: str, api_key: str, w: dict, now: float | None = None) -> dict:
+    """Read the app for a watch and say where it stands (progress()). Blocking."""
+    now = now or time.time()
+    with httpx.Client(timeout=15, headers={"X-Api-Key": api_key}) as c:
+        command = None
+        if w.get("command_id"):
+            r = c.get(f"{w['base']}/command/{w['command_id']}")
+            command = r.json() if r.status_code < 400 else {"status": "completed", "message": ""}
+        else:
+            command = {"status": "completed", "message": "0 reports downloaded"}
+        records = c.get(f"{w['base']}/queue", params=QUEUE_PARAMS).json().get("records") or []
+        files = _files(c, w["base"], w["field"], w["ids"]) if w["ids"] else None
+    return progress(w, command, records, files, now)
 
 
 def split_key(key: str) -> tuple[int, str] | None:
@@ -318,4 +442,38 @@ if __name__ == "__main__":  # ponytail: self-check
     assert assess([], now) == ("0 in queue, nothing stuck", [])
     assert split_key("check:7:blocked:s12") == (7, "blocked:s12")
     assert split_key("check:7:late:x") is None and split_key("offline") is None and split_key("check:7") is None
+
+    # --- following a re-search ---
+    assert _seconds("1.02:03:04") == 93784 and _seconds("00:12:30") == 750 and _seconds("") is None
+    w = {"app": "Sonarr", "field": "episodeId", "ids": [11, 12], "old": ["OLD1", "OLD2"], "files": {11: 0, 12: 0}}
+    searching = {"status": "started", "message": "Searching indexers"}
+    done = lambda n: {"status": "completed", "message": f"Episode search completed. {n} reports downloaded.",
+                      "ended": iso(30)}
+    q = lambda did, epid, size, left, **kw: {"id": epid * 10, "downloadId": did, "episodeId": epid, "seriesId": 3,
+                                            "series": {"title": "Slow Horses"}, "episode": {"seasonNumber": 6, "episodeNumber": epid - 10},
+                                            "title": "x", "size": size, "sizeleft": left, "status": kw.pop("status", "downloading"),
+                                            "trackedDownloadStatus": "ok", "trackedDownloadState": "downloading", "timeleft": kw.pop("tl", None), **kw}
+    old_still_listed = q("OLD1", 11, 0, 0, status="completed")
+    assert progress(dict(w), searching, [old_still_listed], {11: 0, 12: 0}, now)["stage"] == "Searching indexers…"
+    assert progress(dict(w), done(2), [], {11: 0, 12: 0}, now)["stage"] == "Sending to the download client…"
+    ww = dict(w)
+    j = progress(ww, done(2), [q("N1", 11, 1000, 750, tl="00:10:00"), q("N2", 12, 1000, 250, tl="00:02:00")], {11: 0, 12: 0}, now)
+    assert (j["status"], j["percent"], j["stage"], j["eta_seconds"]) == ("running", 50, "Downloading", 600), j
+    assert ww["grabbed"]
+    j = progress(ww, done(2), [q("N2", 12, 1000, 0, status="completed", trackedDownloadState="importPending")], {11: 77, 12: 0}, now)
+    assert (j["percent"], j["stage"]) == (100, "Importing into Sonarr…"), j
+    j = progress(ww, done(2), [], {11: 77, 12: 78}, now)
+    assert (j["status"], j["done_label"], j["tone"]) == ("done", "Downloaded", "ok"), j
+    j = progress(dict(w), done(0), [], {11: 0, 12: 0}, now)
+    assert (j["status"], j["done_label"], j["tone"]) == ("done", "Nothing found", "neutral"), j
+    fake = q("N3", 11, 0, 0, status="completed", trackedDownloadStatus="warning", trackedDownloadState="importPending",
+             statusMessages=[{"messages": ["No files found are eligible for import in /dl/Slow.Horses.S06E01.exe"]}])
+    j = progress(dict(w), done(1), [fake], {11: 0, 12: 0}, now)
+    assert (j["status"], j["error"]) == ("error", "Fake again: bad file type (.exe)"), j
+    j = progress(dict(w, grabbed=True), done(1), [], {11: 0, 12: 0}, now)
+    assert j["status"] == "error" and "without importing" in j["error"], j
+    j = progress(dict(w), done(1), [], {11: 5, 12: 0}, now)
+    assert j["done_label"] == "1 of 2 downloaded", j
+    upgrade = dict(w, files={11: 40, 12: 41})  # had files already: only new ones count
+    assert progress(upgrade, searching, [], {11: 40, 12: 41}, now)["status"] == "running"
     print("ok")

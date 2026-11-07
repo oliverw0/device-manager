@@ -35,8 +35,11 @@ Companion agent: [device-manager-client](https://github.com/oliverw0/device-mana
   finished but didn't import. One problem per show or film, naming its
   episodes; new ones go out as one short push ("Slow Horses failed to
   download" / "S06E01–E03 · Bad file type (.exe)") with a **Remove & search
-  again** button that blocklists the release and searches for another. A
-  Downloads section in the daily summary.
+  again** button that blocklists the release and searches for another. Pressed
+  on the Health page, a progress card follows that search (searching,
+  downloading with a percentage and time left, imported / nothing found / fake
+  again); pressed on the phone, one short push says how it ended. A Downloads
+  section in the daily summary.
 - **Health** (the home page): what needs attention now, every check grouped (DNS, Proxmox,
   Backups, or your own groups) with 30-day uptime, each opening to show what it
   found; a **Timeline** of the last 24h / 7d / 30d; and **Sent alerts** (every

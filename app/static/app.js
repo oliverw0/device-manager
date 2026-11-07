@@ -727,6 +727,7 @@ var UPD_DISMISS_MS = 5000;
 function fmtEta(s) {
   if (s === null || s === undefined) return "";
   if (s < 60) return s + "s";
+  if (s >= 3600) return Math.floor(s / 3600) + "h " + String(Math.floor((s % 3600) / 60)).padStart(2, "0") + "m";
   return Math.floor(s / 60) + "m " + String(s % 60).padStart(2, "0") + "s";
 }
 
@@ -757,22 +758,35 @@ function trackUpdate(job) {
   renderUpdaters();
 }
 
+// A Remove & search again on the Health page: the same card, following the new
+// search and download in Sonarr/Radarr (polls /downloads/<id>.json every 3 s).
+function trackDownload(w) {
+  const key = "dl:" + w.id;
+  if (UPD_TRACK[key]) return;
+  const t = UPD_TRACK[key] = {
+    key, deviceId: null, deviceName: w.app, kind: "download", jobId: w.id, label: w.label,
+    pollUrl: w.poll_url, every: 3000, dismissMs: 15000, job: w, dismissAt: null,
+  };
+  pollTracker(t);
+  renderUpdaters();
+}
+
 function pollTracker(t) {
-  const tick = () => fetch(`/devices/${t.deviceId}/update/${t.jobId}.json`)
+  const tick = () => fetch(t.pollUrl || `/devices/${t.deviceId}/update/${t.jobId}.json`)
     .then((r) => (r.ok ? r.json() : Promise.reject()))
     .then((job) => {
       if (!UPD_TRACK[t.key]) return;         // dismissed while in flight
       t.job = job;
       if (job.status === "done" || job.status === "error") { startDismiss(t); return; }
       renderUpdaters();
-      setTimeout(tick, 1000);
+      setTimeout(tick, t.every || 1000);
     })
-    .catch(() => { if (UPD_TRACK[t.key]) setTimeout(tick, 2000); });
+    .catch(() => { if (UPD_TRACK[t.key]) setTimeout(tick, (t.every || 1000) * 2); });
   tick();
 }
 
 function startDismiss(t) {
-  if (t.dismissAt == null) t.dismissAt = Date.now() + UPD_DISMISS_MS;
+  if (t.dismissAt == null) t.dismissAt = Date.now() + (t.dismissMs || UPD_DISMISS_MS);
   renderUpdaters();          // paint the finished card once; the timer only nudges widths
   ensureCountdownTimer();
 }
@@ -788,7 +802,7 @@ function ensureCountdownTimer() {
       const remain = t.dismissAt - Date.now();
       if (remain <= 0) { removeTracker(t.key); return; }
       any = true;
-      const w = (remain / UPD_DISMISS_MS) * 100 + "%";
+      const w = (remain / (t.dismissMs || UPD_DISMISS_MS)) * 100 + "%";
       document.querySelectorAll(`.upd-cd-fill[data-cd="${t.key}"]`).forEach((f) => { f.style.width = w; });
     });
     if (!any) { clearInterval(UPD_CD_TIMER); UPD_CD_TIMER = null; }
@@ -860,9 +874,10 @@ function renderOverlay(trackers) {
   el.hidden = false;
   if (UPD_OVERLAY_MIN) {
     const running = trackers.filter((t) => t.dismissAt == null).length;
+    const noun = overlayNoun(trackers);
     const html =
       `<button class="uov-pill" onclick="toggleOverlayMin()"><span class="upd-spin"></span>` +
-      `${running ? running + " update" + (running > 1 ? "s" : "") + " running…" : "updates"}` +
+      `${running ? running + " " + noun.one + (running > 1 ? "s" : "") + " running…" : noun.many}` +
       `<span class="uov-caret">▴</span></button>`;
     if (el.dataset.view !== "min" || el.dataset.pill !== html) {  // keep the spinner running between polls
       el.className = "update-overlay min";
@@ -872,15 +887,24 @@ function renderOverlay(trackers) {
     }
     return;
   }
-  if (el.dataset.view !== "full") {
+  const title = overlayNoun(trackers).title;
+  if (el.dataset.view !== "full" || el.dataset.title !== title) {
     el.className = "update-overlay";
+    el.dataset.title = title;
     el.innerHTML =
-      `<div class="uov-head"><span class="uov-title">Updates</span>` +
+      `<div class="uov-head"><span class="uov-title">${title}</span>` +
       `<button class="term-btn uov-min" title="Minimise" onclick="toggleOverlayMin()">▾</button></div>` +
       `<div class="uov-body"></div>`;
     el.dataset.view = "full";
   }
   syncCards(el.querySelector(".uov-body"), trackers, true);
+}
+
+function overlayNoun(trackers) {
+  const dl = trackers.filter((t) => t.kind === "download").length;
+  if (dl === trackers.length) return { title: "Downloads", one: "download", many: "downloads" };
+  if (!dl) return { title: "Updates", one: "update", many: "updates" };
+  return { title: "Activity", one: "job", many: "activity" };
 }
 
 function toggleOverlayMin() { UPD_OVERLAY_MIN = !UPD_OVERLAY_MIN; renderUpdaters(); }
@@ -892,12 +916,13 @@ function updCardHtml(t, inOverlay) {
   if (job.status === "done" || job.status === "error") {
     const ok = job.status === "done";
     // start the countdown bar where it really is, in case the card is (re)drawn mid-countdown
-    const left = t.dismissAt ? Math.max(0, Math.min(100, ((t.dismissAt - Date.now()) / UPD_DISMISS_MS) * 100)) : 100;
-    const cd = `<div class="upd-cd"><div class="upd-cd-fill ${ok ? "ok" : "bad"}" data-cd="${t.key}" style="width:${left}%"></div></div>`;
+    const left = t.dismissAt ? Math.max(0, Math.min(100, ((t.dismissAt - Date.now()) / (t.dismissMs || UPD_DISMISS_MS)) * 100)) : 100;
+    const tone = ok ? (job.tone === "neutral" ? "neutral" : "ok") : "bad";
+    const cd = `<div class="upd-cd"><div class="upd-cd-fill ${tone === "bad" ? "bad" : "ok"}" data-cd="${t.key}" style="width:${left}%"></div></div>`;
     const dismiss = `<button class="term-btn upd-dismiss" title="Dismiss now" onclick="dismissTracker('${t.key}')">✕</button>`;
-    const doneText = t.kind === "client" ? "Updated" : "Up to date";
+    const doneText = job.done_label || (t.kind === "client" ? "Updated" : "Up to date");
     return `<div class="upd-card"><div class="upd-head">` +
-      `<span class="chip ${ok ? "ok" : "bad"}"><span class="chip-dot"></span>${ok ? doneText : "Failed"}</span>` +
+      `<span class="chip ${tone}"><span class="chip-dot"></span>${escapeHtml(ok ? doneText : t.kind === "download" ? "Didn't work" : "Failed")}</span>` +
       `<span class="upd-label">${label}</span>${dismiss}</div>` +
       (ok ? (job.stage && !["Up to date", "Client updated"].includes(job.stage) ? `<div class="upd-stage">${escapeHtml(job.stage)}</div>` : "")
           : `<div class="upd-stage upd-err">${escapeHtml(job.error || "Update failed")}</div>`) + cd + `</div>`;
@@ -916,7 +941,7 @@ function updCardHtml(t, inOverlay) {
 // Re-attach to any running job on page load (survives a hard reload too).
 function resumeUpdates() {
   fetch("/updates.json").then((r) => r.json()).then((data) => {
-    (data.jobs || []).forEach((job) => trackUpdate(job));
+    (data.jobs || []).forEach((job) => (job.kind === "download" ? trackDownload(job) : trackUpdate(job)));
     renderUpdaters();
   }).catch(() => {});
 }
@@ -1339,7 +1364,10 @@ async function removeDownload(id, btn) {
   btn.disabled = true;
   fetch(`/problems/${id}/remove`, { method: "POST" })
     .then((r) => r.json())
-    .then((r) => ask(r.message || "Done", "OK"))
+    .then((r) => {
+      if (r.watches && r.watches.length) { UPD_OVERLAY_MIN = false; r.watches.forEach(trackDownload); }  // the card says the rest
+      else ask(r.message || r.detail || "Done", "OK");
+    })
     .catch(() => ask("Couldn't reach Pulse", "OK"))
     .finally(() => { btn.disabled = false; problemsRefresh(); });
 }

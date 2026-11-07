@@ -364,8 +364,9 @@ def active_updates():
     """Every running job across all devices, so the persistent overlay can
     re-attach after any navigation (boosted or a hard reload)."""
     _prune()
+    from .. import downloads  # Remove & search again cards ride along
     return {"jobs": [_public(j) for j in JOBS.values()
-                     if j["status"] in ("starting", "running")]}
+                     if j["status"] in ("starting", "running")] + downloads.active()}
 
 
 if __name__ == "__main__":  # ponytail: progress-parser self-check
