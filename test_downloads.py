@@ -69,8 +69,8 @@ def sonarr(req: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"appName": "Sonarr", "version": "4.0.15"})
     if path == "/api/v3/queue" and req.method == "GET":
         assert req.url.params.get("includeSeries") == "true"
-        for r in QUEUE:
-            r["episodeHasFile"] = bool(SONARR["files"].get(r["episodeId"]))
+        for r in QUEUE:  # like the real one: a cached copy from when it was grabbed, never refreshed
+            r.setdefault("episodeHasFile", bool(SONARR["files"].get(r["episodeId"])))
         return httpx.Response(200, json={"totalRecords": len(QUEUE), "records": QUEUE})
     if path.startswith("/api/v3/queue/") and req.method == "DELETE":
         qid = int(path.rsplit("/", 1)[1])
@@ -95,7 +95,8 @@ def sonarr(req: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=SONARR["commands"][int(path.rsplit("/", 1)[1])])
     if path == "/api/v3/episode":
         ids = [int(x) for x in req.url.params.get_list("episodeIds")]
-        return httpx.Response(200, json=[{"id": i, "episodeFileId": SONARR["files"].get(i, 0)} for i in ids])
+        return httpx.Response(200, json=[{"id": i, "episodeFileId": SONARR["files"].get(i, 0),
+                                         "hasFile": bool(SONARR["files"].get(i))} for i in ids])
     return httpx.Response(404)
 
 

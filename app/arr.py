@@ -238,6 +238,7 @@ async def check(url: str, api_key: str, now: float | None = None) -> tuple[bool,
             if r.status_code >= 400:
                 raise ArrError(f"{app} answered {r.status_code} for its queue: {r.text[:150]}")
             records = r.json().get("records") or []
+            await _library(c, base, records)
             summary, issues = assess(records, now, app)
             # Before calling something failed, make sure it isn't on the NAS already
             # (downloaded by hand, not yet scanned): rescan those shows / films, then look again.
@@ -245,13 +246,34 @@ async def check(url: str, api_key: str, now: float | None = None) -> tuple[bool,
                                      if g[:1] in RESCANS and g[1:].isdigit()
                                      and now - _RESCANNED.get((url, g), 0) > RESCAN_EVERY))
             if due and await _rescan(c, base, url, due, now):
-                r = await c.get(f"{base}/queue", params=QUEUE_PARAMS)
-                if r.status_code < 400:
-                    records = r.json().get("records") or []
-                    summary, issues = assess(records, now, app)
+                await _library(c, base, records)
+                summary, issues = assess(records, now, app)
     except httpx.HTTPError as exc:
         raise ArrError(f"Couldn't reach {url}: {exc or type(exc).__name__}") from exc
     return True, summary, None, issues
+
+
+async def _library(c: httpx.AsyncClient, base: str, records: list[dict]) -> None:
+    """Fill in whether each record's episode / film has a file from the app's
+    library itself: the queue's own episodeHasFile is a cached copy that a
+    rescan doesn't update. Only for records that look wrong (0 B, warnings)."""
+    odd = [r for r in records if not r.get("size") or r.get("trackedDownloadStatus") in ("warning", "error")]
+    eps = sorted({r["episodeId"] for r in odd if r.get("episodeId")})
+    have: dict[int, bool] = {}
+    for n in range(0, len(eps), 100):
+        r = await c.get(f"{base}/episode", params=[("episodeIds", i) for i in eps[n:n + 100]])
+        if r.status_code < 400:
+            have.update({e["id"]: bool(e.get("hasFile")) for e in r.json()})
+    films: dict[int, bool] = {}
+    for mid in sorted({r["movieId"] for r in odd if r.get("movieId")}):
+        r = await c.get(f"{base}/movie/{mid}")
+        if r.status_code < 400:
+            films[mid] = bool(r.json().get("hasFile"))
+    for rec in odd:
+        if rec.get("episodeId") in have:
+            rec["episodeHasFile"] = have[rec["episodeId"]]
+        if rec.get("movieId") in films:
+            rec["movie"] = {**(rec.get("movie") or {}), "hasFile": films[rec["movieId"]]}
 
 
 RESCANS = {"s": ("RescanSeries", "seriesId"), "m": ("RescanMovie", "movieId")}
