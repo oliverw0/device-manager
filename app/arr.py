@@ -14,6 +14,7 @@ remove() is the "Remove & search again" button: it takes the download out of
 the queue and the client, blocklists that release, and lets the app search for
 a different one.
 """
+import asyncio
 import re
 import time
 from datetime import datetime, timezone
@@ -134,7 +135,11 @@ def assess(records: list[dict], now: float, app: str = "Sonarr") -> tuple[str, l
     download ids (a season pack is one download with several records)."""
     groups: dict[str, dict] = {}
     placed = {}  # downloadId -> group key: a pack's records follow its first
+    have = 0     # episodes / films already in the library (downloaded by hand): not news
     for r in records:
+        if in_library(r):
+            have += 1
+            continue
         did = r.get("downloadId") or f"id{r.get('id')}"
         gid, name, code = _who(r)
         if did in placed:
@@ -193,7 +198,14 @@ def assess(records: list[dict], now: float, app: str = "Sonarr") -> tuple[str, l
                      + (f" ({', '.join(exts)})" if exts else ""))
     if stuck:
         parts.append(f"{count(stuck)} didn't import")
-    return (", ".join(parts) if blocked or stuck else parts[0] + ", nothing stuck"), issues
+    if have:
+        parts.append(f"{have} already in the library")
+    return ", ".join(parts) + ("" if blocked or stuck else ", nothing stuck"), issues
+
+
+def in_library(r: dict) -> bool:
+    """The episode or film this queue record is for already has a file."""
+    return bool(r.get("episodeHasFile") or (r.get("movie") or {}).get("hasFile"))
 
 
 async def _base(c: httpx.AsyncClient, url: str) -> tuple[str, str]:
@@ -226,10 +238,44 @@ async def check(url: str, api_key: str, now: float | None = None) -> tuple[bool,
             if r.status_code >= 400:
                 raise ArrError(f"{app} answered {r.status_code} for its queue: {r.text[:150]}")
             records = r.json().get("records") or []
+            summary, issues = assess(records, now, app)
+            # Before calling something failed, make sure it isn't on the NAS already
+            # (downloaded by hand, not yet scanned): rescan those shows / films, then look again.
+            due = list(dict.fromkeys(g for g in (i["key"].split(":", 1)[1] for i in issues)
+                                     if g[:1] in RESCANS and g[1:].isdigit()
+                                     and now - _RESCANNED.get((url, g), 0) > RESCAN_EVERY))
+            if due and await _rescan(c, base, url, due, now):
+                r = await c.get(f"{base}/queue", params=QUEUE_PARAMS)
+                if r.status_code < 400:
+                    records = r.json().get("records") or []
+                    summary, issues = assess(records, now, app)
     except httpx.HTTPError as exc:
         raise ArrError(f"Couldn't reach {url}: {exc or type(exc).__name__}") from exc
-    summary, issues = assess(records, now, app)
     return True, summary, None, issues
+
+
+RESCANS = {"s": ("RescanSeries", "seriesId"), "m": ("RescanMovie", "movieId")}
+RESCAN_EVERY = 6 * 3600  # per show / film
+RESCAN_WAIT = 20         # seconds to wait for the scans before reading the queue again
+_RESCANNED: dict[tuple[str, str], float] = {}
+
+
+async def _rescan(c: httpx.AsyncClient, base: str, url: str, groups: list[str], now: float) -> bool:
+    """Ask the app to rescan these shows' / films' folders, wait for it (up to
+    RESCAN_WAIT s). -> whether any scan ran."""
+    ids = []
+    for g in groups:
+        name, field = RESCANS[g[0]]
+        r = await c.post(f"{base}/command", json={"name": name, field: int(g[1:])})
+        _RESCANNED[(url, g)] = now
+        if r.status_code < 400 and r.json().get("id"):
+            ids.append(r.json()["id"])
+    deadline = time.monotonic() + RESCAN_WAIT
+    while ids and time.monotonic() < deadline:
+        await asyncio.sleep(1)
+        states = [(await c.get(f"{base}/command/{i}")).json().get("status") for i in ids]
+        ids = [i for i, st in zip(ids, states) if st in ("queued", "started")]
+    return bool(groups)
 
 
 # what each app's queue records point at, and the search command for them
@@ -439,6 +485,10 @@ if __name__ == "__main__":  # ponytail: self-check
     assert stuck_reason(["Invalid video file, unsupported extension: '.7z'"]) == "unsupported file (.7z)"
     assert stuck_reason([]) == "needs a manual import"
     assert assess([recs[-2]], now) == ("1 in queue, nothing stuck", [])
+    manual = [{**recs[0], "episodeHasFile": True}, recs[1]]
+    summary, issues = assess(manual, now)
+    assert [i["ids"] for i in issues] == [["SH2"]] and summary == "2 in queue, 1 blocked in 1 title (.exe), 1 already in the library", summary
+    assert assess([{**recs[-1], "movie": {"title": "Dune", "hasFile": True}}], now) == ("1 in queue, 1 already in the library, nothing stuck", [])
     assert assess([], now) == ("0 in queue, nothing stuck", [])
     assert split_key("check:7:blocked:s12") == (7, "blocked:s12")
     assert split_key("check:7:late:x") is None and split_key("offline") is None and split_key("check:7") is None

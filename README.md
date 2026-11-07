@@ -32,7 +32,9 @@ Companion agent: [device-manager-client](https://github.com/oliverw0/device-mana
   start at boot that are stopped). Each PBS/Proxmox finding is its own problem.
 - **Sonarr / Radarr / Lidarr queue** (API key): downloads the torrent client
   refused (bad file type, finished at 0 B: fake releases) and ones that
-  finished but didn't import. One problem per show or film, naming its
+  finished but didn't import, unless that episode or film is already in the
+  library (it rescans the show's folder first, so a copy you added by hand
+  counts). One problem per show or film, naming its
   episodes; new ones go out as one short push ("Slow Horses failed to
   download" / "S06E01–E03 · Bad file type (.exe)") with a **Remove & search
   again** button that blocklists the release and searches for another. Pressed

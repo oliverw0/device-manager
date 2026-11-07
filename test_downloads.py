@@ -38,7 +38,7 @@ async def _idle():
 monitor.run_forever = _idle
 
 # --- a fake Sonarr ---
-SONARR = {"key": "sonarr-key", "deleted": [], "commands": {}, "files": {}}
+SONARR = {"key": "sonarr-key", "deleted": [], "commands": {}, "files": {4202: 7}, "on_disk": {8106}, "rescans": []}
 
 
 def ep(i, did, show, sid, s, e, size=0, msg=None, status="completed"):
@@ -56,6 +56,8 @@ QUEUE = [
     ep(20, "LK2", "Loki", 6, 1, 2, size=10 ** 9, msg="Unable to determine if file is a sample"),
     {**ep(30, "OK", "Fine Show", 7, 1, 1, size=10 ** 9, status="downloading"), "trackedDownloadStatus": "ok",
      "trackedDownloadState": "downloading", "statusMessages": []},
+    ep(50, "ML2", "MobLand", 4, 2, 2, msg=bad("MobLand S02E02.exe")),     # Sonarr already has this episode
+    ep(60, "LN6", "Lanterns", 8, 1, 6, msg=bad("Lanterns.S01E06.exe")),   # downloaded by hand, on the NAS, not scanned yet
 ]
 
 
@@ -67,6 +69,8 @@ def sonarr(req: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"appName": "Sonarr", "version": "4.0.15"})
     if path == "/api/v3/queue" and req.method == "GET":
         assert req.url.params.get("includeSeries") == "true"
+        for r in QUEUE:
+            r["episodeHasFile"] = bool(SONARR["files"].get(r["episodeId"]))
         return httpx.Response(200, json={"totalRecords": len(QUEUE), "records": QUEUE})
     if path.startswith("/api/v3/queue/") and req.method == "DELETE":
         qid = int(path.rsplit("/", 1)[1])
@@ -77,10 +81,16 @@ def sonarr(req: httpx.Request) -> httpx.Response:
         return httpx.Response(200)
     if path == "/api/v3/command" and req.method == "POST":
         body = json.loads(req.content)
+        if body["name"] == "RescanSeries":  # finds what's on disk for that show
+            SONARR["rescans"].append(body["seriesId"])
+            SONARR["files"].update({e: 1 for e in SONARR["on_disk"] if e // 1000 == body["seriesId"]})
+            return httpx.Response(201, json={"id": 999, "name": "RescanSeries", "status": "completed"})
         assert body["name"] == "EpisodeSearch" and body["episodeIds"], body
         cid = len(SONARR["commands"]) + 100
         SONARR["commands"][cid] = {"id": cid, "name": "EpisodeSearch", "status": "started", "body": body, "message": ""}
         return httpx.Response(201, json=SONARR["commands"][cid])
+    if path == "/api/v3/command/999":
+        return httpx.Response(200, json={"id": 999, "status": "completed"})
     if path.startswith("/api/v3/command/"):
         return httpx.Response(200, json=SONARR["commands"][int(path.rsplit("/", 1)[1])])
     if path == "/api/v3/episode":
@@ -139,6 +149,8 @@ with TestClient(app) as c:
 
     # --- first sweep: one problem per show, one short push for all of it ---
     sweep()
+    # what looked failed was rescanned first; Lanterns turned out to be on the NAS already
+    assert sorted(SONARR["rescans"]) == [3, 4, 6, 8], SONARR["rescans"]
     open_ = open_problems()
     k = lambda key: f"check:{cid}:{key}"
     assert set(open_) == {k("blocked:s3"), k("blocked:s4"), k("stuck:s6")}, set(open_)
@@ -154,11 +166,12 @@ with TestClient(app) as c:
     assert labels == ["Remove & search again", "Acknowledge", "Mute 1h"], labels
     assert push["Click"] == "https://pulse.example/health"
     with Session(engine) as s:
-        assert "6 in queue, 4 blocked in 2 titles (.exe, .scr), 1 didn't import" == s.get(ServiceCheck, cid).summary
+        summary = s.get(ServiceCheck, cid).summary
+        assert summary == "8 in queue, 4 blocked in 2 titles (.exe, .scr), 1 didn't import, 2 already in the library", summary
 
     # --- nothing new: nothing pushed; one more episode of a show already pushed: a short push of its own ---
     sweep()
-    assert len(PUSHES) == 1
+    assert len(PUSHES) == 1 and len(SONARR["rescans"]) == 4  # rescans at most every 6 h per show
     QUEUE.append(ep(5, "SH5", "Slow Horses", 3, 6, 5, msg=bad("Slow.Horses.S06E05.exe")))
     sweep()
     assert len(PUSHES) == 2 and PUSHES[1]["Title"] == "Slow Horses failed to download", PUSHES[1]
