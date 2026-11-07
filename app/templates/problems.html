@@ -7,7 +7,8 @@
 {%- set p, d = r.p, r.d -%}
 {%- set ssh = d.ssh_enabled and d.is_online -%}
 {%- set name = d.name | tojson | forceescape -%}
-{%- if ssh %}<button type="button" class="secondary pb-icon tip-below tip-end" aria-label="Open terminal on {{ d.name }}" data-tip="Terminal" onclick="openTerminal({{ d.id }}, {{ name }})"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7l5 5-5 5M12 17h7"/></svg></button>{% else %}<span></span>{% endif -%}
+{%- if r.download %}<button type="button" class="secondary pb-icon tip-below tip-end" aria-label="Remove and search again: {{ p.title }}" data-tip="Remove &amp; search again" onclick="removeDownload({{ p.id }}, this)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8M21 3v5h-5M21 12a9 9 0 0 1-15.5 6.2L3 16M3 21v-5h5"/></svg></button>
+{%- elif ssh %}<button type="button" class="secondary pb-icon tip-below tip-end" aria-label="Open terminal on {{ d.name }}" data-tip="Terminal" onclick="openTerminal({{ d.id }}, {{ name }})"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7l5 5-5 5M12 17h7"/></svg></button>{% else %}<span></span>{% endif -%}
 <button type="button" class="pb-icon pb-ack{{ ' on' if p.acked_at }} tip-below tip-end" aria-pressed="{{ 'true' if p.acked_at else 'false' }}" aria-label="{{ 'Unacknowledge' if p.acked_at else 'Acknowledge' }}: {{ p.title }} on {{ d.name }}" data-tip="{{ 'Acknowledged. Click to undo' if p.acked_at else 'Acknowledge' }}" onclick="ackProblem({{ p.id }}, this, {{ 'true' if p.acked_at else 'false' }})"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></button>
 {% endmacro %}
 
@@ -50,16 +51,16 @@
 
 {% macro check_body(x) %}
 {%- set c = x.c -%}
-{%- set kinds = {'http': 'HTTP', 'tcp': 'TCP port', 'dns': 'DNS', 'heartbeat': 'Heartbeat', 'pbs': 'Proxmox Backup Server', 'proxmox': 'Proxmox VE'} -%}
+{%- set kinds = {'http': 'HTTP', 'tcp': 'TCP port', 'dns': 'DNS', 'heartbeat': 'Heartbeat', 'pbs': 'Proxmox Backup Server', 'proxmox': 'Proxmox VE', 'arr': 'Sonarr / Radarr queue'} -%}
 <div class="ck-body">
-  {% if c.kind in ('pbs', 'proxmox') %}
+  {% if c.kind in ('pbs', 'proxmox', 'arr') %}
     {% if x.issues %}
     <ul class="check-issues">{% for i in x.issues %}<li class="sev-{{ i.severity }}"><b>{{ i.title }}</b>{% if i.detail %} <span class="muted">{{ i.detail }}</span>{% endif %}</li>{% endfor %}</ul>
     {% elif c.last_status == 'down' and c.last_error %}<p class="check-err">{{ c.last_error }}</p>
     {% elif c.last_status == 'up' %}<p class="ck-ok">Nothing wrong found.</p>{% endif %}
   {% elif c.last_status == 'down' and c.last_error %}<p class="check-err">{{ c.last_error }}</p>{% endif %}
   <dl class="ck-facts">
-    {% if c.kind in ('pbs', 'proxmox') and c.summary %}<dt>{{ 'Last 24h' if c.kind == 'pbs' else 'Now' }}</dt><dd>{{ c.summary }}</dd>{% endif %}
+    {% if c.kind in ('pbs', 'proxmox', 'arr') and c.summary %}<dt>{{ 'Last 24h' if c.kind == 'pbs' else 'Now' }}</dt><dd>{{ c.summary }}</dd>{% endif %}
     <dt>Type</dt><dd>{{ kinds.get(c.kind, c.kind) }}</dd>
     {% if c.kind == 'heartbeat' %}
     <dt>Schedule</dt><dd>every {{ c.interval_seconds | dur }}{% if c.grace_seconds %}, late after {{ c.grace_seconds | dur }} more{% endif %}</dd>
@@ -96,7 +97,7 @@
             {%- if x.state == 'paused' %}Paused
             {%- elif x.issues %}{{ x.issues | length }} finding{{ 's' if x.issues | length != 1 }}: {{ x.issues[0].title }}
             {%- elif x.state == 'down' %}{{ c.last_error or 'Down' }}
-            {%- elif c.kind in ('pbs', 'proxmox') and c.summary %}{{ c.summary }}
+            {%- elif c.kind in ('pbs', 'proxmox', 'arr') and c.summary %}{{ c.summary }}
             {%- elif x.state == 'up' %}Up{% if c.last_latency_ms is not none %} · {{ c.last_latency_ms | round | int }} ms{% endif %}{% if x.cert_days is not none %} · cert {{ x.cert_days }}d{% endif %}
             {%- else %}Waiting for the first check{% endif %}
             {%- if x.device %} · {{ x.device.name }}{% endif %}

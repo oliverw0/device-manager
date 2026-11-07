@@ -9,12 +9,15 @@ logger = logging.getLogger("devicemanager.notifier")
 
 
 def send(message: str, title: str = "Pulse", priority: str | None = None, tags: str | None = None,
-         click: str | None = None, device_id: int | None = None, key: str | None = None) -> bool:
+         click: str | None = None, device_id: int | None = None, key: str | None = None,
+         actions: list[tuple[str, str, object]] | None = None) -> bool:
     """Push to ntfy; every attempt is written to the notification log.
     click: a Pulse path ("/") the notification opens when tapped, if the
     dashboard's public URL is set (Users page, Dashboard URL).
     device_id (+ key, the problem's key such as "offline" or "check:5") adds
     Acknowledge and Mute 1h buttons, which call back to Pulse with a signed link.
+    actions: [(label, action, key or [keys])] in place of those two (at most 3,
+    ntfy's limit), e.g. ("Remove & search again", "remove", [...]).
     Returns whether ntfy accepted it."""
     if not settings.ntfy_url:
         logger.warning("NTFY_URL not configured, skipping notification: %s", message)
@@ -34,10 +37,9 @@ def send(message: str, title: str = "Pulse", priority: str | None = None, tags: 
             headers["Click"] = f"{base}/devices/{device_id}"
         if device_id:
             from .routers.hooks import action_url  # here: routers import this module
-            headers["Actions"] = "; ".join([
-                f"http, Acknowledge, {action_url('ack', device_id, key)}, method=POST, clear=true",
-                f"http, Mute 1h, {action_url('mute', device_id, key)}, method=POST, clear=true",
-            ])
+            buttons = actions or [("Acknowledge", "ack", key), ("Mute 1h", "mute", key)]
+            headers["Actions"] = "; ".join(
+                f"http, {label}, {action_url(a, device_id, k)}, method=POST, clear=true" for label, a, k in buttons[:3])
 
     ok, error = True, ""
     try:

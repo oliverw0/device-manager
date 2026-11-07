@@ -14,7 +14,7 @@
 {% set checks_up = checks | selectattr('last_status', 'equalto', 'up') | list | length %}
 
 <section class="device-hero">
-  <a href="/" class="back-link">&larr; All devices</a>
+  <a href="/devices" class="back-link">&larr; All devices</a>
   <div class="hero-row">
     <span class="hero-os">{% if device.os_key %}<span class="os-icon os-{{ device.os_key }}"></span>{% endif %}</span>
     <div class="hero-title">
@@ -303,7 +303,7 @@
 <div class="dtab" data-tab="checks" role="tabpanel" hidden>
   <section class="panel">
     <h2>Service checks {% if checks %}<span class="chip neutral">{{ checks | length }}</span>{% endif %}</h2>
-    {% set kind_label = {'http': 'HTTP', 'tcp': 'TCP', 'dns': 'DNS', 'heartbeat': 'Heartbeat', 'pbs': 'PBS', 'proxmox': 'Proxmox'} %}
+    {% set kind_label = {'http': 'HTTP', 'tcp': 'TCP', 'dns': 'DNS', 'heartbeat': 'Heartbeat', 'pbs': 'PBS', 'proxmox': 'Proxmox', 'arr': 'Queue'} %}
     {% for c in checks %}
     {% set issues = (c.issues | fromjson) if c.issues else [] %}
     <div class="check-item">
@@ -324,7 +324,7 @@
       <label>Name <input type="text" name="name" value="{{ c.name }}" required maxlength="80" /></label>
       {% if c.kind != 'heartbeat' %}<label class="cf-wide">{{ 'URL' if c.kind == 'http' else 'name@server' if c.kind == 'dns' else 'Host:port' if c.kind == 'tcp' else 'Address' }} <input type="text" name="target" value="{{ c.target }}" required /></label>{% endif %}
       {% if c.kind in ('http', 'dns') %}<label>Expect <input type="text" name="expect" value="{{ c.expect }}" placeholder="{{ 'status or text' if c.kind == 'http' else 'an address' }}" /></label>{% endif %}
-      {% if c.kind in ('pbs', 'proxmox') %}<label class="cf-wide">API token <input type="password" name="secret" autocomplete="off" placeholder="blank keeps the saved token" /></label>{% endif %}
+      {% if c.kind in ('pbs', 'proxmox', 'arr') %}<label class="cf-wide">{{ 'API key' if c.kind == 'arr' else 'API token' }} <input type="password" name="secret" autocomplete="off" placeholder="blank keeps the saved token" /></label>{% endif %}
       <label>Group <input type="text" name="group" value="{{ c.group }}" list="check-groups" maxlength="40" placeholder="by type" /></label>
       <button type="submit">Save</button>
     </form>
@@ -332,10 +332,10 @@
     {% if issues %}
     <ul class="check-issues">{% for i in issues %}<li class="sev-{{ i.severity }}"><b>{{ i.title }}</b>{% if i.detail %} <span class="muted">{{ i.detail }}</span>{% endif %}</li>{% endfor %}</ul>
     {% endif %}
-    {% if c.kind in ('pbs', 'proxmox') and c.summary %}<div class="ping-url"><span class="muted">{{ 'Last 24h:' if c.kind == 'pbs' else 'Now:' }}</span> {{ c.summary }}</div>{% endif %}
+    {% if c.kind in ('pbs', 'proxmox', 'arr') and c.summary %}<div class="ping-url"><span class="muted">{{ 'Last 24h:' if c.kind == 'pbs' else 'Now:' }}</span> {{ c.summary }}</div>{% endif %}
     {% if c.kind == 'heartbeat' %}<div class="ping-url"><span class="muted">Add to the end of the job:</span> <code>curl -fsS -m 10 {{ request.base_url }}ping/{{ c.token }}</code></div>{% endif %}
     {% else %}
-    <p class="muted">No checks yet. HTTP, TCP and DNS checks watch a service; a heartbeat watches a job (backup, cron) that pings when it finishes; PBS and Proxmox read those servers' own state.</p>
+    <p class="muted">No checks yet. HTTP, TCP and DNS checks watch a service; a heartbeat watches a job (backup, cron) that pings when it finishes; PBS and Proxmox read those servers' own state; Sonarr / Radarr watches a download queue for stuck downloads.</p>
     {% endfor %}
     <datalist id="check-groups">{% for g in check_groups %}<option value="{{ g }}">{% endfor %}{% for g in ['DNS', 'Auth', 'Proxy', 'Media', 'Backups', 'Proxmox', 'Home'] if g not in check_groups %}<option value="{{ g }}">{% endfor %}</datalist>
     <details style="margin-top:12px" id="add-check"{{ ' open' if prefill.target }}>
@@ -350,6 +350,7 @@
             <option value="heartbeat" data-name="nightly backup">Heartbeat</option>
             <option value="pbs" data-name="pbs">PBS backups</option>
             <option value="proxmox" data-name="pve">Proxmox VE</option>
+            <option value="arr" data-name="Sonarr">Sonarr / Radarr</option>
           </select>
         </label>
         <label>Name <input type="text" name="name" placeholder="nginx" required value="{{ prefill.name }}" /></label>
@@ -359,6 +360,8 @@
         <label class="cf-wide" data-kind="pbs proxmox">Address <input type="text" name="target" placeholder="192.168.1.20" required /></label>
         <label class="cf-wide" data-kind="pbs">API token <input type="password" name="secret" autocomplete="off" placeholder="root@pam!pulse:secret" required /></label>
         <label class="cf-wide" data-kind="proxmox">API token <input type="password" name="secret" autocomplete="off" placeholder="root@pam!pulse=secret" required /></label>
+        <label class="cf-wide" data-kind="arr">Address <input type="text" name="target" placeholder="192.168.50.226:8989" required /></label>
+        <label class="cf-wide" data-kind="arr">API key <input type="password" name="secret" autocomplete="off" placeholder="from Settings > General" required /></label>
         <label data-kind="http">Expect <input type="text" name="expect" placeholder="optional: 200, or page text" /></label>
         <label data-kind="dns">Expect <input type="text" name="expect" placeholder="optional: an address" /></label>
         <label data-kind="http tcp dns">Every
@@ -377,6 +380,7 @@
         <p class="cf-hint" data-kind="dns">Asks that one server for the name's address: proves the resolver answers, which a check on its web page doesn't. Add one per DNS server (primary and secondary AdGuard).</p>
         <p class="cf-hint" data-kind="heartbeat">For a job like a backup or cron script: you'll get a URL to call when it finishes. Down if it doesn't call in time.</p>
         <p class="cf-hint" data-kind="pbs">Reads backup, verify and GC results from the last 24 h, how old each guest's newest backup is (late after {{ pbs_late_hours }} h), and how full each datastore is. Port 8007 is added. Token: in PBS, <b>Access Control → API Token → Add</b> (root@pam, name pulse), then <b>Permissions → Add → API Token Permission</b>: path <code>/</code>, role <b>Audit</b>. Paste it as <code>root@pam!pulse:</code> followed by the secret.</p>
+        <p class="cf-hint" data-kind="arr">Reads the download queue of Sonarr, Radarr or Lidarr every 5 min. A download the torrent client refused (bad file type, 0 B) or one that finished but didn't import becomes a problem, one per show or film, and new ones go to ntfy in one short push with a <b>Remove &amp; search again</b> button. API key: <b>Settings → General → API Key</b>. Add one check per app.</p>
         <p class="cf-hint" data-kind="proxmox">Reads storage and thin pool use, disk SMART health and guests set to start at boot that are stopped. Port 8006 is added. Token: <b>Datacenter → Permissions → API Tokens → Add</b> (user root@pam, ID pulse, Privilege Separation on), then <b>Permissions → Add → API Token Permission</b>: path <code>/</code>, role <b>PVEAuditor</b>. Paste it as <code>root@pam!pulse=</code> followed by the secret.</p>
       </form>
     </details>

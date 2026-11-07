@@ -15,7 +15,9 @@ with TestClient(app, base_url="http://testserver") as c:
     assert r.status_code == 303, r.status_code
     assert "dm_session" in c.cookies, "session cookie not stored -> login loops"
 
-    r = c.get("/", follow_redirects=False)                # the request that used to bounce
+    r = c.get("/", follow_redirects=False)                # home is the Health page, signed in
+    assert r.status_code == 302 and r.headers["location"] == "/health", (r.status_code, r.headers.get("location"))
+    r = c.get("/health", follow_redirects=False)          # the request that used to bounce
     assert r.status_code == 200, f"still bounced: {r.status_code} -> {r.headers.get('location')}"
 
     r = c.post("/login", data={"username": "admin", "password": "wrong", "next": "/"}, follow_redirects=False)

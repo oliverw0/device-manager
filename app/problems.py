@@ -6,7 +6,8 @@ ones that have cleared. Offline, thresholds, stopped containers, updates and
 http/tcp/dns checks already push to ntfy where they're detected (api.py,
 monitor.py), so sync() only pushes problems marked "push" here: missed
 heartbeats, certificates, PBS and Proxmox findings, unhealthy or restart-looping
-containers. High problems nobody acknowledges get a reminder every
+containers. Stuck downloads (arr checks) go out grouped, one push per check per
+sweep, from push_downloads(). High problems nobody acknowledges get a reminder every
 REMINDER_HOURS.
 """
 import json
@@ -16,7 +17,7 @@ from pathlib import Path
 
 from sqlmodel import Session, delete, select
 
-from . import notifier
+from . import arr, notifier
 from .config import settings
 from .database import engine
 from .models import CheckDay, Device, Problem, ServiceCheck
@@ -67,6 +68,13 @@ def check_problems(c: ServiceCheck, now: datetime) -> list[dict]:
             last = f"Last ping {ago((now - c.last_checked_at).total_seconds())} ago." if c.last_checked_at else "No ping yet."
             out.append(_p(f"check:{c.id}", "warning", "Heartbeat", f"{c.name} missed",
                           f"Expected every {ago(c.interval_seconds)} (+{ago(c.grace_seconds)} grace). {last}", push=True))
+        return out
+    if c.kind == "arr":
+        # one problem per show / film, named in full; pushed by push_downloads, grouped
+        for i in json.loads(c.issues) if c.issues else []:
+            out.append(_p(f"check:{c.id}:{i['key']}", i.get("severity") or "warning", "Downloads", i["title"], i.get("detail") or ""))
+        if c.last_status == "down":
+            out.append(_p(f"check:{c.id}", "warning", "Downloads", f"{c.name}: can't read its queue", c.last_error or "", push=True))
         return out
     if c.kind in ("pbs", "proxmox"):
         source = "Backups" if c.kind == "pbs" else "Proxmox"
@@ -178,8 +186,98 @@ def sync(session: Session, now: datetime | None = None) -> list[Problem]:
             notifier.send(f"{d.name}: {p.title}. {p.detail}".strip(), title=p.source,
                           priority="high" if p.severity == "high" else "default", tags="warning",
                           device_id=d.id, key=p.key)
+    push_downloads(checks, devices, now, settings.data_dir() / "downloads_pushed.json")
     remind(session, devices, now)
     return new
+
+
+def push_downloads(checks: list[ServiceCheck], devices: dict, now: datetime, seen_path: Path) -> list[tuple[str, str]]:
+    """One push per arr check for what's newly stuck since the last sweep: a
+    show with five blocked episodes is one line, and several shows found at once
+    are one push. A show already pushed only pushes again when more episodes
+    join it. seen_path remembers which downloads were pushed. Returns the
+    (title, message) pairs sent."""
+    seen = json.loads(_read(seen_path) or "{}")
+    keep, sent = {}, []
+    for c in checks:
+        if c.kind != "arr" or not c.enabled:
+            continue
+        before = seen.get(str(c.id), {})
+        if c.last_status == "down":
+            keep[str(c.id)] = before  # unreadable for now: don't forget what was already pushed
+            continue
+        issues = json.loads(c.issues) if c.issues else []
+        keep[str(c.id)] = {i["key"]: i.get("ids", []) for i in issues}
+        fresh = [i for i in issues if set(i.get("ids", [])) - set(before.get(i["key"], []))]
+        d = devices.get(c.device_id)
+        if not fresh or d is None or d.alerts_muted(now):
+            continue
+        blocked = [i for i in fresh if i["key"].startswith("blocked:")]
+        title, message = download_push(fresh)
+        keys = [f"check:{c.id}:{i['key']}" for i in fresh]
+        bkeys = [f"check:{c.id}:{i['key']}" for i in blocked]
+        actions = ([("Remove & search again", "remove", bkeys if len(bkeys) <= 8 else [f"check:{c.id}:blocked:*"])] if blocked else []) + [
+            ("Acknowledge", "ack", keys if len(keys) <= 8 else [f"check:{c.id}:*"]), ("Mute 1h", "mute", None)]
+        notifier.send(message, title=title, priority="default", tags="no_entry_sign" if blocked else "inbox_tray",
+                      click="/health", device_id=d.id, actions=actions)
+        sent.append((title, message))
+    seen_path.write_text(json.dumps(keep), encoding="utf-8")
+    return sent
+
+
+def download_push(fresh: list[dict]) -> tuple[str, str]:
+    """Phone-sized: what failed, then why in a few words.
+    One:  "Slow Horses failed to download" / "S06E01–E03, E05, E06 · Bad file type (.exe)"
+    Many: "3 downloads failed" / a "Name S01E02 · reason" line each."""
+    verb = lambda i: "failed to download" if i["key"].startswith("blocked:") else "didn't import"
+    if len(fresh) == 1:
+        i = fresh[0]
+        name, eps, reason = i.get("name") or i["title"], i.get("eps") or "", i.get("reason") or ""
+        return f"{name} {verb(i)}", " · ".join(x for x in (eps, reason[:1].upper() + reason[1:]) if x)
+    every_blocked = all(i["key"].startswith("blocked:") for i in fresh)
+    title = f"{len(fresh)} downloads {'failed' if every_blocked else 'need a look'}"
+    lines = [" · ".join(x for x in (f"{i.get('name') or i['title']} {i.get('eps') or ''}".strip(),
+                                    i.get("reason") if every_blocked else f"{verb(i)}: {i.get('reason')}") if x)
+             for i in fresh]
+    return title, "\n".join(lines)
+
+
+def match_keys(key: str, patterns: list[str]) -> bool:
+    """Problem key against a button's keys; "check:7:*" / "check:7:blocked:*" match a prefix."""
+    return any(key == p or (p.endswith("*") and key.startswith(p[:-1])) for p in patterns)
+
+
+def remove_downloads(session: Session, keys: list[str]) -> str:
+    """Remove & search again for these download problems: out of the queue
+    and the torrent client, release blocklisted, a search for another started.
+    Blocking (Sonarr/Radarr over HTTP). Returns a short answer."""
+    by_check: dict[int, list[str]] = {}
+    for k in keys:
+        parts = k.split(":", 2)
+        if len(parts) == 3 and parts[0] == "check" and parts[1].isdigit():
+            by_check.setdefault(int(parts[1]), []).append(k)
+    answers = []
+    for cid, ks in by_check.items():
+        c = session.get(ServiceCheck, cid)
+        if not c or c.kind != "arr":
+            continue
+        issues = [i for i in (json.loads(c.issues) if c.issues else []) if match_keys(f"check:{c.id}:{i['key']}", ks)]
+        ids = [d for i in issues for d in i.get("ids", [])]
+        if not ids:
+            answers.append(f"{c.name}: nothing left to remove")
+            continue
+        try:
+            n, _ = arr.remove(c.target, c.secret, ids)
+        except (arr.ArrError, Exception) as exc:  # noqa: BLE001 — answer the button, don't 500
+            logger.warning("remove & search again on %s failed: %s", c.name, exc)
+            answers.append(f"{c.name}: couldn't remove ({exc})")
+            continue
+        c.last_checked_at = None  # read the queue again on the next sweep
+        session.add(c)
+        what = ", ".join(i.get("name") or i["title"] for i in issues[:3]) + (f" +{len(issues) - 3} more" if len(issues) > 3 else "")
+        answers.append(f"{c.name}: removed {n} download{'s' if n != 1 else ''} ({what}), searching again")
+    session.commit()
+    return "; ".join(answers) or "nothing to remove"
 
 
 def remind(session: Session, devices: dict, now: datetime) -> list[str]:
@@ -263,6 +361,9 @@ def digest(session: Session, now: datetime, disks_before: dict) -> tuple[str, di
                 continue
             took = f"for {ago(((p.resolved_at or now) - p.opened_at).total_seconds())}" if p.resolved_at else "still"
             add("Went offline", f"{name(p.device_id)} at {_hm(p.opened_at)}, {took}" + ("" if p.resolved_at else " offline"))
+        elif arr.split_key(p.key):
+            if p.opened_at >= since:
+                add("Downloads", f"New: {p.title}" + (f" (cleared {_hm(p.resolved_at)})" if p.resolved_at else ""))
         elif p.opened_at >= since and p.key != "updates":  # pending updates aren't news
             add("Errors", f"{name(p.device_id)}: {p.title}" + (f" (cleared {_hm(p.resolved_at)})" if p.resolved_at else ""))
 
@@ -293,13 +394,16 @@ def digest(session: Session, now: datetime, disks_before: dict) -> tuple[str, di
         if c.kind in ("pbs", "proxmox") and c.enabled:
             add("Backups" if c.kind == "pbs" else "Proxmox", f"{c.name}: {c.summary or c.last_error or 'not read yet'}"
                 + (f" ({c.last_error})" if c.summary and c.last_error else ""))
+        elif c.kind == "arr" and c.enabled:
+            sections.setdefault("Downloads", []).insert(0, f"{c.name}: {c.summary or 'not read yet'}"
+                                                         + (f" (can't read it now: {c.last_error})" if c.last_status == "down" else ""))
     days = {since.strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d")}
     for r in session.exec(select(CheckDay).where(CheckDay.day.in_(days))).all():
         c = checks.get(r.check_id)
-        if c and c.kind not in ("pbs", "proxmox") and r.ok < r.total and c.device_id not in quiet:
+        if c and c.kind not in ("pbs", "proxmox", "arr") and r.ok < r.total and c.device_id not in quiet:
             add("Errors", f"{c.name}: {r.total - r.ok} failed check{'s' if r.total - r.ok != 1 else ''} ({r.day[5:]})")
 
-    order = ["Backups", "Proxmox", "Errors", "Went offline", "Restarted", "Storage"]
+    order = ["Backups", "Proxmox", "Errors", "Downloads", "Went offline", "Restarted", "Storage"]
     text = "\n\n".join(f"{k}\n" + "\n".join(f"· {line}" for line in sections[k]) for k in order if k in sections)
     return text or "All quiet: no outages, restarts or errors, and storage is steady.", disks_now
 

@@ -201,7 +201,7 @@ with TestClient(app, base_url="http://testserver") as c:
     report(c, keys["services"], hostname="services", docker_containers=[
         {"name": "mqtt", "image": "eclipse-mosquitto", "status": "running", "restart_count": 6, "ports": [1883]},
         {"name": "web", "image": "nginx", "status": "running", "health": "unhealthy"}])
-    for path in ("/", "/health", "/health/timeline", "/health/timeline?span=24h", "/health/timeline?span=30d",
+    for path in ("/", "/devices", "/health", "/health/timeline", "/health/timeline?span=24h", "/health/timeline?span=30d",
                  "/health/sent", "/map", f"/devices/{ids['services']}", f"/devices/{ids['pve']}#checks",
                  f"/devices/{ids['pve']}?check_name=mqtt&check_target=10.0.0.2:1883"):
         r = c.get(path)

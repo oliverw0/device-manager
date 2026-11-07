@@ -2,7 +2,7 @@
   "name": "Pulse",
   "short_name": "Pulse",
   "description": "Health, problems and fixes for every machine.",
-  "start_url": "/",
+  "start_url": "/health",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",

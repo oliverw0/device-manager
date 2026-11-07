@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from sqlmodel import Session, select
 
-from .. import problems
+from .. import arr, problems
 from ..database import get_session
 from ..models import Device, Problem, ServiceCheck
 from .dashboard import serialize_device, templates
@@ -40,7 +40,7 @@ def health_page(request: Request, session: Session = Depends(get_session)):
     devices = {d.id: d for d in session.exec(select(Device)).all()}
     info = {i: serialize_device(d) for i, d in devices.items()}
     open_ = session.exec(select(Problem).where(Problem.resolved_at == None).order_by(Problem.opened_at)).all()  # noqa: E711
-    rows = [{"p": p, "d": info.get(p.device_id), "dev": devices.get(p.device_id),
+    rows = [{"p": p, "d": info.get(p.device_id), "dev": devices.get(p.device_id), "download": bool(arr.split_key(p.key)),
              "since": problems.ago((now - p.opened_at).total_seconds())} for p in open_ if p.device_id in devices]
     # acknowledged ones go in a collapsed list of their own, still in severity order
     groups = [(sev, label, [r for r in rows if r["p"].severity == sev and not r["p"].acked_at]) for sev, label in problems.SEVERITIES]
@@ -69,6 +69,15 @@ def ack(problem_id: int, note: str = Form(""), session: Session = Depends(get_se
     session.add(p)
     session.commit()
     return {"ok": True}
+
+
+@router.post("/problems/{problem_id}/remove")
+def remove_download(problem_id: int, session: Session = Depends(get_session)):
+    """Remove & search again for a stuck download (an arr check's problem)."""
+    p = session.get(Problem, problem_id)
+    if not p or not arr.split_key(p.key):
+        return JSONResponse({"detail": "Not a download problem"}, status_code=404)
+    return {"ok": True, "message": problems.remove_downloads(session, [p.key])}
 
 
 @router.post("/problems/ack-all")

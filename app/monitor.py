@@ -8,13 +8,13 @@ from urllib.parse import urlsplit
 import httpx
 from sqlmodel import Session, delete, select
 
-from . import dnscheck, notifier, pbs, problems, proxmox, topology
+from . import arr, dnscheck, notifier, pbs, problems, proxmox, topology
 from .config import settings
 from .database import engine
 from .models import AlertEvent, ContainerHistory, Device, HourlyHistory, ReportHistory, ServiceCheck
 
 # checks that report a list of findings, each its own problem (pushed by problems.sync)
-ISSUE_KINDS = ("pbs", "proxmox")
+ISSUE_KINDS = ("pbs", "proxmox", "arr")
 
 logger = logging.getLogger("devicemanager.monitor")
 
@@ -170,7 +170,7 @@ def check_thresholds(session: Session) -> None:
 
 async def _run_check(kind: str, target: str, secret: str = "", expect: str = ""):
     """Returns (status, latency_ms, error, summary, issues). status is 'up' or
-    'down'; summary and issues are only for pbs/proxmox checks."""
+    'down'; summary and issues are only for pbs/proxmox/arr checks."""
     loop = asyncio.get_event_loop()
     start = loop.time()
     ms = lambda: round((loop.time() - start) * 1000, 1)  # noqa: E731
@@ -187,6 +187,12 @@ async def _run_check(kind: str, target: str, secret: str = "", expect: str = "")
             return ("up" if ok else "down"), ms(), error, summary, issues
         except proxmox.PveError as exc:
             return "down", None, str(exc), "", []
+    if kind == "arr":
+        try:
+            ok, summary, error, issues = await arr.check(target, secret)
+            return ("up" if ok else "down"), ms(), error, summary, issues
+        except arr.ArrError as exc:
+            return "down", None, str(exc), None, None  # None: keep what it last found
     if kind == "dns":
         up, error = await dnscheck.check(target, expect)
         return ("up" if up else "down"), (ms() if up else None), error, None, None
@@ -294,7 +300,7 @@ async def check_services() -> None:
             check.last_error = error
             if summary is not None:
                 check.summary = summary
-            if kind in ISSUE_KINDS:
+            if kind in ISSUE_KINDS and not (kind == "arr" and issues is None):
                 check.issues = json.dumps(issues or [])
             session.add(check)
             problems.record_check(session, cid, status == "up", now)

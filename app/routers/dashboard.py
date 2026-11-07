@@ -151,7 +151,13 @@ def serialize_device(device: Device) -> dict:
     }
 
 
-@router.get("/", response_class=HTMLResponse)
+@router.get("/")
+def home():
+    """Health is the home page: what's wrong comes first."""
+    return RedirectResponse(url="/health", status_code=302)
+
+
+@router.get("/devices", response_class=HTMLResponse)
 def index(request: Request, session: Session = Depends(get_session)):
     return _render_index(request, session)
 
@@ -585,4 +591,4 @@ def delete_device(device_id: int, session: Session = Depends(get_session)):
     if device:
         session.delete(device)
     session.commit()
-    return RedirectResponse(url="/", status_code=303)
+    return RedirectResponse(url="/devices", status_code=303)

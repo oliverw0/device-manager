@@ -1,0 +1,321 @@
+"""Sonarr, Radarr and Lidarr: downloads stuck in their queue.
+
+The 'arr' check reads the app's download queue with its API key (Settings >
+General > API Key). Each stuck download is its own problem:
+
+- blocked: the torrent client refused every file (qBittorrent's excluded file
+  names: *.exe, *.scr, ...), so it finished, or sits stopped, at 0 B. These are
+  fake releases dressed up as episodes or films. The app never marks them
+  failed, so it never looks for another release on its own.
+- stuck: finished but not imported (couldn't tell if it's a sample, an archive,
+  a file it can't match), waiting for someone to sort it out.
+
+remove() is the "Remove & search again" button: it takes the download out of
+the queue and the client, blocklists that release, and lets the app search for
+a different one.
+"""
+import re
+import time
+from datetime import datetime, timezone
+from urllib.parse import urlsplit
+
+import httpx
+
+
+class ArrError(Exception):
+    """The app couldn't be read; the message says why."""
+
+
+STOPPED_GRACE = 30 * 60  # a 0 B torrent stopped this long is blocked, not a magnet still fetching metadata
+IMPORT_STATES = ("importPending", "importBlocked", "importFailed", "failedPending")
+_EXT = re.compile(r"\.([A-Za-z0-9]{2,4})['\"]?\s*\]?$")
+_DANGER = re.compile(r"dangerous|executable", re.I)
+
+
+def normalize_url(target: str) -> str:
+    """'192.168.50.39:8989' -> http://192.168.50.39:8989 (no trailing slash)."""
+    url = target.strip().rstrip("/")
+    return url if "://" in url else "http://" + url
+
+
+def _messages(r: dict) -> list[str]:
+    out = [m for s in r.get("statusMessages") or [] for m in (s.get("messages") or [])]
+    return out + ([r["errorMessage"]] if r.get("errorMessage") else [])
+
+
+def _ext(msgs: list[str]) -> str:
+    """The file type the client refused, from Sonarr's "No files found are
+    eligible for import in /downloads/Show.S01E01.exe" ('' if it can't tell)."""
+    for m in msgs:
+        found = _EXT.search(m.strip())
+        if found:
+            return "." + found.group(1).lower()
+    return ""
+
+
+def _age(r: dict, now: float) -> float | None:
+    try:
+        added = datetime.fromisoformat((r.get("added") or "").replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return now - (added if added.tzinfo else added.replace(tzinfo=timezone.utc)).timestamp()
+
+
+_CODE = re.compile(r"\bS(\d{1,2})E(\d{1,3})\b", re.I)
+
+
+def _who(r: dict) -> tuple[str, str, tuple | None]:
+    """-> (group id, display name, (season, episode) or None) for one record:
+    a show, a film or an artist, so a season's worth of blocked episodes is
+    one problem. Records the app couldn't match fall back to the download."""
+    ep = r.get("episode") or {}
+    if r.get("seriesId"):
+        name = (r.get("series") or {}).get("title")
+        code = (ep.get("seasonNumber"), ep.get("episodeNumber")) if ep.get("episodeNumber") is not None else None
+        if code is None:  # no episode attached: read it from the release name
+            m = _CODE.search(r.get("title") or "")
+            code = (int(m.group(1)), int(m.group(2))) if m else None
+        return f"s{r['seriesId']}", name or r.get("title") or "?", code
+    if r.get("movieId"):
+        mv = r.get("movie") or {}
+        name = f"{mv['title']} ({mv['year']})" if mv.get("title") and mv.get("year") else mv.get("title") or r.get("title") or "?"
+        return f"m{r['movieId']}", name, None
+    if r.get("artistId"):
+        art, alb = (r.get("artist") or {}).get("artistName"), (r.get("album") or {}).get("title")
+        return f"a{r['artistId']}", " – ".join(x for x in (art, alb) if x) or r.get("title") or "?", None
+    return f"d{r.get('downloadId') or r.get('id')}", r.get("title") or "?", None
+
+
+def episodes(codes) -> str:
+    """{(6, 1), (6, 2), (6, 3), (6, 5), (6, 6), (7, 1)} -> "S06E01–E03, E05, E06, S07E01".
+    Runs of three or more collapse to a range."""
+    out = []
+    for season in sorted({s for s, _ in codes}):
+        eps = sorted(e for s, e in codes if s == season)
+        runs, chunk = [], [eps[0]]
+        for e in eps[1:]:
+            if e == chunk[-1] + 1:
+                chunk.append(e)
+            else:
+                runs.append(chunk)
+                chunk = [e]
+        runs.append(chunk)
+        parts = []
+        for run in runs:
+            parts += [f"E{run[0]:02d}–E{run[-1]:02d}"] if len(run) >= 3 else [f"E{e:02d}" for e in run]
+        out.append(f"S{season:02d}" + ", ".join(parts))
+    return ", ".join(out)
+
+
+_STUCK = [  # Sonarr/Radarr's words -> a few for a phone
+    (re.compile(r"sample", re.I), "might be a sample"),
+    (re.compile(r"unsupported extension: '?(\.\w+)", re.I), "unsupported file ({0})"),
+    (re.compile(r"not a (?:valid )?(?:video|audio)|invalid video", re.I), "not a video file"),
+    (re.compile(r"not an upgrade|existing file", re.I), "not better than the file you have"),
+    (re.compile(r"(?:no|unknown) (?:series|movie|episode)|matched to .* by id|unable to parse", re.I), "couldn't match it"),
+    (re.compile(r"free space|disk", re.I), "not enough disk space"),
+    (re.compile(r"permission|access .*denied", re.I), "permission denied"),
+]
+
+
+def stuck_reason(msgs: list[str]) -> str:
+    """A finished download's import warning, said in a few words."""
+    for m in msgs:
+        for rx, words in _STUCK:
+            found = rx.search(m)
+            if found:
+                return words.format(*found.groups())
+    return (msgs[0][:50].rstrip(". ") + ("…" if len(msgs[0]) > 50 else "")) if msgs else "needs a manual import"
+
+
+def assess(records: list[dict], now: float, app: str = "Sonarr") -> tuple[str, list[dict]]:
+    """Queue records -> (summary, issues). One issue per show, film or artist
+    and kind (blocked / stuck), naming every episode in it; `ids` are its
+    download ids (a season pack is one download with several records)."""
+    groups: dict[str, dict] = {}
+    placed = {}  # downloadId -> group key: a pack's records follow its first
+    for r in records:
+        did = r.get("downloadId") or f"id{r.get('id')}"
+        gid, name, code = _who(r)
+        if did in placed:
+            g = groups[placed[did]]
+            if code:
+                g["codes"].add(code)
+            continue
+        msgs = _messages(r)
+        size = r.get("size") or 0
+        status = (r.get("status") or "").lower()
+        age = _age(r, now)
+        no_files = any("No files found are eligible" in m for m in msgs)
+        stopped = status in ("paused", "stopped") and (age is None or age >= STOPPED_GRACE)
+        if size == 0 and (no_files or stopped or status == "completed") or any(_DANGER.search(m) for m in msgs):
+            kind = "blocked"
+        elif r.get("trackedDownloadStatus") in ("warning", "error") and (r.get("trackedDownloadState") or "") in IMPORT_STATES:
+            kind = "stuck"
+        else:
+            continue
+        key = f"{kind}:{gid}"
+        g = groups.setdefault(key, {"kind": kind, "name": name, "codes": set(), "ids": [], "exts": set(),
+                                    "msgs": [], "finished": False})
+        placed[did] = key
+        g["ids"].append(did)
+        if code:
+            g["codes"].add(code)
+        if _ext(msgs):
+            g["exts"].add(_ext(msgs))
+        g["msgs"] += [m for m in msgs if m not in g["msgs"]]
+        g["finished"] |= status == "completed"
+    issues = []
+    for key, g in groups.items():
+        what = f"{g['name']} {episodes(g['codes'])}".strip() if g["codes"] else g["name"]
+        many = len(g["ids"]) > 1
+        if g["kind"] == "blocked":
+            exts = ", ".join(sorted(g["exts"]))
+            reason = f"bad file type ({exts})" if exts else "no usable files"
+            title = f"{what} failed to download: {reason}"
+            detail = (f"Fake release{'s' if many else ''}: the torrent client skipped the file{'s' if many else ''}. "
+                      f"Remove & search again blocklists {'them' if many else 'it'} and finds another.")
+        else:
+            reason = stuck_reason(g["msgs"])
+            title = f"{what} didn't import: {reason}"
+            detail = (g["msgs"][0] if g["msgs"] else "Waiting for a manual import.") + (
+                f" Import by hand in {app} (Activity > Queue), or Remove & search again.")
+        issues.append({"key": key, "severity": "warning", "title": title, "detail": detail, "ids": g["ids"],
+                       "n": max(len(g["codes"]), len(g["ids"])), "name": g["name"],
+                       "eps": episodes(g["codes"]) if g["codes"] else "", "reason": reason})
+    blocked = [g for g in groups.values() if g["kind"] == "blocked"]
+    stuck = [g for g in groups.values() if g["kind"] == "stuck"]
+    count = lambda gs: sum(max(len(g["codes"]), len(g["ids"])) for g in gs)
+    parts = [f"{len({r.get('downloadId') or r.get('id') for r in records})} in queue"]
+    if blocked:
+        exts = sorted({e for g in blocked for e in g["exts"]})
+        parts.append(f"{count(blocked)} blocked in {len(blocked)} title{'s' if len(blocked) != 1 else ''}"
+                     + (f" ({', '.join(exts)})" if exts else ""))
+    if stuck:
+        parts.append(f"{count(stuck)} didn't import")
+    return (", ".join(parts) if blocked or stuck else parts[0] + ", nothing stuck"), issues
+
+
+async def _base(c: httpx.AsyncClient, url: str) -> tuple[str, str]:
+    """-> (API base, app name). Sonarr and Radarr are /api/v3, Lidarr /api/v1."""
+    for v in ("v3", "v1"):
+        r = await c.get(f"{url}/api/{v}/system/status")
+        if r.status_code == 401:
+            raise ArrError(f"{url} refused the API key (401). Copy it from Settings > General > API Key.")
+        if r.status_code < 400:
+            try:
+                return f"{url}/api/{v}", r.json().get("appName") or "the app"
+            except ValueError:
+                break
+    raise ArrError(f"{url} doesn't look like Sonarr, Radarr or Lidarr (no /api/v3 or /api/v1 status).")
+
+
+QUEUE_PARAMS = {"pageSize": 500, "includeSeries": "true", "includeEpisode": "true",
+                "includeMovie": "true", "includeArtist": "true", "includeAlbum": "true", "includeUnknownSeriesItems": "true", "includeUnknownMovieItems": "true",
+                "includeUnknownArtistItems": "true"}
+
+
+async def check(url: str, api_key: str, now: float | None = None) -> tuple[bool, str, str | None, list[dict]]:
+    """-> (read ok, summary, error, issues). Up whenever the queue could be
+    read: what's stuck in it is the problems, not an outage. Raises ArrError."""
+    now = now or time.time()
+    try:
+        async with httpx.AsyncClient(timeout=15, headers={"X-Api-Key": api_key}) as c:
+            base, app = await _base(c, url)
+            r = await c.get(f"{base}/queue", params=QUEUE_PARAMS)
+            if r.status_code >= 400:
+                raise ArrError(f"{app} answered {r.status_code} for its queue: {r.text[:150]}")
+            records = r.json().get("records") or []
+    except httpx.HTTPError as exc:
+        raise ArrError(f"Couldn't reach {url}: {exc or type(exc).__name__}") from exc
+    summary, issues = assess(records, now, app)
+    return True, summary, None, issues
+
+
+def remove(url: str, api_key: str, download_ids: list[str]) -> tuple[int, str]:
+    """Remove these downloads from the queue and the torrent client, blocklist
+    the releases and let the app search again. Blocking (called from the ntfy
+    button and the Health page). -> (removed, app name)."""
+    want = set(download_ids)
+    with httpx.Client(timeout=20, headers={"X-Api-Key": api_key}) as c:
+        app, base = "the app", None
+        for v in ("v3", "v1"):
+            r = c.get(f"{url}/api/{v}/system/status")
+            if r.status_code < 400:
+                base, app = f"{url}/api/{v}", r.json().get("appName") or app
+                break
+        if base is None:
+            raise ArrError(f"Couldn't read {url} (HTTP {r.status_code}).")
+        records = c.get(f"{base}/queue", params=QUEUE_PARAMS).json().get("records") or []
+        done, removed = set(), 0
+        for rec in records:
+            did = rec.get("downloadId") or f"id{rec.get('id')}"
+            if did not in want or did in done:
+                continue
+            d = c.delete(f"{base}/queue/{rec['id']}",
+                         params={"removeFromClient": "true", "blocklist": "true", "skipRedownload": "false"})
+            if d.status_code < 400 or d.status_code == 404:  # 404: already gone
+                done.add(did)
+                removed += d.status_code < 400
+    return removed, app
+
+
+def split_key(key: str) -> tuple[int, str] | None:
+    """A problem key "check:7:blocked:s12" -> (7, "blocked:s12"), the check and
+    its issue key; None for anything that isn't a download problem."""
+    parts = key.split(":", 2)
+    if len(parts) == 3 and parts[0] == "check" and parts[1].isdigit() and parts[2].split(":")[0] in ("blocked", "stuck"):
+        return int(parts[1]), parts[2]
+    return None
+
+
+if __name__ == "__main__":  # ponytail: self-check
+    assert normalize_url("192.168.50.39:8989/") == "http://192.168.50.39:8989"
+    assert episodes({(6, 1), (6, 2), (6, 3), (6, 5), (6, 6), (7, 1)}) == "S06E01–E03, E05, E06, S07E01"
+    assert episodes({(2, 8)}) == "S02E08"
+    now = 1_800_000_000
+    iso = lambda ago: datetime.fromtimestamp(now - ago, timezone.utc).isoformat().replace("+00:00", "Z")
+
+    def rec(i, did, show, sid, se, size=0, status="completed", msg=None, ok=False, **kw):
+        r = {"id": i, "downloadId": did, "title": f"{show} S{se[0]:02d}E{se[1]:02d} 1080p-GRP", "size": size, "status": status,
+             "seriesId": sid, "series": {"title": show}, "episode": {"seasonNumber": se[0], "episodeNumber": se[1]},
+             "trackedDownloadStatus": "ok" if ok else "warning",
+             "trackedDownloadState": "downloading" if ok else "importPending",
+             "statusMessages": [{"title": "x", "messages": [msg]}] if msg else []}
+        return {**r, **kw}
+
+    eligible = lambda f: f"No files found are eligible for import in /dl/{f}"
+    recs = [
+        *[rec(i, f"SH{e}", "Slow Horses", 3, (6, e), msg=eligible(f"Slow.Horses.S06E0{e}.exe")) for i, e in enumerate((1, 2, 3, 5, 6))],
+        rec(10, "ML8", "MobLand", 4, (2, 8), msg=eligible("MobLand.S02E08.scr")),
+        rec(11, "ML1", "MobLand", 4, (2, 1), msg=eligible("MobLand S02E01.exe")),
+        rec(12, "ML9", "MobLand", 4, (2, 9), status="paused", ok=True, added=iso(3 * 3600)),  # stopped at 0 B: blocked
+        rec(13, "NEW", "Fresh Show", 5, (1, 1), status="paused", ok=True, added=iso(60)),   # magnet still fetching
+        rec(14, "LK", "Loki", 6, (1, 2), size=1_000_000, msg="Unable to determine if file is a sample"),
+        rec(15, "LK", "Loki", 6, (1, 3), size=1_000_000, msg="Unable to determine if file is a sample"),  # season pack
+        rec(16, "REAL", "Real Show", 7, (1, 1), size=900, status="downloading", ok=True),
+        {"id": 20, "downloadId": "MV", "title": "Dune.Part.Two.2024.1080p", "size": 0, "status": "completed", "movieId": 9,
+         "movie": {"title": "Dune: Part Two", "year": 2024}, "trackedDownloadStatus": "warning", "trackedDownloadState": "importBlocked",
+         "statusMessages": [{"messages": ["Caution: Found potentially dangerous file with extension: .lnk"]}]},
+    ]
+    summary, issues = assess(recs, now)
+    keys = {i["key"]: i for i in issues}
+    assert set(keys) == {"blocked:s3", "blocked:s4", "stuck:s6", "blocked:m9"}, keys
+    sh = keys["blocked:s3"]
+    assert sh["title"] == "Slow Horses S06E01–E03, E05, E06 failed to download: bad file type (.exe)", sh["title"]
+    assert (sh["name"], sh["eps"], sh["reason"]) == ("Slow Horses", "S06E01–E03, E05, E06", "bad file type (.exe)")
+    assert sh["ids"] == ["SH1", "SH2", "SH3", "SH5", "SH6"] and sh["n"] == 5
+    assert sh["detail"].startswith("Fake releases: the torrent client skipped the files."), sh["detail"]
+    assert keys["blocked:s4"]["title"] == "MobLand S02E01, E08, E09 failed to download: bad file type (.exe, .scr)"
+    assert keys["stuck:s6"]["title"] == "Loki S01E02, E03 didn't import: might be a sample" and keys["stuck:s6"]["ids"] == ["LK"]
+    assert keys["stuck:s6"]["detail"].startswith("Unable to determine if file is a sample")
+    assert keys["blocked:m9"]["title"] == "Dune: Part Two (2024) failed to download: bad file type (.lnk)", keys["blocked:m9"]["title"]
+    assert keys["blocked:m9"]["eps"] == ""
+    assert summary == "12 in queue, 9 blocked in 3 titles (.exe, .lnk, .scr), 2 didn't import", summary
+    assert stuck_reason(["Invalid video file, unsupported extension: '.7z'"]) == "unsupported file (.7z)"
+    assert stuck_reason([]) == "needs a manual import"
+    assert assess([recs[-2]], now) == ("1 in queue, nothing stuck", [])
+    assert assess([], now) == ("0 in queue, nothing stuck", [])
+    assert split_key("check:7:blocked:s12") == (7, "blocked:s12")
+    assert split_key("check:7:late:x") is None and split_key("offline") is None and split_key("check:7") is None
+    print("ok")

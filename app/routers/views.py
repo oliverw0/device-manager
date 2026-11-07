@@ -15,8 +15,8 @@ from .dashboard import AEST, serialize_device, templates
 
 router = APIRouter()
 
-KIND_GROUP = {"http": "Services", "tcp": "Services", "dns": "DNS", "heartbeat": "Jobs", "pbs": "Backups", "proxmox": "Proxmox"}
-GROUP_ORDER = ["DNS", "Proxmox", "Backups", "Services", "Jobs"]
+KIND_GROUP = {"http": "Services", "tcp": "Services", "dns": "DNS", "heartbeat": "Jobs", "pbs": "Backups", "proxmox": "Proxmox", "arr": "Downloads"}
+GROUP_ORDER = ["DNS", "Proxmox", "Backups", "Services", "Downloads", "Jobs"]
 
 
 def check_group(c: ServiceCheck) -> str:

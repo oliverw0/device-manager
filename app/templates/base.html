@@ -25,12 +25,19 @@
       <button type="button" class="nav-toggle" id="nav-toggle" title="Collapse menu" aria-label="Toggle menu">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
       </button>
-      <a class="brand" href="/"><img class="brand-logo" src="/static/favicon.svg?v={{ static_version }}" alt="" width="22" height="22" /><span class="brand-text">Pulse</span></a>
+      <a class="brand" href="/health"><img class="brand-logo" src="/static/favicon.svg?v={{ static_version }}" alt="" width="22" height="22" /><span class="brand-text">Pulse</span></a>
     </div>
     <div class="sidebar-nav">
       {% set open_problems = open_problem_count() if open_problem_count is defined else 0 %}
       <div class="nav-slot">
-        <a class="nav-item {{ 'active' if p == '/' or p.startswith('/devices') }}" href="/" title="Devices">
+        <a class="nav-item {{ 'active' if p.startswith('/health') or p.startswith('/problems') or p.startswith('/alerts') }}" href="/health" title="Health">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="2 12 6 12 9 4 15 20 18 12 22 12"/></svg>
+          <span class="nav-label">Health</span>
+        </a>
+        <a class="apt-badge pb-badge" href="/health" title="{{ open_problems }} open, not acknowledged" {{ '' if open_problems else 'hidden' }}><span>{{ open_problems }}</span></a>
+      </div>
+      <div class="nav-slot">
+        <a class="nav-item {{ 'active' if p.startswith('/devices') }}" href="/devices" title="Devices">
           <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="6" rx="1"/><rect x="2" y="15" width="20" height="6" rx="1"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
           <span class="nav-label">Devices</span>
         </a>
@@ -47,13 +54,6 @@
         <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
         <span class="nav-label">Stacks</span>
       </a>
-      <div class="nav-slot">
-        <a class="nav-item {{ 'active' if p.startswith('/health') or p.startswith('/problems') or p.startswith('/alerts') }}" href="/health" title="Health">
-          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="2 12 6 12 9 4 15 20 18 12 22 12"/></svg>
-          <span class="nav-label">Health</span>
-        </a>
-        <a class="apt-badge pb-badge" href="/health" title="{{ open_problems }} open, not acknowledged" {{ '' if open_problems else 'hidden' }}><span>{{ open_problems }}</span></a>
-      </div>
       <a class="nav-item {{ 'active' if p.startswith('/map') }}" href="/map" title="Map">
         <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="5" rx="1"/><rect x="2" y="17" width="6" height="5" rx="1"/><rect x="16" y="17" width="6" height="5" rx="1"/><path d="M12 7v5M5 17v-5h14v5"/></svg>
         <span class="nav-label">Map</span>

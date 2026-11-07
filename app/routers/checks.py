@@ -4,13 +4,14 @@ from fastapi import APIRouter, Depends, Form
 from fastapi.responses import RedirectResponse
 from sqlmodel import Session
 
-from .. import pbs, proxmox
+from .. import arr, pbs, proxmox
 from ..database import get_session
 from ..models import ServiceCheck
 
 router = APIRouter()
 
-KINDS = ("http", "tcp", "dns", "heartbeat", "pbs", "proxmox")
+KINDS = ("http", "tcp", "dns", "heartbeat", "pbs", "proxmox", "arr")
+SECRET_KINDS = ("pbs", "proxmox", "arr")  # read with an API token or key; at most every 5 min
 
 
 def _target(kind: str, target: str) -> str:
@@ -19,6 +20,8 @@ def _target(kind: str, target: str) -> str:
         return pbs.normalize_url(target)
     if kind == "proxmox":
         return proxmox.normalize_url(target)
+    if kind == "arr":
+        return arr.normalize_url(target)
     return target
 
 
@@ -41,7 +44,7 @@ def create_check(
         # interval: how often the job runs; it's late after interval + grace
         session.add(ServiceCheck(**common, target="", interval_seconds=max(60, interval_seconds),
                                  grace_seconds=max(0, grace_minutes) * 60, token=secrets.token_urlsafe(16)))
-    elif kind in ("pbs", "proxmox"):
+    elif kind in SECRET_KINDS:
         if target.strip() and secret.strip():  # these change slowly: at most every 5 min
             session.add(ServiceCheck(**common, target=_target(kind, target), secret=secret.strip(),
                                      interval_seconds=max(300, interval_seconds)))
@@ -79,11 +82,11 @@ def edit_check(
     if check.kind in ("http", "dns"):
         check.expect = expect.strip()[:200]
         check.last_checked_at = None
-    if check.kind in ("pbs", "proxmox") and secret.strip():
+    if check.kind in SECRET_KINDS and secret.strip():
         check.secret = secret.strip()
         check.last_checked_at = None
     if interval_seconds and check.kind != "heartbeat":
-        check.interval_seconds = max(300 if check.kind in ("pbs", "proxmox") else 10, interval_seconds)
+        check.interval_seconds = max(300 if check.kind in SECRET_KINDS else 10, interval_seconds)
     session.add(check)
     session.commit()
     return RedirectResponse(url=back if back.startswith("/") else f"/devices/{check.device_id}#checks", status_code=303)

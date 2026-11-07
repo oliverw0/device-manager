@@ -33,7 +33,7 @@
       <span class="muted">
         {%- if x.state == 'paused' %}Paused
         {%- elif x.state == 'down' %}{% if public %}Down{% else %}{{ (x.issues | length ~ ' issue' ~ ('s' if x.issues | length != 1 else '') ~ ' · ') if x.issues }}{{ c.last_error or 'Down' }}{% endif %}
-        {%- elif c.kind in ('pbs', 'proxmox') and c.summary and not public %}{{ c.summary }}
+        {%- elif c.kind in ('pbs', 'proxmox', 'arr') and c.summary and not public %}{{ c.summary }}
         {%- elif x.state == 'up' %}Up{% if c.last_latency_ms is not none %} · {{ c.last_latency_ms | round | int }} ms{% endif %}{% if x.cert_days is not none and not public %} · cert {{ x.cert_days }}d{% endif %}
         {%- else %}Waiting for the first check{% endif %}
         {%- if not public and x.device %} · {{ x.device.name }}{% endif %}

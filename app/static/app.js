@@ -1334,6 +1334,16 @@ async function ackProblem(id, btn, acked) {
   fetch(`/problems/${id}/ack`, { method: "POST", body }).finally(() => { btn.disabled = false; problemsRefresh(); });
 }
 
+async function removeDownload(id, btn) {
+  if (!(await ask("Remove and search again?\n\nTakes it out of the queue and the torrent client, blocklists that release, and searches for another.", "Remove & search", true))) return;
+  btn.disabled = true;
+  fetch(`/problems/${id}/remove`, { method: "POST" })
+    .then((r) => r.json())
+    .then((r) => ask(r.message || "Done", "OK"))
+    .catch(() => ask("Couldn't reach Pulse", "OK"))
+    .finally(() => { btn.disabled = false; problemsRefresh(); });
+}
+
 async function ackAll(btn) {
   if (!(await ask("Acknowledge every new problem?", "Ack all"))) return;
   btn.disabled = true;
