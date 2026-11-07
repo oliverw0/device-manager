@@ -181,7 +181,8 @@ def map_page(request: Request, session: Session = Depends(get_session)):
             "cpu": sys.get("cpu_percent"), "mem": sys.get("mem_percent"),
             "problems": len(mine), "sev": "high" if any(p.severity == "high" for p in mine) else "warning" if mine else None,
             "containers": [{"name": c.get("name"), "state": _container_state(c, d.is_online), "status": c.get("status"),
-                            "health": c.get("health")} for c in sorted(rep.get("docker_containers") or [], key=lambda c: c.get("name") or "")],
+                            "health": c.get("health"), "image": c.get("image"), "stack": c.get("stack"),
+                            "restarts": c.get("restart_count")} for c in sorted(rep.get("docker_containers") or [], key=lambda c: c.get("name") or "")],
             "checks_up": sum(1 for c in dc if c.last_status == "up"), "checks": len(dc),
             "auto": d.parent_id is None and d.id in parent_of,
         }

@@ -1364,6 +1364,7 @@ function problemsRefresh() {
       if (twin) twin.open = true;
     });
     cur.replaceWith(next);
+    document.dispatchEvent(new CustomEvent("live-region", { detail: { id } }));
   }).catch(() => {});
 }
 
@@ -1690,6 +1691,7 @@ function initLiveRegion(id, ms) {
     if (!next || !cur || document.querySelector("dialog[open]")) return;
     if (cur.contains(document.activeElement) && document.activeElement !== document.body) return;  // don't yank focus
     cur.replaceWith(next);
+    document.dispatchEvent(new CustomEvent("live-region", { detail: { id } }));
   }).catch(() => {});
   if (document.getElementById(id)) PAGE_TIMERS.push(setInterval(tick, ms));
 }
@@ -1702,3 +1704,117 @@ function toggleCheckEdit(btn) {
   btn.setAttribute("aria-expanded", String(!form.hidden));
   if (!form.hidden) form.elements.name.focus();
 }
+
+/* ---------- Map: container square tooltip ----------
+   Each small square on a Map card is one Docker container from that device's
+   agent report. Hover shows what it is; on a phone a tap shows it (and doesn't
+   open the device page), a second tap or a tap elsewhere hides it. */
+const CTR_STATE = { ok: "Running", warn: "Not healthy", bad: "Stopped" };
+let ctrTip = null, ctrAnchor = null, ctrPinned = false, ctrPointer = "mouse";
+
+function ctrTipEl() {
+  if (!ctrTip) {
+    ctrTip = document.createElement("div");
+    ctrTip.id = "mp-tip";
+    ctrTip.className = "mp-tip";
+    ctrTip.setAttribute("role", "tooltip");
+    document.body.appendChild(ctrTip);
+  }
+  return ctrTip;
+}
+
+function ctrTipHtml(sq) {
+  const box = sq.closest(".mp-ctrs"), ds = sq.dataset, online = box.dataset.online === "1";
+  const st = online ? ds.state : "bad";
+  const seen = parseUtc(box.dataset.seen);
+  const rows = [
+    ["Image", ds.image],
+    ["Stack", ds.stack],
+    ["Status", [ds.status || "unknown", ds.health && `(${ds.health})`].filter(Boolean).join(" ")],
+    ["Restarts", +ds.restarts ? ds.restarts : ""],
+    ["Checked", seen ? fmtRelative((Date.now() - seen) / 1000) : "never"],
+  ].filter((r) => r[1]);
+  return `<div class="mp-tip-head"><span class="mp-tip-dot ${st}"></span><b>${escapeHtml(ds.name)}</b>`
+    + `<span class="mp-tip-state ${st}">${online ? CTR_STATE[ds.state] || "Unknown" : "Device offline"}</span></div>`
+    + `<div class="mp-tip-what">Docker container on ${escapeHtml(box.dataset.device)}, from its agent</div>`
+    + rows.map(([k, v]) => `<div class="mp-tip-row"><span>${k}</span><b>${escapeHtml(v)}</b></div>`).join("");
+}
+
+function placeCtrTip(sq) {
+  const t = ctrTipEl(), r = sq.getBoundingClientRect(), pad = 8, gap = 9;
+  t.classList.remove("below");
+  const w = t.offsetWidth, h = t.offsetHeight, cx = r.left + r.width / 2;
+  let top = r.top - gap - h;
+  if (top < pad) { top = r.bottom + gap; t.classList.add("below"); }
+  const left = Math.min(Math.max(cx - w / 2, pad), window.innerWidth - w - pad);
+  t.style.left = left + "px";
+  t.style.top = top + "px";
+  t.style.setProperty("--ax", Math.min(Math.max(cx - left, 8), w - 8) + "px");
+}
+
+function showCtrTip(sq, pinned) {
+  if (ctrAnchor && ctrAnchor !== sq) ctrAnchor.classList.remove("tip-on");
+  ctrAnchor = sq;
+  ctrPinned = pinned;
+  const t = ctrTipEl();
+  t.innerHTML = ctrTipHtml(sq);
+  sq.classList.add("tip-on");
+  sq.setAttribute("aria-describedby", "mp-tip");
+  placeCtrTip(sq);
+  t.classList.add("on");
+}
+
+function hideCtrTip() {
+  if (ctrAnchor) { ctrAnchor.classList.remove("tip-on"); ctrAnchor.removeAttribute("aria-describedby"); }
+  ctrAnchor = null;
+  ctrPinned = false;
+  if (ctrTip) ctrTip.classList.remove("on");
+}
+
+// The square under a tap: the one hit, or the nearest in that card's row when the
+// finger lands in a gap (or the browser snaps the tap to the card link).
+function ctrSquareAt(e) {
+  const hit = e.target.closest && e.target.closest(".mp-ctrs i");
+  if (hit || ctrPointer !== "touch") return hit;
+  const box = e.target.closest && e.target.closest(".mp-card") && e.target.closest(".mp-card").querySelector(".mp-ctrs");
+  if (!box) return null;
+  const b = box.getBoundingClientRect(), slop = 6;
+  if (e.clientX < b.left - slop || e.clientX > b.right + slop || e.clientY < b.top - slop || e.clientY > b.bottom + slop) return null;
+  let best = null, bestD = Infinity;
+  box.querySelectorAll("i").forEach((sq) => {
+    const r = sq.getBoundingClientRect();
+    const d = Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2));
+    if (d < bestD) { best = sq; bestD = d; }
+  });
+  return best;
+}
+
+document.addEventListener("pointerdown", (e) => { ctrPointer = e.pointerType; }, true);
+document.addEventListener("pointerover", (e) => {
+  if (e.pointerType === "touch") return;
+  const sq = e.target.closest && e.target.closest(".mp-ctrs i");
+  if (sq) showCtrTip(sq, false);
+});
+document.addEventListener("pointerout", (e) => {
+  if (e.pointerType === "touch" || ctrPinned || !ctrAnchor) return;
+  if (e.target === ctrAnchor && !ctrAnchor.contains(e.relatedTarget)) hideCtrTip();
+});
+document.addEventListener("click", (e) => {
+  const sq = ctrPointer === "touch" ? ctrSquareAt(e) : null;
+  if (sq) {
+    e.preventDefault();
+    const link = sq.closest("a");
+    if (link) link.blur();  // a focused link would pause the Map's live refresh
+    if (ctrPinned && ctrAnchor === sq) hideCtrTip(); else showCtrTip(sq, true);
+  } else if (ctrPinned) hideCtrTip();
+});
+window.addEventListener("scroll", () => { if (ctrAnchor) hideCtrTip(); }, { passive: true, capture: true });
+window.addEventListener("resize", () => { if (ctrAnchor) hideCtrTip(); });
+// The Map re-renders every 15 s: move the tooltip onto the same container's new square.
+document.addEventListener("live-region", () => {
+  if (!ctrAnchor || ctrAnchor.isConnected) return;
+  const box = ctrAnchor.closest(".mp-ctrs");
+  const sq = box && [...document.querySelectorAll(`.mp-ctrs[data-device-id="${box.dataset.deviceId}"] i`)]
+    .find((i) => i.dataset.name === ctrAnchor.dataset.name);
+  if (sq && (ctrPinned || sq.matches(":hover"))) showCtrTip(sq, ctrPinned); else hideCtrTip();
+});

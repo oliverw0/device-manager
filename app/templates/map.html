@@ -15,7 +15,8 @@
       {% if n.checks %}<span>{{ n.checks_up }}/{{ n.checks }} checks</span>{% endif %}
     </span>
     {% if n.containers %}
-    <span class="mp-ctrs" aria-label="{{ n.containers | length }} containers">{% for c in n.containers %}<i class="{{ c.state }}" title="{{ c.name }}: {{ c.status }}{{ ' (' ~ c.health ~ ')' if c.health }}"></i>{% endfor %}</span>
+    {# One square per Docker container the device's agent reports; app.js shows the tooltip. #}
+    <span class="mp-ctrs" aria-label="{{ n.containers | length }} containers" data-device-id="{{ d.id }}" data-device="{{ d.name }}" data-online="{{ 1 if d.is_online else 0 }}" data-seen="{{ d.last_seen_at or '' }}">{% for c in n.containers %}<i class="{{ c.state }}" role="img" aria-label="{{ c.name }}: {{ c.status }}{{ ' (' ~ c.health ~ ')' if c.health }}" data-name="{{ c.name }}" data-state="{{ c.state }}" data-status="{{ c.status or '' }}" data-health="{{ c.health or '' }}" data-image="{{ c.image or '' }}" data-stack="{{ c.stack or '' }}" data-restarts="{{ c.restarts or 0 }}"></i>{% endfor %}</span>
     {% endif %}
   </a>
   {% if n.children %}

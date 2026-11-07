@@ -1253,9 +1253,36 @@ tr:has(.stat-led.off) .os-icon { opacity: 0.45; }
 .mp-name { font-family: var(--font-mono); font-size: 13.5px; color: #e6e9ec; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 .mp-stats { display: flex; flex-wrap: wrap; gap: 4px 12px; font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); }
 .mp-ctrs { display: flex; flex-wrap: wrap; gap: 3px; }
-.mp-ctrs i { width: 9px; height: 9px; background: var(--green-dim); }
+.mp-ctrs i { width: 9px; height: 9px; background: var(--green-dim); transition: transform 0.12s ease-out, filter 0.12s; }
+@media (hover: hover) { .mp-ctrs i:hover { transform: scale(1.3); filter: brightness(1.3); } }
+.mp-ctrs i.tip-on { transform: scale(1.3); filter: brightness(1.3); }
+@media (pointer: coarse) { .mp-ctrs { gap: 4px; } .mp-ctrs i { width: 12px; height: 12px; } }  /* tappable */
 .mp-ctrs i.warn { background: var(--amber); }
 .mp-ctrs i.bad { background: var(--red); }
+/* Container square tooltip (app.js: Map container tooltip). Fixed to the viewport so cards never clip it. */
+.mp-tip {
+  position: fixed; left: 0; top: 0; z-index: 50; max-width: min(340px, calc(100vw - 16px));
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--border-strong); border-radius: var(--radius);
+  padding: 8px 10px; font-family: var(--font-mono); font-size: 12px; line-height: 1.45;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.45); pointer-events: none;
+  opacity: 0; transform: translateY(3px); transition: opacity 0.14s, transform 0.14s;
+}
+.mp-tip.below { transform: translateY(-3px); }
+.mp-tip.on { opacity: 1; transform: none; }
+.mp-tip::before { content: ""; position: absolute; left: var(--ax, 50%); top: 100%; transform: translateX(-50%); border: 5px solid transparent; border-top-color: var(--border-strong); }
+.mp-tip.below::before { top: auto; bottom: 100%; border-top-color: transparent; border-bottom-color: var(--border-strong); }
+.mp-tip-head { display: flex; align-items: center; gap: 7px; }
+.mp-tip-head b { color: #e6e9ec; font-weight: 600; overflow-wrap: anywhere; }
+.mp-tip-dot { flex: none; width: 8px; height: 8px; background: var(--green); }
+.mp-tip-dot.warn { background: var(--amber); }
+.mp-tip-dot.bad { background: var(--red); }
+.mp-tip-state { margin-left: auto; padding-left: 14px; white-space: nowrap; color: var(--green); }
+.mp-tip-state.warn { color: var(--amber); }
+.mp-tip-state.bad { color: var(--red); }
+.mp-tip-what { color: var(--muted); font-size: 11px; margin: 1px 0 6px; }
+.mp-tip-row { display: grid; grid-template-columns: 62px 1fr; gap: 10px; }
+.mp-tip-row span { color: var(--muted); }
+.mp-tip-row b { font-weight: 400; overflow-wrap: anywhere; }
 .mp-kids { display: flex; flex-direction: column; gap: 8px; margin-left: 14px; padding: 8px 0 0 14px; border-left: 1px solid var(--border-strong); }
 .mp-kids > .mp-node { position: relative; }
 .mp-kids > .mp-node::before { content: ""; position: absolute; left: -14px; top: 20px; width: 14px; border-top: 1px solid var(--border-strong); }
