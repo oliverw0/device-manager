@@ -431,6 +431,13 @@ body.nav-collapsed .sidebar-head { justify-content: center; padding: 0; }
 }
 .uov-pill:hover { border-color: var(--green); }
 .uov-caret { color: var(--muted); font-size: 11px; }
+/* downloads: plain toasts, stacked, no panel around them */
+.update-overlay.toasts { background: none; border: none; box-shadow: none; max-height: none; overflow: visible; }
+.update-overlay.toasts .uov-body { padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.update-overlay.toasts .upd-card { margin: 0; background: var(--panel); border-color: var(--border-strong); box-shadow: 0 8px 28px rgba(0,0,0,0.45); }
+.update-overlay.toasts .upd-dismiss { flex: none; }
+.update-overlay.toasts .toast-new .upd-card { animation: toast-in .18s ease-out; }
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 /* desktop: keep clear of the right-hand terminal pane when it's open */
 body.term-open .update-overlay { right: calc(50vw + 16px); }
 /* mobile / installed PWA: lift above the bottom nav bar and honour the safe-area insets */

@@ -771,6 +771,16 @@ function trackDownload(w) {
   renderUpdaters();
 }
 
+// A one-off message as a toast in the same bottom-right stack (no dialog).
+function toast(title, detail, ok) {
+  const key = "toast:" + Date.now() + Math.random();
+  const t = UPD_TRACK[key] = {
+    key, deviceId: null, deviceName: "", kind: "download", jobId: key, label: title, dismissMs: 6000, dismissAt: null,
+    job: ok ? { status: "done", done_label: "Done", tone: "ok", stage: detail } : { status: "error", error: detail },
+  };
+  startDismiss(t);
+}
+
 function pollTracker(t) {
   const tick = () => fetch(t.pollUrl || `/devices/${t.deviceId}/update/${t.jobId}.json`)
     .then((r) => (r.ok ? r.json() : Promise.reject()))
@@ -851,7 +861,7 @@ function syncCards(container, trackers, inOverlay) {
     card.dataset.upd = t.kind;
     card.dataset.mode = mode;
     card.innerHTML = updCardHtml(t, inOverlay);
-    if (el) el.replaceWith(card); else container.appendChild(card);
+    if (el) el.replaceWith(card); else { card.classList.add("toast-new"); container.appendChild(card); }
   });
 }
 
@@ -872,6 +882,16 @@ function renderOverlay(trackers) {
   if (!el) return;
   if (!trackers.length) { el.hidden = true; el.className = "update-overlay"; el.innerHTML = ""; el.dataset.view = ""; return; }
   el.hidden = false;
+  // downloads alone: plain toasts stacked bottom-right, no panel around them
+  if (trackers.every((t) => t.kind === "download")) {
+    if (el.dataset.view !== "toasts") {
+      el.className = "update-overlay toasts";
+      el.innerHTML = `<div class="uov-body"></div>`;
+      el.dataset.view = "toasts";
+    }
+    syncCards(el.querySelector(".uov-body"), trackers, true);
+    return;
+  }
   if (UPD_OVERLAY_MIN) {
     const running = trackers.filter((t) => t.dismissAt == null).length;
     const noun = overlayNoun(trackers);
@@ -912,7 +932,7 @@ function toggleOverlayMin() { UPD_OVERLAY_MIN = !UPD_OVERLAY_MIN; renderUpdaters
 // The card body — identical for in-panel and overlay; overlay adds the device name.
 function updCardHtml(t, inOverlay) {
   const job = t.job || { status: "starting", percent: null, stage: "Starting…" };
-  const label = escapeHtml(t.label) + (inOverlay ? ` · ${escapeHtml(t.deviceName || "")}` : "");
+  const label = escapeHtml(t.label) + (inOverlay && t.deviceName ? ` · ${escapeHtml(t.deviceName)}` : "");
   if (job.status === "done" || job.status === "error") {
     const ok = job.status === "done";
     // start the countdown bar where it really is, in case the card is (re)drawn mid-countdown
@@ -930,8 +950,9 @@ function updCardHtml(t, inOverlay) {
   const indet = job.percent === null || job.percent === undefined;
   const pct = indet ? 0 : job.percent;
   const eta = job.eta_seconds != null ? ` · ~${fmtEta(job.eta_seconds)} left` : "";
+  const hide = t.kind === "download" ? `<button class="term-btn upd-dismiss" title="Hide" onclick="dismissTracker('${t.key}')">✕</button>` : "";
   return `<div class="upd-card"><div class="upd-head"><span class="upd-spin"></span>` +
-    `<span class="upd-label">${label}</span></div>` +
+    `<span class="upd-label">${label}</span>${hide}</div>` +
     `<div class="upd-stage">${escapeHtml(job.stage || "Working…")}${eta}</div>` +
     `<div class="meter wide upd-meter${indet ? " indet" : ""}">` +
     `<div class="meter-fill ok" style="width:${indet ? 38 : pct}%"></div>` +
@@ -1365,10 +1386,10 @@ async function removeDownload(id, btn) {
   fetch(`/problems/${id}/remove`, { method: "POST" })
     .then((r) => r.json())
     .then((r) => {
-      if (r.watches && r.watches.length) { UPD_OVERLAY_MIN = false; r.watches.forEach(trackDownload); }  // the card says the rest
-      else ask(r.message || r.detail || "Done", "OK");
+      if (r.watches && r.watches.length) r.watches.forEach(trackDownload);  // its toast follows the search
+      else toast("Remove & search again", r.message || r.detail || "Done", !!r.ok);
     })
-    .catch(() => ask("Couldn't reach Pulse", "OK"))
+    .catch(() => toast("Remove & search again", "Couldn't reach Pulse", false))
     .finally(() => { btn.disabled = false; problemsRefresh(); });
 }
 
