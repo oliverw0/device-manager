@@ -1261,7 +1261,7 @@ tr:has(.stat-led.off) .os-icon { opacity: 0.45; }
 .mp-ctrs i.bad { background: var(--red); }
 /* Container square tooltip (app.js: Map container tooltip). Fixed to the viewport so cards never clip it. */
 .mp-tip {
-  position: fixed; left: 0; top: 0; z-index: 50; max-width: min(340px, calc(100vw - 16px));
+  position: fixed; left: 0; top: 0; z-index: 80; max-width: min(400px, calc(100vw - 16px));  /* above the sidebar (70) */
   background: var(--panel-2); color: var(--text); border: 1px solid var(--border-strong); border-radius: var(--radius);
   padding: 8px 10px; font-family: var(--font-mono); font-size: 12px; line-height: 1.45;
   box-shadow: 0 4px 14px rgba(0,0,0,0.45); pointer-events: none;
