@@ -23,13 +23,24 @@
 {{ ui.problems_tabs('now') }}
 
 
+{# A row opens to show the whole title and detail, which are cut short on
+   narrow screens. On phones the device name doesn't navigate (it filled the
+   top of the row, so taps landed on the device): the link is in the body. #}
 {% macro row(r) %}
-  <article class="pb-row sev-{{ r.p.severity }}{{ ' acked' if r.p.acked_at }}">
-    <a class="pb-who" href="/devices/{{ r.d.id }}">{{ r.d.name }}</a>
-    <span class="pb-what"{% if r.p.detail %} title="{{ r.p.detail }}"{% endif %}><b>{{ r.p.title }}</b>{% if r.p.ack_note %}<span class="pb-acknote">{{ r.p.ack_note }}</span>{% endif %}</span>
-    <span class="pb-since">{{ r.since }}</span>
-    <span class="pb-acts">{{ actions(r) }}</span>
-  </article>
+  <details class="pb-row sev-{{ r.p.severity }}{{ ' acked' if r.p.acked_at }}" data-keep="pb-{{ r.p.id }}">
+    <summary>
+      <a class="pb-who" href="/devices/{{ r.d.id }}">{{ r.d.name }}</a>
+      <span class="pb-what"><b>{{ r.p.title }}</b>{% if r.p.ack_note %}<span class="pb-acknote">{{ r.p.ack_note }}</span>{% endif %}</span>
+      <span class="pb-since">{{ r.since }}</span>
+      <span class="pb-acts">{{ actions(r) }}</span>
+    </summary>
+    <div class="pb-body">
+      {% if r.p.detail %}<p class="pb-detail">{{ r.p.detail }}</p>{% endif %}
+      {% if r.p.ack_note %}<p class="pb-detail"><span class="muted">Ack note:</span> {{ r.p.ack_note }}</p>{% endif %}
+      <p class="pb-meta muted">{{ r.p.source }} · since {{ r.p.opened_at | dt }}{% if r.p.acked_at %} · acknowledged {{ r.p.acked_at | reltime }}{% endif %}</p>
+      <a class="pb-open" href="/devices/{{ r.d.id }}">Open {{ r.d.name }} <span aria-hidden="true">→</span></a>
+    </div>
+  </details>
 {% endmacro %}
 
 {% if not new_count %}
