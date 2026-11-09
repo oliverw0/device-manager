@@ -12,7 +12,7 @@ from .models import User
 PUBLIC_PATHS = {"/login", "/logout", "/favicon.ico", "/sw.js", "/login/oidc", "/login/oidc/callback"}
 PUBLIC_PREFIXES = ("/static", "/api/v1", "/ping/", "/hooks/")  # /ping/<token>: heartbeat checks; /hooks/<token>: ntfy buttons
 # /metrics checks its own bearer token; /status/public answers only when PUBLIC_STATUS is on
-PUBLIC_PATHS = PUBLIC_PATHS | {"/metrics", "/status/public"}
+PUBLIC_PATHS = PUBLIC_PATHS | {"/metrics", "/status/public", "/mcp"}  # /mcp checks MCP_TOKEN
 
 
 class AdminAuthMiddleware(BaseHTTPMiddleware):

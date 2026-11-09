@@ -112,6 +112,13 @@ def active() -> list[dict]:
         return [public(w) for w in _load().values() if not w["notify"] and not w.get("finished")]
 
 
+def recent() -> list[dict]:
+    """Every watch still kept (they drop after a day), finished or not: for the MCP."""
+    with _lock:
+        return [{**public(w), "finished": bool(w.get("finished")) or (w.get("job") or {}).get("status") in ("done", "error")}
+                for w in _load().values()]
+
+
 def outcome_push(w: dict, job: dict) -> tuple[str, str] | None:
     """Phone-sized: (title, body), or None when the problem's own push covers it."""
     name, eps, app = w["name"], w["eps"], w["app"]

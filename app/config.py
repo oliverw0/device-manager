@@ -97,6 +97,8 @@ class Settings(BaseSettings):
     # Bearer token for /metrics (Prometheus) and /api/v1/summary (Homepage
     # widget). Empty: both are off.
     metrics_token: str = ""
+    # Bearer token for /mcp, Pulse's MCP server (Willow, Claude Code). Empty: off.
+    mcp_token: str = ""
     # A read-only status page at /status/public, outside the login: check
     # names and uptime only, no addresses or device names.
     public_status: bool = False
