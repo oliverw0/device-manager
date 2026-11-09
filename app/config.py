@@ -89,6 +89,11 @@ class Settings(BaseSettings):
     # Hourly averages are kept this long for the 30-day / 90-day / 1-year charts.
     long_history_days: int = 400
 
+    # The Claude runner on Oliver's Mac (homelab repo, mac/claude-runner): the daily
+    # summary ends with Claude's weekly plan usage. Empty: left out.
+    claude_runner_url: str = ""
+    claude_runner_token: str = ""
+
     # Bearer token for /metrics (Prometheus) and /api/v1/summary (Homepage
     # widget). Empty: both are off.
     metrics_token: str = ""
@@ -123,7 +128,7 @@ class Settings(BaseSettings):
     # Only set this yourself if you need the same secret across multiple host instances.
     session_secret: str = ""
 
-    @field_validator("admin_username", "admin_password", "admin_password_file", "session_secret", mode="before")
+    @field_validator("admin_username", "admin_password", "admin_password_file", "session_secret", "claude_runner_token", mode="before")
     @classmethod
     def _sanitize(cls, v):
         return _clean_env_value(v) if isinstance(v, str) else v

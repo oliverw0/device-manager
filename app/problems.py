@@ -17,7 +17,7 @@ from pathlib import Path
 
 from sqlmodel import Session, delete, select
 
-from . import arr, notifier
+from . import arr, claude_usage, notifier
 from .config import settings
 from .database import engine
 from .models import CheckDay, Device, Problem, ServiceCheck
@@ -412,7 +412,11 @@ def digest(session: Session, now: datetime, disks_before: dict) -> tuple[str, di
 
     order = ["Backups", "Proxmox", "Errors", "Downloads", "Went offline", "Restarted", "Storage"]
     text = "\n\n".join(f"{k}\n" + "\n".join(f"· {line}" for line in sections[k]) for k in order if k in sections)
-    return text or "All quiet: no outages, restarts or errors, and storage is steady.", disks_now
+    text = text or "All quiet: no outages, restarts or errors, and storage is steady."
+    claude = claude_usage.lines()  # not news, so it doesn't count against "all quiet"
+    if claude:
+        text += "\n\nClaude\n" + "\n".join(f"· {line}" for line in claude)
+    return text, disks_now
 
 
 def client_release(session: Session, stamp: Path) -> str | None:
