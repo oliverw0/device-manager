@@ -311,6 +311,11 @@ def containers():
     return {}
 
 
+def device_ids():
+    """{device name: Pulse device id}, for the overlay's "Open in Devices" button. Patched in by setup() inside Pulse."""
+    return {}
+
+
 def service_of(problem):
     """Which app on its machine a Pulse problem belongs to, so only that app's light changes: a stuck episode is
     Sonarr's, a stuck film Radarr's. Anything else belongs to the machine as a whole (None)."""
@@ -415,6 +420,10 @@ def build(src, now=None):
 
     # Disks (Pulse devices)
     devices = {d["name"]: d for d in (dev or {}).get("devices", [])} if ok.get("devices") else {}
+    try:
+        dev_ids = device_ids()
+    except Exception:  # noqa: BLE001  the button falls back to the device list
+        dev_ids = {}
     worst, full = 0, []
     for d in devices.values():
         pct = (d.get("fullest_disk") or {}).get("percent") or 0
@@ -531,7 +540,8 @@ def build(src, now=None):
         iss = issues_for(n.get("device")) + list(extra)
         light, why = status(n, iss, running)
         ctrs = (src.get("ctrs") or {}).get(n.get("device")) if ok.get("ctrs") and n.get("device") else None
-        return {**n, "led": light, "why": why, "issues": iss, "readings": readings(n.get("device")), "net": rates, "ctrs": ctrs}
+        return {**n, "led": light, "why": why, "issues": iss, "readings": readings(n.get("device")), "net": rates, "ctrs": ctrs,
+                "device_id": dev_ids.get(n.get("device")) if n.get("device") else None}
 
     def guest(g):
         run = str(g["id"]) in traffic if ok.get("net") else None

@@ -9,7 +9,7 @@
 <section class="panel">
   {% for s in stacks %}
   {% set dev = {"id": s.device_id, "name": s.device_name, "ssh_enabled": s.device_ssh_enabled} %}
-  <details class="stack-item">
+  <details class="stack-item" id="stack-{{ s.device_id }}-{{ s.stack }}">
     <summary>
       <span class="chip info">STACK</span>
       <span class="c-name">{{ s.stack }}</span>
@@ -33,3 +33,5 @@
   {% endfor %}
 </section>
 {% endblock %}
+
+{% block scripts %}<script>(function(){var el=location.hash&&document.getElementById(decodeURIComponent(location.hash.slice(1)));if(el&&el.tagName==='DETAILS'){el.open=true;el.scrollIntoView({block:'start'});}})();</script>{% endblock %}

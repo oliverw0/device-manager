@@ -1003,8 +1003,25 @@ function closeTerminal() {
   hideSection("term-section");
 }
 
+// The terminal library (about 300 KB) loads the first time a terminal opens, not on every page.
+let XTERM_LOADING = null;
+function loadXterm() {
+  if (typeof Terminal !== "undefined") return Promise.resolve();
+  const one = (src) => new Promise((ok, fail) => {
+    const s = document.createElement("script");
+    s.src = src; s.onload = ok; s.onerror = fail;
+    document.head.appendChild(s);
+  });
+  XTERM_LOADING = XTERM_LOADING || one("/static/vendor/xterm.js").then(() => one("/static/vendor/xterm-addon-fit.js"));
+  return XTERM_LOADING;
+}
+
 function openTerminal(deviceId, deviceName, container) {
-  if (typeof Terminal === "undefined") { alert("Terminal library failed to load."); return; }
+  if (typeof Terminal === "undefined") {
+    loadXterm().then(() => openTerminal(deviceId, deviceName, container))
+      .catch(() => { XTERM_LOADING = null; alert("Terminal library failed to load."); });
+    return;
+  }
   TERM_DEVICE = deviceId;
   TERM_CONTAINER = container || null;
   const title = document.getElementById("term-title");
