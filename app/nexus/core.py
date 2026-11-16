@@ -231,12 +231,17 @@ PLEX_THUMB = re.compile(r"/library/metadata/\d+/(?:thumb|art)(?:/\d+)?")
 JF_ID = re.compile(r"[0-9a-f]{32}")
 
 
+def jf_auth(key):
+    """Jellyfin 10.11 turned off the old X-Emby-Token header by default; this is the one it takes now."""
+    return {"Authorization": f'MediaBrowser Token="{key or ""}"'}
+
+
 def jellyfin():
     """Now playing and recently played, every user. Inert until secrets/jellyfin-key exists (Jellyfin > Dashboard > API Keys)."""
     key = secret("jellyfin-key")
     if not key:
         return None
-    h = {"X-Emby-Token": key}
+    h = jf_auth(key)
 
     def sub(it):
         if it.get("Type") == "Episode":
@@ -644,7 +649,7 @@ def image(kind, ident):
     if kind == "plex":
         return call(f"{TAUTULLI}?" + urllib.parse.urlencode({"apikey": secret("tautulli-key"), "cmd": "pms_image_proxy", "img": ident,
                                                               "width": 200, "height": 300, "fallback": "poster"}), raw=True, timeout=15)
-    return call(f"{JELLYFIN}/Items/{ident}/Images/Primary?fillHeight=300&quality=85", headers={"X-Emby-Token": secret("jellyfin-key") or ""},
+    return call(f"{JELLYFIN}/Items/{ident}/Images/Primary?fillHeight=300&quality=85", headers=jf_auth(secret("jellyfin-key")),
                 raw=True, timeout=15)
 
 
