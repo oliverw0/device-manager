@@ -526,7 +526,9 @@ function tipHtml(el) {
     ${r ? `<div class="tip-read">${[r.cpu != null ? `CPU ${Math.round(r.cpu)}%` : "", r.mem != null ? `MEM ${Math.round(r.mem)}%` : "",
       r.disk ? `DISK ${Math.round(r.disk.percent)}%` : "", r.containers ? `${r.containers[0]}/${r.containers[1]} CONTAINERS` : "", r.updates ? `${r.updates} UPDATES` : ""].filter(Boolean).join(" · ")}</div>` : ""}
     ${n.net ? `<div class="tip-read">${rates(n.net)}</div>` : ""}
-    <div class="tip-foot">${opening ? `Click to open ${esc(opening)}.` : "Click for details and actions."}</div>`;
+    ${!opening && (n.ctrs || []).some((c) => c.state !== "ok") ? `<ul class="tip-list">${n.ctrs.filter((c) => c.state !== "ok").slice(0, 4).map((c) =>
+      `<li class="${c.state === "bad" ? "bad" : "warn"}">${esc(c.name)}: ${esc(c.status || CTR_WORD[c.state])}</li>`).join("")}</ul>` : ""}
+    <div class="tip-foot">${opening ? `Click to open ${esc(opening)}.` : n.device_id ? "Click to open its page in Devices." : "Click for details."}</div>`;
 }
 let tipTimer, tipFor = "";
 function hideTip() { clearTimeout(tipTimer); $("tip").hidden = true; tipFor = ""; }
@@ -583,7 +585,7 @@ function openNode(key, refresh) {
     ${n.services?.length ? `<div class="sub-head">Apps</div><div class="svc-grid">${n.services.map(([nm, u, ic]) =>
       `<a class="tile" href="${esc(u)}">${icon(ic, nm)}<span class="txt"><span class="nm ellipsis">${esc(nm)}</span><span class="ad ellipsis">${esc(where(n.name, u))}</span></span></a>`).join("")}</div>` : ""}
     <footer class="dlg-foot">${pveLink ? `<a class="btn small secondary" href="${pveLink}">Open in Proxmox ↗</a>` : ""}
-      ${r ? `<a class="btn small secondary" href="/devices" target="_self">Open in Devices</a>` : ""}<span class="spacer"></span><span class="muted mono" style="font-size:10.5px">ESC TO CLOSE</span></footer>`;
+      ${r || n.device_id ? `<a class="btn small secondary" href="${n.device_id ? `/devices/${n.device_id}` : "/devices"}" target="_self">Open in Devices</a>` : ""}<span class="spacer"></span><span class="muted mono" style="font-size:10.5px">ESC TO CLOSE</span></footer>`;
   dialogTraffic();
   if (!refresh && !dlg.open) dlg.showModal();
 }
@@ -597,14 +599,21 @@ function dialogTraffic() {
   const sv = box.querySelector("svg");
   if (sv) spark(sv, a);
 }
+// A machine with a Devices page opens that page (one place for a machine's details and actions); the overlay is
+// only for what has none (the router, a guest with no monitoring client).
+function showMachine(key) {
+  const n = NODES.get(key);
+  if (n?.device_id) location.href = `/devices/${n.device_id}`;
+  else openNode(key);
+}
 document.addEventListener("click", (e) => {
   if (e.target.closest("[data-close]") || e.target === $("dlg")) { $("dlg").close(); return; }
   const n = e.target.closest(".gnode[data-node], .hostcard-head[data-node]");
-  if (n) openNode(n.dataset.node);
+  if (n) showMachine(n.dataset.node);
 });
 document.addEventListener("keydown", (e) => {
   const n = e.target.closest?.(".gnode[data-node]");
-  if (n && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openNode(n.dataset.node); }
+  if (n && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); showMachine(n.dataset.node); }
 });
 
 // ---------- Willow: the conversation, jobs and plan usage
@@ -941,7 +950,7 @@ function choose(it) {
   closePalette();
   if (!it) { if (q) window.open(`https://www.google.com/search?q=${encodeURIComponent(q)}`, "_blank", "noopener"); return; }
   if (it.kind === "app") window.open(it.url, "_blank", "noopener");
-  else openNode(it.key);
+  else showMachine(it.key);
 }
 $("jump-btn").addEventListener("click", openPalette);
 $("pal-input").addEventListener("input", () => { pal.sel = 0; drawPalette(); });

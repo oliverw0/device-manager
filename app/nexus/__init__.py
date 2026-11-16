@@ -57,10 +57,20 @@ def _containers() -> dict:
     return out
 
 
+def _device_ids() -> dict:
+    from sqlmodel import Session, select
+
+    from ..database import engine
+    from ..models import Device
+    with Session(engine) as s:
+        return {d.name: d.id for d in s.exec(select(Device)).all()}
+
+
 def setup() -> None:
     core.secret = _secret
     core.pulse = _pulse
     core.containers = _containers
+    core.device_ids = _device_ids
     if settings.willow_url:
         core.WILLOW = settings.willow_url.rstrip("/")
     core.WILLOW_HEADERS = {**core.WILLOW_HEADERS, "Authorization": f"Bearer {settings.willow_token}"}
