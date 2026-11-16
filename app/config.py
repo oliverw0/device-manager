@@ -56,7 +56,8 @@ class Settings(BaseSettings):
 
     # Problems: warn when an https check's certificate expires within this many
     # days (high within 3). The daily summary goes to ntfy at this hour, host
-    # local time (set TZ on the container); -1 turns it off.
+    # local time (set TZ on the container); -1 turns it off (on mac-deb since
+    # 16 Nov 2026: Willow's morning brief carries it, via pulse_daily_summary).
     tls_warn_days: int = 14
     digest_hour: int = 8
 

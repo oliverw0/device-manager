@@ -222,12 +222,19 @@ def t_downloads(s: Session, a: dict) -> dict:
 
 def t_daily_summary(s: Session, a: dict) -> dict:
     """The same text as the daily ntfy summary, for the last 24 hours. Doesn't
-    move the storage snapshot, so tomorrow's real summary is unchanged."""
+    move the storage snapshot, so tomorrow's real summary is unchanged, unless
+    commit is set: Willow's morning brief carries the summary now (DIGEST_HOUR=-1
+    turns Pulse's own push off) and commits once it has gone to Oliver's phone,
+    so the next day's storage growth is measured from then."""
+    snap = settings.data_dir() / "digest_disks.json"
     try:
-        before = json.loads((settings.data_dir() / "digest_disks.json").read_text(encoding="utf-8"))
+        before = json.loads(snap.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         before = {}
-    text, _ = problems.digest(s, datetime.utcnow(), before)
+    text, disks = problems.digest(s, datetime.utcnow(), before)
+    if a.get("commit"):
+        snap.write_text(json.dumps(disks), encoding="utf-8")
+        (settings.data_dir() / "last_digest.txt").write_text(datetime.now().date().isoformat(), encoding="utf-8")
     return {"summary": text}
 
 
@@ -293,8 +300,11 @@ TOOLS = {
         "inputSchema": NO_ARGS, "annotations": READ}),
     "pulse_daily_summary": (t_daily_summary, {
         "title": "Last 24 hours",
-        "description": "The daily summary for the last 24 hours: backups, errors, downloads, outages, restarts, storage growth.",
-        "inputSchema": NO_ARGS, "annotations": READ}),
+        "description": "The daily summary for the last 24 hours: backups, errors, downloads, outages, restarts, storage growth. "
+                       "commit=true (Willow, once the morning brief has gone out) also starts the next day's storage comparison from now.",
+        "inputSchema": {"type": "object", "properties": {"commit": {"type": "boolean", "default": False}},
+                        "additionalProperties": False},
+        "annotations": READ}),
     "pulse_retry_download": (t_retry_download, {
         "title": "Remove & search again",
         "description": "For a stuck download problem: remove it from the queue and the torrent client, blocklist the "
