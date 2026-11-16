@@ -93,7 +93,7 @@ LAB = {
          ]},
         {"id": "mac-deb", "name": "mac-deb", "sub": "192.168.50.225 · Debian 13 (Asahi)", "model": "MacBook Air M1 · 8 GB",
          "device": "mac-deb", "icon": "debian-linux",
-         "services": [["Home Assistant", "http://192.168.50.225:8123", "home-assistant"], ["Pulse", "https://pulse.wiles.au", "icons/pulse.png"],
+         "services": [["Home Assistant", "http://192.168.50.225:8123", "home-assistant"],
                       ["Galley", "https://galley.wiles.au", "icons/galley.svg"]]},
         {"id": "nas", "name": "nas", "sub": "192.168.50.4 · Synology DSM", "model": "Synology DS916+ · 16 TB", "device": "Wiles-NAS", "url": "https://nas.wiles.au",
          "icon": "synology-dsm", "services": [["DSM", "https://nas.wiles.au", "synology-dsm"]]},
@@ -335,7 +335,7 @@ SOURCES = {
     "seerr": seerr,
     "wan": wan,
 }
-LABELS = {"wan": "the public IP lookup","status": "Pulse", "devices": "Pulse devices", "willow": "Willow", "log": "Willow's log", "usage": "the Claude runner",
+LABELS = {"wan": "the public IP lookup","status": "the health checks", "devices": "the device list", "willow": "Willow", "log": "Willow's log", "usage": "the Claude runner",
           "net": "Glances on pve", "plex": "Tautulli", "jellyfin": "Jellyfin", "seerr": "Seerr"}
 
 
@@ -384,7 +384,7 @@ def build(src, now=None):
         off = [m if isinstance(m, str) else m.get("name", "?") for m in st.get("machines_offline", [])]
         lamp("Machines", "bad" if off else "ok", f"{len(off)} OFFLINE" if off else f"{st['machines_online']}/{st['machines_total']} UP", "#map", off)
         for m in off:
-            warns.append({"level": "bad", "title": f"{m} is offline", "detail": "Pulse hasn't heard from it.", "src": "PULSE"})
+            warns.append({"level": "bad", "title": f"{m} is offline", "detail": "NEXUS hasn't heard from it.", "src": "PULSE"})
         failing = st.get("checks_failing", [])
         lamp("Checks", "bad" if failing else "ok", f"{len(failing)} FAILING" if failing else f"{st['checks_passing']}/{st['checks_total']} PASS",
              items=[(c.get("name") or c.get("title", "?")) if isinstance(c, dict) else c for c in failing])
@@ -473,7 +473,7 @@ def build(src, now=None):
         out = []
         d = devices.get(name)
         if d and not d.get("online") and not d.get("expected_off"):
-            out.append({"level": "bad", "title": "Offline", "down": True, "detail": f"Pulse last heard from it {d.get('last_seen') or 'a while ago'}."})
+            out.append({"level": "bad", "title": "Offline", "down": True, "detail": f"Last heard from it {d.get('last_seen') or 'a while ago'}."})
         for p in problems:
             if p.get("device") == name:
                 acts = [["retry", p["id"], "Remove & search again"], ["ack", p["id"], "Acknowledge"]] if p.get("is_download") else [["ack", p["id"], "Acknowledge"]]
@@ -516,7 +516,7 @@ def build(src, now=None):
         if d:
             return ("on", "Up, nothing wrong") if d.get("online") else (None, "Off, as expected")
         if running:
-            return "on", "Running (no Pulse client, so no readings)"
+            return "on", "Running (no monitoring client, so no readings)"
         return None, "No monitor: nothing reports on it"
 
     def node(n, rates=None, running=None, extra=()):
@@ -809,7 +809,7 @@ def test():
     g2 = {g["name"]: g for h in build(s)["map"]["hosts"] for g in h["guests"]}
     assert g2["proxy"]["led"] == "warn" and g2["frigate"]["led"] == "on" and g2["authentik"]["led"] == "warn"
     assert service_of({"is_download": True, "title": "Weapons (2025) didn't import"}) == "Radarr" and service_of({"title": "x"}) is None and g["servarr"]["issues"][0]["actions"][0][0] == "retry"
-    assert g["games"]["why"].startswith("Running (no Pulse") and g["crafty"]["why"].startswith("Retired")
+    assert g["games"]["why"].startswith("Running (no monitoring") and g["crafty"]["why"].startswith("Retired")
     assert {l["name"]: l for l in v["lamps"]}["Downloads"]["items"][0].startswith("South Park")
     assert v["map"]["wan"]["ip"] == "203.0.113.24"
     assert v["media"]["recent"][0]["title"] == "Severance" and v["media"]["now"][0]["pct"] == 38
@@ -820,7 +820,7 @@ def test():
     assert any(w["title"].startswith("104 proxy") for w in build(s)["warnings"])
     # a dead source is a warning and a red lamp, not a crash
     v = build({"status": OSError("timed out"), "devices": None, "willow": None, "usage": None})
-    assert v["warnings"][0]["title"] == "Can't reach Pulse" and {l["name"]: l["level"] for l in v["lamps"]}["Machines"] == "bad"
+    assert v["warnings"][0]["title"] == "Can't reach the health checks" and {l["name"]: l["level"] for l in v["lamps"]}["Machines"] == "bad"
     # the runner refusing (429) is a lamp, not a broken page (HTTPError pretends to have every attribute)
     import io
     import urllib.error

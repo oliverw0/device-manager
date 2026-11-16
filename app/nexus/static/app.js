@@ -77,7 +77,7 @@ function checkDark(img) {
 }
 document.addEventListener("load", (e) => { if (e.target.tagName === "IMG" && e.target.dataset.slug) checkDark(e.target); }, true);
 // where something came from: the app's own icon and name in grey. Display only, so no signal colour.
-const SOURCES_ICON = { plex: ["plex", "Plex"], jellyfin: ["jellyfin", "Jellyfin"], WILLOW: ["icons/willow.png", "Willow"], PULSE: ["icons/pulse.png", "Pulse"],
+const SOURCES_ICON = { plex: ["plex", "Plex"], jellyfin: ["jellyfin", "Jellyfin"], WILLOW: ["icons/willow.png", "Willow"], PULSE: ["logo.svg", "Health"],
                        SEERR: ["overseerr", "Seerr"], PROXMOX: ["proxmox", "Proxmox"], NEXUS: ["logo.svg", "NEXUS"], LIST: ["icons/willow.png", "Willow list"] };
 function srcTag(k) {
   const [ic, name] = SOURCES_ICON[k] || SOURCES_ICON[String(k).split(" ")[0]] || [null, k];
@@ -155,7 +155,7 @@ route();
 // ---------- services: grouped by what they're for
 const CATS = [
   ["Media", ["Plex", "Jellyfin", "Seerr", "Sonarr", "Radarr", "Lidarr", "Prowlarr", "qBittorrent", "Tautulli"]],
-  ["Home & apps", ["Home Assistant", "Frigate", "Willow", "Galley", "Lobby", "Pulse"]],
+  ["Home & apps", ["Home Assistant", "Frigate", "Willow", "Galley", "Lobby"]],
   ["Infrastructure", ["Proxmox", "Backup Server", "DSM", "Router", "AdGuard Home", "Proxy Manager", "Authentik", "Portainer"]],
 ];
 // An app's own light: its own problems (a stuck episode is Sonarr's) plus anything machine-wide (offline, a full disk),
@@ -510,7 +510,7 @@ function tipHtml(el) {
   }
   if (tipKey === "router") {
     return `<div class="tip-head"><b>Router</b><span class="chip chip-sm neutral">NO MONITOR</span></div>
-      <div class="tip-why">ASUS RT-AX82U at 192.168.50.1 (rout.wiles.au). No Pulse client, so no light.</div><div class="tip-foot">Click to open its admin page.</div>`;
+      <div class="tip-why">ASUS RT-AX82U at 192.168.50.1 (rout.wiles.au). No monitoring client, so no light.</div><div class="tip-foot">Click to open its admin page.</div>`;
   }
   const n = NODES.get(nodeKey);
   if (!n) return "";
@@ -578,16 +578,16 @@ function openNode(key, refresh) {
         ${i.actions?.length ? `<div class="row-actions">${i.actions.map(btn).join("")}</div>` : ""}</div></div>`).join("")}` : ""}
     <div class="dlg-cols">
       <div><div class="sub-head">Traffic</div><div id="dlg-traffic"></div></div>
-      <div><div class="sub-head">Readings${r ? " · from Pulse" : ""}</div>${r ? `${meter("CPU", r.cpu)}${meter("Memory", r.mem)}${r.disk ? meter("Fullest disk", r.disk.percent, r.disk.mount) : ""}
+      <div><div class="sub-head">Readings${r ? " · from its client" : ""}</div>${r ? `${meter("CPU", r.cpu)}${meter("Memory", r.mem)}${r.disk ? meter("Fullest disk", r.disk.percent, r.disk.mount) : ""}
         <ul class="kv-mini">${r.containers ? `<li><span>Containers</span><b>${r.containers[0]} of ${r.containers[1]} running</b></li>` : ""}
           ${r.updates != null ? `<li><span>Updates</span><b>${r.updates ? `${r.updates} waiting` : "none"}</b></li>` : ""}
           <li><span>Last report</span><b>${esc(r.last_seen || "?")}</b></li>${r.muted ? `<li><span>Alerts</span><b>muted</b></li>` : ""}</ul>`
-        : `<p class="empty">No Pulse client on this machine, so no CPU, memory or disk readings.</p>`}</div>
+        : `<p class="empty">No monitoring client on this machine, so no CPU, memory or disk readings.</p>`}</div>
     </div>
     ${n.services?.length ? `<div class="sub-head">Apps</div><div class="svc-grid">${n.services.map(([nm, u, ic]) =>
       `<a class="tile" href="${esc(u)}">${icon(ic, nm)}<span class="txt"><span class="nm ellipsis">${esc(nm)}</span><span class="ad ellipsis">${esc(where(n.name, u))}</span></span></a>`).join("")}</div>` : ""}
     <footer class="dlg-foot">${pveLink ? `<a class="btn small secondary" href="${pveLink}">Open in Proxmox ↗</a>` : ""}
-      ${r ? `<a class="btn small secondary" href="https://pulse.wiles.au">Open Pulse ↗</a>` : ""}<span class="spacer"></span><span class="muted mono" style="font-size:10.5px">ESC TO CLOSE</span></footer>`;
+      ${r ? `<a class="btn small secondary" href="/devices" target="_self">Open in Devices</a>` : ""}<span class="spacer"></span><span class="muted mono" style="font-size:10.5px">ESC TO CLOSE</span></footer>`;
   dialogTraffic();
   if (!refresh && !dlg.open) dlg.showModal();
 }
@@ -806,7 +806,7 @@ function todo(v) {
   }).join("") : `<p class="empty"><span class="led on"></span>The list is empty.</p>`;
 }
 function foot(v) {
-  const names = { wan: "Public IP", status: "Pulse", devices: "Devices", willow: "Willow", log: "Log", usage: "Claude", net: "Glances", plex: "Tautulli", jellyfin: "Jellyfin", seerr: "Seerr" };
+  const names = { wan: "Public IP", status: "Health", devices: "Devices", willow: "Willow", log: "Log", usage: "Claude", net: "Glances", plex: "Tautulli", jellyfin: "Jellyfin", seerr: "Seerr" };
   const s = Object.entries(v.sources);
   $("foot").innerHTML = `<div class="srcs">${s.map(([k, ok]) => `<span><span class="led ${ok ? "on" : "off"}"></span>${esc(names[k] || k)}</span>`).join("")}</div>
     <div>${s.filter(([, ok]) => ok).length}/${s.length} SOURCES · UPDATED ${new Date(v.at * 1000).toLocaleTimeString("en-AU", { hour12: false })}</div>

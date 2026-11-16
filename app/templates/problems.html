@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% import "_macros.html" as ui %}
-{% block title %}Health - Pulse{% endblock %}
+{% block title %}Health - NEXUS{% endblock %}
 
 {# Terminal (when SSH is set up) and acknowledge: the row itself says what's wrong. #}
 {% macro actions(r) %}
@@ -137,7 +137,7 @@
   {% else %}
   <p class="muted">Nothing cleared in the last day.</p>
   {% endfor %}
-  <p class="muted pb-foot">A summary goes to ntfy every morning. <a href="/health/timeline">Timeline</a> · <a href="/alerts">Full alert log</a></p>
+  <p class="muted pb-foot">The last 24 hours are in Willow's 7:30 morning brief. <a href="/health/timeline">Timeline</a> · <a href="/alerts">Full alert log</a></p>
 </section>
 </div>
 {% endblock %}

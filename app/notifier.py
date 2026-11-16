@@ -8,7 +8,7 @@ from .config import settings
 logger = logging.getLogger("devicemanager.notifier")
 
 
-def send(message: str, title: str = "Pulse", priority: str | None = None, tags: str | None = None,
+def send(message: str, title: str = "NEXUS", priority: str | None = None, tags: str | None = None,
          click: str | None = None, device_id: int | None = None, key: str | None = None,
          actions: list[tuple[str, str, object]] | None = None) -> bool:
     """Push to ntfy; every attempt is written to the notification log.
