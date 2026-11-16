@@ -1,8 +1,8 @@
 {
-  "name": "Pulse",
-  "short_name": "Pulse",
-  "description": "Health, problems and fixes for every machine.",
-  "start_url": "/health",
+  "name": "NEXUS",
+  "short_name": "NEXUS",
+  "description": "The lab's action board: what needs you, the network, and Willow.",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
