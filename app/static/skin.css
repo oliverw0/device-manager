@@ -94,3 +94,9 @@ main.container { max-width: none; margin: 0; padding: var(--hud-gap); }
 @media (min-width: 1100px) {
   .overview-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(360px, 1fr); }
 }
+
+/* ---------- the rail's logo: square and centred when collapsed, level with the top bar (as on NEXUS) ---------- */
+.sidebar .sidebar-head { height: var(--hud-h); }
+.sidebar .brand-logo { width: 22px; height: 22px; flex: none; object-fit: contain; }
+body.nav-collapsed .sidebar .brand { overflow: visible; }
+body.nav-collapsed .sidebar .brand-logo { margin-right: 0; }
