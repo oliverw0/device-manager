@@ -1,0 +1,120 @@
+/* Night Panel — generated from tokens.json. Don't edit by hand: change tokens.json and regenerate (see README). */
+:root {
+  /* colour */
+  --bg: #15171b;
+  --bg-edge: #101216;
+  --bg-glow: #1b1e24;
+  --panel: #1a1d22;
+  --panel-hover: #1d2026;
+  --panel-2: #21252b;
+  --well: #0e1013;
+  --terminal-bg: #0c0e11;
+  --border: #2c313a;
+  --border-strong: #3a414c;
+  --text: #cfd4da;
+  --text-strong: #e6e9ec;
+  --muted: #8a929d;
+  --faint: #565d67;
+  --green: #37e06a;
+  --green-hover: #52ef82;
+  --green-dim: #1f7a3c;
+  --green-ink: #05210f;
+  --amber: #ffb038;
+  --amber-ink: #1a1206;
+  --red: #ff5230;
+  --green-tint: rgba(55, 224, 106, 0.10);
+  --green-line: rgba(55, 224, 106, 0.35);
+  --green-edge: rgba(55, 224, 106, 0.55);
+  --amber-tint: rgba(255, 176, 56, 0.10);
+  --amber-line: rgba(255, 176, 56, 0.35);
+  --red-tint: rgba(255, 82, 48, 0.10);
+  --red-line: rgba(255, 82, 48, 0.35);
+  --red-edge: rgba(255, 82, 48, 0.55);
+  --neutral-tint: rgba(123, 131, 142, 0.10);
+  --neutral-line: rgba(123, 131, 142, 0.28);
+  --topbar-bg: rgba(18, 20, 24, 0.90);
+  --sidebar-bg: rgba(16, 18, 22, 0.97);
+  --backdrop: rgba(8, 9, 11, 0.70);
+  --widget-tint: rgba(55, 224, 106, 0.06);
+  --widget-line: rgba(55, 224, 106, 0.22);
+  --print-paper: #f4f5f6;
+  --print-ink: #15171b;
+  --print-line: #c9ced4;
+  --print-green: #177a3a;
+  --print-amber: #9a5c00;
+  --print-red: #c8361a;
+  /* type */
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Roboto Mono", Menlo, Consolas, monospace;
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* spacing */
+  --space-2: 2px;
+  --space-4: 4px;
+  --space-6: 6px;
+  --space-8: 8px;
+  --space-10: 10px;
+  --space-12: 12px;
+  --space-14: 14px;
+  --space-16: 16px;
+  --space-18: 18px;
+  --space-22: 22px;
+  --space-26: 26px;
+  /* radius */
+  --radius: 2px;
+  --radius-sm: 1px;
+  --radius-badge: 9px;
+  --radius-pill: 20px;
+  --radius-sheet: 12px;
+  --radius-round: 50%;
+  --radius-icon: 22.5%;
+  /* shadow and glow */
+  --glow-green: 0 0 7px rgba(55, 224, 106, 0.55);
+  --glow-amber: 0 0 7px rgba(255, 176, 56, 0.55);
+  --glow-red: 0 0 7px rgba(255, 82, 48, 0.50);
+  --shadow-overlay: 0 8px 28px rgba(0, 0, 0, 0.45);
+  --shadow-pill: 0 6px 20px rgba(0, 0, 0, 0.40);
+  --shadow-tip: 0 4px 14px rgba(0, 0, 0, 0.45);
+  --focus-ring: 0 0 0 1px rgba(55, 224, 106, 0.40);
+  /* layout */
+  --nav-w: 210px;
+  --nav-w-collapsed: 58px;
+  --topbar-h: 53px;
+  --tabbar-h: 58px;
+  --container-max: 1140px;
+  --toast-w: 360px;
+  --dialog-w: 640px;
+  --control-h: 38px;
+  --led: 8px;
+  --bp-mobile: 720px;
+  --bp-split: 860px;
+  /* stacking */
+  --z-menu: 30;
+  --z-terminal: 55;
+  --z-topbar: 60;
+  --z-toast: 65;
+  --z-sidebar: 70;
+  --z-sheet: 80;
+}
+
+/* type styles: class per style, e.g. <span class="label"> is already in bundle.css; these are the full scale */
+.type-hero-title { font-family: var(--font-mono); font-size: 26px; line-height: 1.2; font-weight: 700; }
+.type-page-title { font-family: var(--font-mono); font-size: 19px; line-height: 1.3; font-weight: 600; letter-spacing: 0.09em; }
+.type-brand { font-family: var(--font-mono); font-size: 15px; line-height: 1.3; font-weight: 600; letter-spacing: 0.14em; }
+.type-panel-title { font-family: var(--font-mono); font-size: 13px; line-height: 1.4; font-weight: 600; letter-spacing: 0.09em; }
+.type-subsection { font-family: var(--font-mono); font-size: 11px; line-height: 1.4; font-weight: 600; letter-spacing: 0.12em; }
+.type-label { font-family: var(--font-mono); font-size: 11px; line-height: 1.4; font-weight: 500; letter-spacing: 0.08em; }
+.type-button { font-family: var(--font-mono); font-size: 12px; line-height: 1.2; font-weight: 600; letter-spacing: 0.08em; }
+.type-nav { font-family: var(--font-mono); font-size: 12px; line-height: 1.4; font-weight: 400; letter-spacing: 0.06em; }
+.type-chip { font-family: var(--font-mono); font-size: 11px; line-height: 1.4; font-weight: 600; letter-spacing: 0.06em; }
+.type-tile-value { font-family: var(--font-mono); font-size: 27px; line-height: 1.1; font-weight: 600; letter-spacing: -0.01em; }
+.type-gauge-value { font-family: var(--font-mono); font-size: 22px; line-height: 1.2; font-weight: 700; }
+.type-metric-value { font-family: var(--font-mono); font-size: 16px; line-height: 1.3; font-weight: 700; }
+.type-code { font-family: var(--font-mono); font-size: 12px; line-height: 1.5; font-weight: 400; }
+.type-body { font-family: var(--font-sans); font-size: 14px; line-height: 1.5; font-weight: 400; }
+.type-body-strong { font-family: var(--font-sans); font-size: 14px; line-height: 1.5; font-weight: 500; }
+.type-small { font-family: var(--font-sans); font-size: 13px; line-height: 1.5; font-weight: 400; }
+.type-caption { font-family: var(--font-sans); font-size: 12px; line-height: 1.5; font-weight: 400; }
+.type-group-heading { font-family: var(--font-mono); font-size: 15.2px; line-height: 1.4; font-weight: 600; letter-spacing: 0.09em; }
+.type-service-name { font-family: var(--font-mono); font-size: 13.1px; line-height: 1.4; font-weight: 600; letter-spacing: 0.08em; }
+.type-stat-value { font-family: var(--font-mono); font-size: 12.8px; line-height: 1.3; font-weight: 400; }
+.type-stat-label { font-family: var(--font-mono); font-size: 9.9px; line-height: 1.3; font-weight: 500; letter-spacing: 0.08em; }
+.type-service-description { font-family: var(--font-sans); font-size: 12px; line-height: 1.4; font-weight: 400; }

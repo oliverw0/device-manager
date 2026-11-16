@@ -100,6 +100,18 @@ class Settings(BaseSettings):
     metrics_token: str = ""
     # Bearer token for /mcp, Pulse's MCP server (Willow, Claude Code). Empty: off.
     mcp_token: str = ""
+
+    # NEXUS, the home tab (/nexus/): the lab's action board. Willow (willow-core on
+    # LXC 106) with Pulse's own token (its secrets/pulse-token); the media sources are
+    # optional (each left empty is just missing from the page). NEXUS_DEMO serves
+    # made-up data, for working on the look without the lab.
+    willow_url: str = "http://192.168.50.194:8800"
+    willow_token: str = ""
+    tautulli_key: str = ""
+    seerr_key: str = ""
+    jellyfin_key: str = ""
+    ha_token: str = ""
+    nexus_demo: bool = False
     # A read-only status page at /status/public, outside the login: check
     # names and uptime only, no addresses or device names.
     public_status: bool = False

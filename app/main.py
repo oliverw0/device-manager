@@ -12,7 +12,7 @@ from . import monitor, oidc, ssh_keys
 from .auth_middleware import AdminAuthMiddleware
 from .config import settings
 from .database import engine, init_db
-from .routers import api, auth, checks, dashboard, hooks, mcp, metrics, power, problems, storage, terminal, updates, users, views
+from .routers import api, auth, checks, dashboard, hooks, mcp, metrics, nexus, power, problems, storage, terminal, updates, users, views
 
 logging.basicConfig(level=logging.INFO)
 
@@ -84,3 +84,4 @@ app.include_router(views.router)
 app.include_router(hooks.router)
 app.include_router(metrics.router)
 app.include_router(mcp.router)
+app.include_router(nexus.router)

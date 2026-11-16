@@ -1,0 +1,144 @@
+"""NEXUS at /nexus/: the page and its API (the same calls NEXUS's own server answered, now answered by Pulse).
+
+  GET  /nexus/api/overview           everything the page shows (every 30 s)
+  GET  /nexus/api/net                traffic per guest from Glances on pve (every 5 s)
+  GET  /nexus/api/img/plex?thumb=…   a poster from Plex, through Tautulli
+  GET  /nexus/api/img/jf/<id>        a poster from Jellyfin
+  GET  /nexus/api/pending/<id>       follow a slow Willow answer
+  POST /nexus/api/act                {"do", "id"}: approve/decline, done, retry/ack, pass, seerr-approve/decline
+  POST /nexus/api/chat               {"text"}: ask Willow
+
+Behind Pulse's own sign-in (auth_middleware). POSTs also need the header X-Nexus: 1, which a page on another site
+can't send without a CORS preflight. NEXUS_DEMO=true serves made-up data (for working on the look)."""
+import json
+import re
+from pathlib import Path
+
+from fastapi import APIRouter, Request
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
+
+from ..config import settings
+from ..nexus import core
+
+router = APIRouter()
+STATIC = (Path(__file__).resolve().parent.parent / "nexus" / "static").resolve()
+TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css", ".js": "text/javascript", ".svg": "image/svg+xml",
+         ".png": "image/png"}
+
+
+def _fail(e: Exception, status: int = 502) -> JSONResponse:
+    return JSONResponse({"ok": False, "error": str(e)[:200]}, status_code=status, headers={"Cache-Control": "no-store"})
+
+
+def _json(obj) -> JSONResponse:
+    return JSONResponse(obj, headers={"Cache-Control": "no-store"})
+
+
+@router.get("/nexus")
+def nexus_root():
+    return RedirectResponse(url="/nexus/", status_code=302)
+
+
+@router.get("/nexus/api/overview")
+def overview():
+    try:
+        return _json(core.build(core.demo_sources() if settings.nexus_demo else core.fetch_all()))
+    except Exception as e:  # noqa: BLE001
+        return _fail(e)
+
+
+@router.get("/nexus/api/net")
+def net():
+    try:
+        return _json(core.demo_sources()["net"] if settings.nexus_demo else core.net())
+    except Exception as e:  # noqa: BLE001
+        return _fail(e)
+
+
+def _image(kind: str, ident: str) -> Response:
+    if settings.nexus_demo:
+        return Response(status_code=404)
+    try:
+        body, ctype = core.image(kind, ident)
+    except Exception as e:  # noqa: BLE001
+        return _fail(e)
+    return Response(body, media_type=ctype if ctype.startswith("image/") else "image/jpeg",
+                    headers={"Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff"})
+
+
+@router.get("/nexus/api/img/plex")
+def img_plex(thumb: str = ""):
+    if not core.PLEX_THUMB.fullmatch(thumb):
+        return Response(status_code=404)
+    return _image("plex", thumb)
+
+
+@router.get("/nexus/api/img/jf/{ident}")
+def img_jf(ident: str):
+    if not core.JF_ID.fullmatch(ident):
+        return Response(status_code=404)
+    return _image("jf", ident)
+
+
+@router.get("/nexus/api/pending/{pid}")
+def pending(pid: str, after: str = "0"):
+    if not re.fullmatch(r"[A-Za-z0-9_-]{16}", pid):
+        return Response(status_code=404)
+    try:
+        return _json(core.pending(pid, int(after) if after.isdigit() else 0))
+    except Exception as e:  # noqa: BLE001
+        return _fail(e)
+
+
+async def _body(request: Request) -> dict | None:
+    if request.headers.get("X-Nexus") != "1":
+        return None
+    raw = (await request.body())[:8192]
+    try:
+        d = json.loads(raw or b"{}")
+    except ValueError:
+        return {}
+    return d if isinstance(d, dict) else {}
+
+
+@router.post("/nexus/api/act")
+async def act(request: Request):
+    d = await _body(request)
+    if d is None:
+        return JSONResponse({"error": "not allowed"}, status_code=403)
+    if settings.nexus_demo:
+        return _json({"ok": True, "say": f"(demo) {d.get('do')} {d.get('id')}"})
+    from starlette.concurrency import run_in_threadpool
+    try:
+        return _json(await run_in_threadpool(core.act, d.get("do"), d.get("id")))
+    except ValueError as e:
+        return _fail(e, 400)
+    except Exception as e:  # noqa: BLE001
+        return _fail(e)
+
+
+@router.post("/nexus/api/chat")
+async def chat(request: Request):
+    d = await _body(request)
+    if d is None:
+        return JSONResponse({"error": "not allowed"}, status_code=403)
+    from starlette.concurrency import run_in_threadpool
+    try:
+        return _json(core.demo_chat(d.get("text")) if settings.nexus_demo else await run_in_threadpool(core.chat, d.get("text")))
+    except ValueError as e:
+        return _fail(e, 400)
+    except Exception as e:  # noqa: BLE001
+        return _fail(e)
+
+
+@router.get("/nexus/{path:path}")
+def page(path: str):
+    """The page and its own files. Anything outside static/ is a 404."""
+    if path.startswith("api/"):
+        return JSONResponse({"error": "not found"}, status_code=404)
+    f = (STATIC / (path or "index.html")).resolve()
+    if STATIC not in f.parents or not f.is_file():
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return FileResponse(f, media_type=TYPES.get(f.suffix, "application/octet-stream"),
+                        headers={"Cache-Control": "no-cache" if f.suffix == ".html" else "public, max-age=3600",
+                                 "X-Frame-Options": "DENY", "X-Content-Type-Options": "nosniff"})

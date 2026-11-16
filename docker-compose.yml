@@ -13,3 +13,5 @@ services:
       # - ./secrets/admin_password.txt:/run/secrets/admin_password:ro
     env_file:
       - .env
+    environment:
+      TZ: Australia/Melbourne   # daily ntfy summary at 08:00 local, times in local time
