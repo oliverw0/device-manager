@@ -20,10 +20,7 @@ body.nexus { overflow: hidden; }
   display: flex; align-items: center; gap: 18px; min-height: var(--hud-h); padding: 8px var(--gap);
   background: var(--topbar-bg); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border-strong);
 }
-.hud-brand { display: flex; align-items: center; gap: 10px; color: var(--text-strong); font: 600 15px var(--font-mono); letter-spacing: 0.14em; flex: none; }
-.hud-brand:hover { color: var(--text-strong); text-decoration: none; }
-.hud-brand:hover img { filter: drop-shadow(0 0 5px rgba(55, 224, 106, 0.5)); }
-.hud-clock { display: flex; flex-direction: column; line-height: 1.1; padding-left: 18px; border-left: 1px solid var(--border); flex: none; }
+.hud-clock { display: flex; flex-direction: column; line-height: 1.1; flex: none; }
 .hud-time { font: 600 22px var(--font-mono); color: var(--text-strong); font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
 .hud-date { font: 500 10.5px var(--font-mono); color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; }
 .hud-brief { display: flex; flex-direction: column; gap: 2px; min-width: 150px; flex: none; }
@@ -383,7 +380,7 @@ a.node:hover, a.hostcard-head:hover, a.gnode:hover { text-decoration: none; bord
 @media (max-width: 640px) {
   :root { --gap: 10px; }
   .hud { gap: 10px; }
-  .hud-clock { padding-left: 10px; }
+
   .hud-time { font-size: 18px; }
   .tier-top { gap: 30px; }
   .node { min-width: 0; }
