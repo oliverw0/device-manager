@@ -75,3 +75,22 @@ body.np-pattern::before {
 /* ---------- full width, like NEXUS: the same 14px gutter under the top bar ---------- */
 main.container { max-width: none; margin: 0; padding: var(--hud-gap); }
 @media (min-width: 1800px) { main.container { max-width: 1760px; } }
+
+/* ---------- page tabs (Health views, a device's sections): a full-width strip that heads the content under it ---------- */
+.subtabs, .device-tabs {
+  display: flex; gap: 0; width: 100%; max-width: none; padding: 0 6px; margin: 0 0 16px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); overflow-x: auto; scrollbar-width: none;
+}
+.subtabs a, .device-tabs button {
+  height: 40px; padding: 0 16px; gap: 8px; border: 0; border-bottom: 2px solid transparent; border-radius: 0;
+  background: transparent; color: var(--muted); font: 600 11.5px/1 var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase;
+}
+.subtabs a:hover, .device-tabs button:hover { color: var(--text); background: var(--panel-2); }
+.subtabs a.active, .device-tabs button.active { color: var(--text-strong); background: var(--green-tint); border-bottom-color: var(--green); }
+.device-tabs .tab-count, .subtabs .tab-count { font-size: 10.5px; color: var(--muted); }
+.device-tabs button.active .tab-count, .subtabs a.active .tab-count { color: var(--green); }
+
+/* ---------- a device's overview: the charts get ~60%, the health and details column ~40% ---------- */
+@media (min-width: 1100px) {
+  .overview-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(360px, 1fr); }
+}
