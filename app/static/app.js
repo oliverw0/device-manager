@@ -1471,12 +1471,19 @@ function initSshProvisionCmd() {
 }
 
 function initNav() {
-  document.body.classList.toggle("nav-collapsed", localStorage.getItem("navCollapsed") === "1");
+  document.body.classList.toggle("nav-collapsed", localStorage.getItem("navCollapsed") !== "0");  // a slim rail unless opened
   document.documentElement.classList.remove("nav-preload-collapsed");
   const toggle = document.getElementById("nav-toggle");
   if (toggle) toggle.addEventListener("click", () => {
     const collapsed = document.body.classList.toggle("nav-collapsed");
     localStorage.setItem("navCollapsed", collapsed ? "1" : "0");
+  });
+  const brand = document.querySelector(".sidebar .brand");   // collapsed, the logo opens the rail (the toggle's hidden)
+  if (brand) brand.addEventListener("click", (e) => {
+    if (!document.body.classList.contains("nav-collapsed") || !window.matchMedia("(min-width: 721px)").matches) return;
+    e.preventDefault();
+    document.body.classList.remove("nav-collapsed");
+    localStorage.setItem("navCollapsed", "0");
   });
 }
 
@@ -1546,6 +1553,7 @@ function initBoost() {
     if (url.origin !== location.origin) return;
     // sign-in redirects off-site to the provider; a fetch can't follow that (CORS)
     if (url.pathname.startsWith("/login")) return;
+    if (url.pathname.startsWith("/nexus")) return;  // NEXUS is its own page, not a Pulse template
     e.preventDefault();
     boostTo(url.pathname + url.search, true);
   });

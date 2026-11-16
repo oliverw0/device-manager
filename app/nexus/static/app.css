@@ -327,6 +327,10 @@ a.node:hover, a.hostcard-head:hover, a.gnode:hover { text-decoration: none; bord
 .warn-row .t { color: var(--text-strong); font-weight: 500; font-size: 13px; }
 .warn-row .d { color: var(--muted); font-size: 12px; }
 .warn-row .m { font: 10.5px var(--font-mono); color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; }
+.todo-add { display: flex; gap: 6px; margin-bottom: 10px; }
+.todo-add input { flex: 1; min-width: 0; height: 28px; background: var(--well); border: 1px solid var(--border-strong); border-radius: var(--radius); color: var(--text); padding: 0 9px; font: 13px var(--font-sans); outline: none; }
+.todo-add input:focus { border-color: var(--green-dim); box-shadow: var(--focus-ring); }
+.todo-add .btn { height: 28px; }
 .todo-row { display: flex; gap: 10px; padding: 9px 0; border-top: 1px solid var(--border); align-items: flex-start; }
 .todo-row:first-child { border-top: 0; padding-top: 0; }
 .check {
@@ -608,8 +612,8 @@ button.jump:hover { border-color: var(--green-dim); }
 }
 
 /* the screen switch beside NEXUS: the same slim size as every other tab switch */
-.hud-views { flex: none; }
-.nexus .hud-views a { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: var(--radius); color: var(--muted);
-  font: 600 10px/1 var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; white-space: nowrap; }
-.nexus .hud-views a:hover { color: var(--text); text-decoration: none; }
-.nexus .hud-views a.active { background: var(--green-tint); color: var(--green); }
+
+/* The icon rail (same items as Pulse's own sidebar; always the slim version here, labels on hover) */
+.nx-rail .sidebar-head { height: var(--hud-h, 56px); }
+.nx-rail .sidebar-foot form { margin: 0; }
+.nx-rail .sidebar-foot button.nav-item { width: 100%; background: none; border: 0; cursor: pointer; font: inherit; }

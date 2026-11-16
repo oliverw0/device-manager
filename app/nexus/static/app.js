@@ -145,7 +145,7 @@ setInterval(weather, 20 * 60 * 1000);
 function route() {
   const view = location.hash === "#apps" ? "apps" : "board";
   document.body.dataset.view = view;
-  document.querySelectorAll(".hud-views [data-view]").forEach((a) => { a.classList.toggle("active", a.dataset.view === view); a.setAttribute("aria-current", a.dataset.view === view ? "page" : "false"); });
+  document.querySelectorAll("a[data-view]").forEach((a) => { a.classList.toggle("active", a.dataset.view === view); a.setAttribute("aria-current", a.dataset.view === view ? "page" : "false"); });
   if (view === "board") requestAnimationFrame(() => { mapFitKey = ""; wires(); fitJobs(); });
   scrollTo(0, 0);
 }
@@ -812,6 +812,25 @@ function foot(v) {
     <div>${s.filter(([, ok]) => ok).length}/${s.length} SOURCES · UPDATED ${new Date(v.at * 1000).toLocaleTimeString("en-AU", { hour12: false })}</div>
     <div>/ JUMP · A ASK WILLOW · R REFRESH</div>`;
 }
+
+// ---------- adding to the list (Willow's list: the same one Willow reads out)
+$("todo-add").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const input = $("todo-new"), text = input.value.trim();
+  if (!text) return;
+  input.disabled = true;
+  try {
+    const d = await post("api/act", { do: "add", id: text });
+    input.value = "";
+    toast(d.say || "Added to your list.");
+    load();
+  } catch (err) {
+    toast(`That didn't work: ${err.message}`, "bad");
+  } finally {
+    input.disabled = false;
+    input.focus();
+  }
+});
 
 // ---------- buttons
 async function post(url, body) {

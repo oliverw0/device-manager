@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="/static/icons/icon-180.png?v={{ static_version }}" />
   <link rel="stylesheet" href="/static/vendor/xterm.css" />
   <link rel="stylesheet" href="/static/style.css?v={{ static_version }}" />
-  <script>if (localStorage.getItem("navCollapsed") === "1") document.documentElement.classList.add("nav-preload-collapsed");</script>
+  <script>if (localStorage.getItem("navCollapsed") !== "0") document.documentElement.classList.add("nav-preload-collapsed");</script>
   <style>html.nav-preload-collapsed body { --nav-w: 58px; }</style>
 </head>
 <body class="{{ '' if request.session.get('is_admin') else 'no-nav' }}">
@@ -25,9 +25,17 @@
       <button type="button" class="nav-toggle" id="nav-toggle" title="Collapse menu" aria-label="Toggle menu">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
       </button>
-      <a class="brand" href="/health"><img class="brand-logo" src="/static/favicon.svg?v={{ static_version }}" alt="" width="22" height="22" /><span class="brand-text">Pulse</span></a>
+      <a class="brand" href="/nexus/"><img class="brand-logo" src="/static/favicon.svg?v={{ static_version }}" alt="" width="22" height="22" /><span class="brand-text">Pulse</span></a>
     </div>
     <div class="sidebar-nav">
+      <a class="nav-item" href="/nexus/#board" title="NEXUS">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2.5"/><circle cx="4.5" cy="5" r="1.5"/><circle cx="19.5" cy="5" r="1.5"/><circle cx="4.5" cy="19" r="1.5"/><circle cx="19.5" cy="19" r="1.5"/><path d="M6 6.2l4.2 4.2M18 6.2l-4.2 4.2M6 17.8l4.2-4.2M18 17.8l-4.2-4.2"/></svg>
+        <span class="nav-label">NEXUS</span>
+      </a>
+      <a class="nav-item" href="/nexus/#apps" title="Apps &amp; media">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        <span class="nav-label">Apps &amp; media</span>
+      </a>
       {% set open_problems = open_problem_count() if open_problem_count is defined else 0 %}
       <div class="nav-slot">
         <a class="nav-item {{ 'active' if p.startswith('/health') or p.startswith('/problems') or p.startswith('/alerts') }}" href="/health" title="Health">

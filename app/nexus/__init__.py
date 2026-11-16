@@ -1,7 +1,7 @@
 """NEXUS, Pulse's home tab: the lab's action board (the network map, what needs Oliver, and Willow to ask).
 
-core.py is NEXUS's own server code (homelab repo, proxmox/nexus/nexus.py), copied in unchanged so it can be
-re-synced by copying it again. Only four things differ inside Pulse, and setup() patches them:
+core.py is NEXUS's own server code, copied in from the homelab repo (proxmox/nexus/nexus.py at 7ba15cb, 16 Nov 2026).
+This copy is the source now: the standalone NEXUS on LXC 106 is retired once Pulse serves it, so edit here. Only four things differ inside Pulse, and setup() patches them:
 - secrets come from Pulse's settings (.env), not files;
 - Pulse's own data is read in-process (the MCP tools' functions), not over HTTP;
 - Willow is reached over the LAN with Pulse's token (willow-core's secrets/pulse-token), not on localhost;

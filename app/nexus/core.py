@@ -586,6 +586,9 @@ def act(do, ident):
     if do in ("approve", "decline") and re.fullmatch(r"[A-Za-z0-9_-]{12}", str(ident)):
         r = call(f"{WILLOW}/api/tasks/{ident}/{do}", {}, WILLOW_HEADERS, timeout=30)
         return {"ok": True, "say": r.get("say", "")}
+    if do == "add" and isinstance(ident, str) and ident.strip() and len(ident) <= 200:   # a new item on Willow's list
+        r = call(f"{WILLOW}/api/list", {"text": ident.strip(), "kind": "todo"}, WILLOW_HEADERS)
+        return {"ok": bool(r.get("item")), "say": "Added to your list." if r.get("item") else "Willow didn't take that one."}
     if do == "done" and re.fullmatch(r"[A-Za-z0-9_-]{8}", str(ident)):
         r = call(f"{WILLOW}/api/list/{ident}/done", {}, WILLOW_HEADERS)
         return {"ok": bool(r.get("ok")), "say": ""}
