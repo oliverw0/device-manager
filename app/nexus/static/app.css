@@ -327,7 +327,8 @@ a.node:hover, a.hostcard-head:hover, a.gnode:hover { text-decoration: none; bord
 .todo-add { display: flex; gap: 6px; margin-bottom: 10px; }
 .todo-add input { flex: 1; min-width: 0; height: 28px; background: var(--well); border: 1px solid var(--border-strong); border-radius: var(--radius); color: var(--text); padding: 0 9px; font: 13px var(--font-sans); outline: none; }
 .todo-add input:focus { border-color: var(--green-dim); box-shadow: var(--focus-ring); }
-.todo-add .btn { height: 28px; }
+/* the same type as the tab switches (.nexus button { font: inherit } outranks bundle.css, hence the long selector) */
+.nexus .todo-add .btn { height: 28px; padding: 0 10px; font: 600 10px/1 var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; }
 .todo-row { display: flex; gap: 10px; padding: 9px 0; border-top: 1px solid var(--border); align-items: flex-start; }
 .todo-row:first-child { border-top: 0; padding-top: 0; }
 .check {

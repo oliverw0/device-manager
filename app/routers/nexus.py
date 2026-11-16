@@ -38,6 +38,19 @@ def _json(obj) -> JSONResponse:
     return JSONResponse(obj, headers={"Cache-Control": "no-store"})
 
 
+@router.on_event("startup")
+def _warm_at_start() -> None:
+    """Build the board's data once as Pulse starts, so the first page after a restart doesn't wait ~4 s for it."""
+    def go():
+        try:
+            v = core.build(core.demo_sources() if settings.nexus_demo else core.fetch_all())
+            with _lock:
+                _cache.update(v=v, at=time.time())
+        except Exception:  # noqa: BLE001  the first request builds it instead
+            pass
+    threading.Thread(target=go, daemon=True, name="nexus-first").start()
+
+
 @router.get("/nexus")
 def nexus_root():
     return RedirectResponse(url="/nexus/", status_code=302)
