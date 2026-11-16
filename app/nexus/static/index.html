@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#101216">
+  <base target="_blank">
+  <title>NEXUS</title>
+  <link rel="icon" href="logo.svg?v=39">
+  <link rel="stylesheet" href="tokens.css?v=39">
+  <link rel="stylesheet" href="bundle.css?v=39">
+  <link rel="stylesheet" href="app.css?v=39">
+  <script src="app.js?v=39" defer></script>
+</head>
+<body class="np-pattern nexus" data-view="board">
+
+
+<header class="hud">
+  <a class="hud-brand" href="/" target="_self" aria-label="NEXUS, reload"><img src="logo.svg?v=39" width="28" height="28" alt=""><span>NEXUS</span></a>
+  <nav class="head-tabs hud-views" aria-label="Screens">
+    <a href="#board" target="_self" data-view="board" class="active">Board</a>
+    <a href="#apps" target="_self" data-view="apps">Apps &amp; media</a>
+  </nav>
+  <div class="hud-clock"><span class="hud-time" id="time">--:--</span><span class="hud-date" id="date"></span></div>
+  <div class="hud-wx" id="wx" hidden><span class="wx-now" id="wx-now"></span><span class="wx-day" id="wx-day"></span></div>
+  <div class="hud-brief"><span class="live" id="live"><span class="live-dot"></span>Live</span><span id="brief">Loading…</span></div>
+  <button type="button" class="jump" id="jump-btn" aria-label="Search the lab (/)">
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+    <span class="jump-ph">Search the lab, or Google…</span>
+    <kbd>/</kbd>
+  </button>
+</header>
+
+<div class="deck">
+
+
+  <main class="core">
+    <section class="sec sec-map" id="map" aria-labelledby="map-h">
+      <div class="sec-head"><span class="sec-dot"></span><h2 id="map-h">Network</h2><span class="sec-rule"></span><span class="sec-meta" id="map-meta"></span></div>
+      <div class="topo-fit" id="topo-fit"><div class="topo" id="topo">
+        <svg class="wires" id="wires" aria-hidden="true"></svg>
+        <div class="tier tier-top" id="tier-top"></div>
+        <div class="tier tier-hosts" id="tier-hosts"></div>
+      </div></div>
+      <div class="legend" aria-hidden="true">
+        <span><i class="lg lg-flow"></i>Traffic, faster = busier</span><span><i class="lg lg-up"></i>Link up</span><span><i class="lg lg-idle"></i>Not known</span>
+        <span><i class="led on"></i>Up</span><span><i class="led warn"></i>Has a problem</span><span><i class="led off"></i>Down</span><span><i class="led"></i>Off / no monitor</span>
+        <span class="lg-units">↓ to the machine · ↑ from it</span>
+      </div>
+    </section>
+
+    <section class="sec sec-willow" id="willow" aria-labelledby="willow-h">
+      <div class="sec-head"><span class="sec-dot"></span><h2 id="willow-h">Willow</h2>
+        <div class="head-tabs" id="w-tabs" role="tablist" aria-label="Willow">
+          <button type="button" class="active" data-tab="talk" role="tab" aria-selected="true">Talk</button>
+          <button type="button" data-tab="history" role="tab" aria-selected="false">History <span class="count" id="hist-count"></span></button>
+        </div>
+        <span class="sec-rule"></span>
+        <button type="button" class="icon-btn sm" id="voice" aria-label="Read answers aloud" aria-pressed="true" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4z"/><path class="on" d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/><path class="off" d="m22 9-6 6m0-6 6 6"/></svg></button>
+        <a class="sec-meta link" href="https://willow.wiles.au">Open Willow ↗</a></div>
+      <div class="willow-grid">
+        <div class="convo">
+          <div class="pane-talk" id="pane-talk">
+            <svg class="tree" id="w-tree" data-state="idle" viewBox="0 0 64 64" role="img" aria-label="Willow">
+              <path class="bough" d="M10 22 C 20 9, 44 9, 54 22"/>
+              <path class="strand" d="M14 19 V 34"/><path class="strand" d="M20 15.5 V 42"/><path class="strand" d="M26 13.6 V 50"/>
+              <path class="strand" d="M32 13 V 54"/><path class="strand" d="M38 13.6 V 47"/><path class="strand" d="M44 15.5 V 40"/><path class="strand" d="M50 19 V 31"/>
+            </svg>
+            <div class="talk-text" aria-live="polite">
+              <div class="w-state" id="w-state">READY</div>
+              <div class="w-heard" id="w-heard"></div>
+              <div class="w-say" id="w-say"></div>
+            </div>
+          </div>
+          <div class="pane-history" id="pane-history" hidden><div class="log" id="log"></div></div>
+          <form class="composer" id="composer" autocomplete="off">
+            <div class="quick" id="quick">
+              <button type="button" class="qchip">Is anything broken?</button>
+              <button type="button" class="qchip">What's on today?</button>
+              <button type="button" class="qchip">What's downloading?</button>
+              <button type="button" class="qchip">What's on my list?</button>
+            </div>
+            <div class="ask">
+              <input id="ask" type="text" placeholder="Ask Willow anything…" aria-label="Ask Willow" maxlength="2000">
+              <button class="icon-btn" type="button" id="mic" aria-label="Speak to Willow" aria-pressed="false" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/></svg></button>
+              <button class="icon-btn primary" type="submit" id="send" aria-label="Send"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg></button>
+            </div>
+          </form>
+        </div>
+        <div class="willow-side">
+          <div class="sub-head">Jobs</div>
+          <div id="jobs"></div>
+          <div class="sub-head">Claude plan</div>
+          <div id="usage"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <aside class="rail rail-left" id="apps" aria-label="Apps and media">
+    <section class="sec sec-services" id="services" aria-labelledby="svc-h">
+      <div class="sec-head"><span class="sec-dot"></span><h2 id="svc-h">Services</h2><span class="sec-rule"></span><span class="sec-meta" id="svc-meta"></span></div>
+      <div id="svc"></div>
+    </section>
+    <section class="sec tabbed headed media" data-tabs="left" aria-labelledby="media-h">
+      <div class="sec-head"><span class="sec-dot"></span><h2 id="media-h">Media</h2>
+        <div class="head-tabs ptabs" role="tablist" aria-label="Media">
+          <button type="button" role="tab" data-pane="watching">Watching <span class="count" id="watch-meta"></span></button>
+          <button type="button" role="tab" data-pane="requests">Requests <span class="count" id="req-meta"></span></button>
+        </div>
+        <span class="sec-rule"></span></div>
+      <div class="tpane" id="watching" role="tabpanel">
+        <div id="now"></div>
+        <div class="sub-head">Recently watched</div>
+        <div id="history" class="media-list"></div>
+        <div class="pane-line pane-foot" id="watch-src"></div>
+      </div>
+      <div class="tpane" id="requests" role="tabpanel" hidden>
+        <div class="seg" id="req-filter" role="tablist" aria-label="Filter requests">
+          <button type="button" class="on" data-f="all" role="tab" aria-selected="true">All</button>
+          <button type="button" data-f="active" role="tab" aria-selected="false">In progress</button>
+          <button type="button" data-f="available" role="tab" aria-selected="false">Ready</button>
+        </div>
+        <div id="reqs" class="media-list"></div>
+      </div>
+    </section>
+  </aside>
+
+  <aside class="rail rail-right" aria-label="What needs you">
+    <section class="sec tabbed headed" data-tabs="right" aria-labelledby="foryou-h">
+      <div class="sec-head"><span class="sec-dot"></span><h2 id="foryou-h">For you</h2>
+        <div class="head-tabs ptabs" role="tablist" aria-label="For you">
+          <button type="button" role="tab" data-pane="needs">Needs you <span class="count" id="needs-meta"></span></button>
+          <button type="button" role="tab" data-pane="todo">To-do <span class="count" id="todo-meta"></span></button>
+        </div>
+        <span class="sec-rule"></span></div>
+      <div class="tpane" id="needs" role="tabpanel">
+        <div id="needs-list" class="stack"></div>
+        <div id="warnings"><div class="sub-head" id="warn-head" hidden>Warnings</div><div id="warn-list"></div></div>
+      </div>
+      <div class="tpane" id="todo" role="tabpanel" hidden><div id="todo-list"></div></div>
+    </section>
+    <footer class="foot" id="foot"></footer>
+  </aside>
+</div>
+
+<div class="nx-toast" id="toast" role="status" hidden></div>
+<div class="tip" id="tip" role="tooltip" hidden></div>
+<div class="palette" id="palette" hidden>
+  <div class="pal-box" id="pal-box" role="dialog" aria-label="Search the lab">
+    <div class="pal-field">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+      <input id="pal-input" type="text" placeholder="Sonarr, frigate, 114, pbs… or anything to Google" aria-label="Search" autocomplete="off" spellcheck="false" aria-controls="pal-results">
+      <kbd>ESC</kbd>
+    </div>
+    <ul class="pal-results" id="pal-results" role="listbox"></ul>
+    <div class="pal-hint" id="pal-hint"></div>
+  </div>
+</div>
+<dialog class="nx-dialog" id="dlg" aria-label="Machine details"><div id="dlg-body"></div></dialog>
+</body>
+</html>

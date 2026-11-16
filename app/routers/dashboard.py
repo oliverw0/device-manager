@@ -153,8 +153,8 @@ def serialize_device(device: Device) -> dict:
 
 @router.get("/")
 def home():
-    """Health is the home page: what's wrong comes first."""
-    return RedirectResponse(url="/health", status_code=302)
+    """NEXUS is the home page: the action board (what's wrong, and what needs Oliver)."""
+    return RedirectResponse(url="/nexus/", status_code=302)
 
 
 @router.get("/devices", response_class=HTMLResponse)
