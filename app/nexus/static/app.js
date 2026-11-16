@@ -886,6 +886,20 @@ document.addEventListener("click", async (e) => {
 // and searches services and machines. Enter opens the highlighted one; with no match it searches Google.
 function filterServices() { /* the palette searches on its own; kept so services() can still call it */ }
 const pal = { open: false, items: [], sel: 0 };
+// Everything Pulse had a page for: devices, containers and stacks (from /nexus/api/search, fetched when the search
+// opens and kept a minute), and the pages themselves. They open in this tab; apps open in a new one.
+const PAGES = [["Health", "/health", "Problems, checks, the timeline"], ["Timeline", "/health/timeline", "What went wrong when"],
+  ["Sent alerts", "/health/sent", "Every push NEXUS sent"], ["Devices", "/devices", "Every machine with a client"],
+  ["Containers", "/containers", "Every container on every machine"], ["Stacks", "/stacks", "Compose stacks"],
+  ["Users", "/users", "Who can sign in"], ["Apps & media", "#apps", "Services, watching, requests"]];
+let searchIndex = null, searchAt = 0;
+async function loadSearch() {
+  if (searchIndex && Date.now() - searchAt < 60000) return;
+  try {
+    const r = await fetch("api/search", { cache: "no-store" });
+    if (r.ok) { searchIndex = await r.json(); searchAt = Date.now(); if (pal.open) drawPalette(); }
+  } catch { /* apps and machines still search */ }
+}
 function paletteItems(q) {
   if (!view) return [];
   q = q.trim().toLowerCase();
@@ -893,11 +907,19 @@ function paletteItems(q) {
   const machines = [...NODES.values()].filter((n) => !n.off).map((n) => ({
     kind: "machine", name: n.key.startsWith("g:") ? `${n.kind || "LXC"} ${n.id} ${n.name}` : n.name, sub: n.why || "",
     icon: n.icon || null, led: n.led, key: n.key }));
-  const all = [...svc, ...machines];
+  const ix = searchIndex || { devices: [], containers: [], stacks: [] };
+  const pages = PAGES.map(([name, href, sub]) => ({ kind: "page", name, sub, href }));
+  const devs = ix.devices.map((d) => ({ kind: "device", name: d.name, sub: d.online ? "Device · online" : "Device · offline",
+    led: d.online ? "on" : "off", href: `/devices/${d.id}` }));
+  const ctrs = ix.containers.map((c) => ({ kind: "container", name: c.name, sub: `Container on ${c.device}${c.stack ? ` · ${c.stack}` : ""} · ${c.status}`,
+    led: c.up ? "on" : "off", href: `/devices/${c.device_id}#containers` }));
+  const stacks = ix.stacks.map((s) => ({ kind: "stack", name: s.name, sub: `Stack on ${s.device} · ${s.running} of ${s.total} running`,
+    led: s.running === s.total ? "on" : "warn", href: `/stacks#${encodeURIComponent(`stack-${s.device_id}-${s.name}`)}` }));
+  const all = [...svc, ...machines, ...pages, ...devs, ...stacks, ...ctrs];
   if (!q) return svc.slice(0, 8);
   const score = (it) => { const n = it.name.toLowerCase(), s = (it.sub || "").toLowerCase();
     return n.startsWith(q) ? 0 : n.split(/\s+/).some((w) => w.startsWith(q)) ? 1 : n.includes(q) ? 2 : s.includes(q) ? 3 : 9; };
-  return all.map((it) => [score(it), it]).filter(([s]) => s < 9).sort((a, b) => a[0] - b[0]).slice(0, 8).map(([, it]) => it);
+  return all.map((it) => [score(it), it]).filter(([s]) => s < 9).sort((a, b) => a[0] - b[0]).slice(0, 10).map(([, it]) => it);
 }
 function drawPalette() {
   const q = $("pal-input").value;
@@ -907,7 +929,7 @@ function drawPalette() {
     `<li class="pal-item${i === pal.sel ? " on" : ""}" data-i="${i}" role="option" aria-selected="${i === pal.sel}">
       ${it.icon ? icon(it.icon, it.name) : `<span class="ico"><span class="mono-ico">${esc(it.name.split(" ")[1] || it.name[0])}</span></span>`}
       <span class="txt"><span class="nm">${esc(it.name)}</span><span class="ad ellipsis">${esc(it.sub)}</span></span>
-      ${it.led ? `<span class="led ${it.led}"></span>` : ""}<span class="kind">${it.kind === "app" ? "OPEN ↗" : "DETAILS"}</span></li>`).join("")
+      ${it.led ? `<span class="led ${it.led}"></span>` : ""}<span class="kind">${({ app: "OPEN ↗", machine: "MACHINE", page: "PAGE", device: "DEVICE", container: "CONTAINER", stack: "STACK" })[it.kind] || "OPEN"}</span></li>`).join("")
     || (q.trim() ? `<li class="pal-none"><span class="g">G</span>Nothing in the lab matches. <b>Enter</b> searches Google for “${esc(q.trim())}”.</li>` : "");
   $("pal-hint").innerHTML = pal.items.length ? "↑↓ CHOOSE · ↵ OPEN · ESC CLOSE" : "↵ SEARCH GOOGLE · ESC CLOSE";
 }
@@ -925,6 +947,7 @@ function openPalette() {
   $("pal-input").value = "";
   pal.sel = 0;
   drawPalette();
+  loadSearch();
   $("pal-input").focus();
   const to = box.getBoundingClientRect();
   // slide from where the search bar sits in the header to the middle of the screen
@@ -950,6 +973,8 @@ function choose(it) {
   closePalette();
   if (!it) { if (q) window.open(`https://www.google.com/search?q=${encodeURIComponent(q)}`, "_blank", "noopener"); return; }
   if (it.kind === "app") window.open(it.url, "_blank", "noopener");
+  else if (it.href?.startsWith("#")) location.hash = it.href;
+  else if (it.href) location.href = it.href;
   else showMachine(it.key);
 }
 $("jump-btn").addEventListener("click", openPalette);

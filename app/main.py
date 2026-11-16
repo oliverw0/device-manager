@@ -42,6 +42,10 @@ class PageSessionMiddleware(SessionMiddleware):
 
 
 app = FastAPI(title="Pulse", lifespan=lifespan)
+# Compress pages, scripts and JSON on the way out (NPM in front doesn't): a 150 KB page becomes ~15 KB.
+from starlette.middleware.gzip import GZipMiddleware  # noqa: E402
+app.add_middleware(GZipMiddleware, minimum_size=1024)
+
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 # Order matters: Starlette wraps the most-recently-added middleware outermost,

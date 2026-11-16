@@ -2,6 +2,7 @@
 
   GET  /nexus/api/overview           everything the page shows (every 30 s)
   GET  /nexus/api/brief              {"issues": n}: the top bar's count on the other pages
+  GET  /nexus/api/search             devices, containers and stacks, for the search box
   GET  /nexus/api/net                traffic per guest from Glances on pve (every 5 s)
   GET  /nexus/api/img/plex?thumb=…   a poster from Plex, through Tautulli
   GET  /nexus/api/img/jf/<id>        a poster from Jellyfin
@@ -42,12 +43,32 @@ def nexus_root():
     return RedirectResponse(url="/nexus/", status_code=302)
 
 
-_cache = {"at": 0.0, "v": None}
+_cache = {"at": 0.0, "v": None, "used": 0.0}
 _lock = threading.Lock()
+_warm = {"on": False}
+WARM_EVERY_S = 20          # while a page is open, the next answer is always ready
+WARM_IDLE_S = 600          # nobody's looked for ten minutes: stop asking the sources
+
+
+def _warmer() -> None:
+    while time.time() - _cache["used"] < WARM_IDLE_S:
+        time.sleep(WARM_EVERY_S)
+        try:
+            v = core.build(core.demo_sources() if settings.nexus_demo else core.fetch_all())
+            with _lock:
+                _cache.update(v=v, at=time.time())
+        except Exception:  # noqa: BLE001  the next request builds it instead
+            pass
+    _warm["on"] = False
 
 
 def _overview(max_age: float) -> dict:
-    """build() asks ten sources, so one result serves every open page for a few seconds."""
+    """build() asks ten sources, so one result serves every open page. A background thread rebuilds it every
+    20 s while anyone's using NEXUS, so a page never waits on a slow source (Seerr's first answer takes ~2 s)."""
+    _cache["used"] = time.time()
+    if not _warm["on"]:
+        _warm["on"] = True
+        threading.Thread(target=_warmer, daemon=True, name="nexus-warm").start()
     with _lock:
         if _cache["v"] is None or time.time() - _cache["at"] > max_age:
             _cache["v"] = core.build(core.demo_sources() if settings.nexus_demo else core.fetch_all())
@@ -58,7 +79,7 @@ def _overview(max_age: float) -> dict:
 @router.get("/nexus/api/overview")
 def overview():
     try:
-        return _json(_overview(10))
+        return _json(_overview(30))
     except Exception as e:  # noqa: BLE001
         return _fail(e)
 
@@ -104,6 +125,31 @@ def img_jf(ident: str):
     if not core.JF_ID.fullmatch(ident):
         return Response(status_code=404)
     return _image("jf", ident)
+
+
+@router.get("/nexus/api/search")
+def search_index():
+    """What the search box can find beyond apps and the map's machines: every device, container and stack Pulse
+    knows, each with where it opens (a device's page, its Containers tab, the stack on the Stacks page)."""
+    from sqlmodel import Session, select
+
+    from ..database import engine
+    from ..models import Device
+    from .dashboard import _all_containers
+    with Session(engine) as s:
+        devices = [{"id": d.id, "name": d.name, "online": d.is_online} for d in s.exec(select(Device).order_by(Device.name)).all()]
+        rows = _all_containers(s)
+    up = lambda c: "running" in (c.get("status") or "").lower()
+    containers = [{"name": c.get("name") or "?", "device": c["device_name"], "device_id": c["device_id"], "stack": c.get("stack"),
+                   "up": up(c), "status": c.get("status") or ""} for c in rows]
+    stacks: dict = {}
+    for c in containers:
+        if c["stack"]:
+            st = stacks.setdefault((c["device_id"], c["stack"]), {"name": c["stack"], "device": c["device"], "device_id": c["device_id"],
+                                                                  "running": 0, "total": 0})
+            st["total"] += 1
+            st["running"] += c["up"]
+    return _json({"devices": devices, "containers": containers, "stacks": list(stacks.values())})
 
 
 @router.get("/nexus/api/pending/{pid}")
