@@ -8,6 +8,8 @@ This copy is the source now: the standalone NEXUS on LXC 106 is retired once Pul
 - the Claude runner is the one Pulse's daily summary already uses.
 The page (static/) is NEXUS's, also unchanged; routers/nexus.py serves it at /nexus/ with its API under /nexus/api/.
 """
+import json
+
 from ..config import settings
 from . import core
 
@@ -34,9 +36,31 @@ def _pulse(tool: str, **args) -> dict:
     return r["structuredContent"]
 
 
+def _containers() -> dict:
+    """Every container each device's client last reported, as the old Map page drew them (one square each)."""
+    from sqlmodel import Session, select
+
+    from ..database import engine
+    from ..models import Device
+    from ..routers.views import _container_state
+    out = {}
+    with Session(engine) as s:
+        for d in s.exec(select(Device)).all():
+            try:
+                rep = json.loads(d.last_report_json) if d.last_report_json else {}
+            except ValueError:
+                rep = {}
+            cs = sorted(rep.get("docker_containers") or [], key=lambda c: c.get("name") or "")
+            if cs:
+                out[d.name] = [{"name": c.get("name"), "state": _container_state(c, d.is_online), "status": c.get("status"),
+                                "health": c.get("health")} for c in cs]
+    return out
+
+
 def setup() -> None:
     core.secret = _secret
     core.pulse = _pulse
+    core.containers = _containers
     if settings.willow_url:
         core.WILLOW = settings.willow_url.rstrip("/")
     core.WILLOW_HEADERS = {**core.WILLOW_HEADERS, "Authorization": f"Bearer {settings.willow_token}"}

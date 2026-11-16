@@ -614,3 +614,11 @@ button.jump:hover { border-color: var(--green-dim); }
 .nx-rail .sidebar-head { height: var(--hud-h, 56px); }
 .nx-rail .sidebar-foot form { margin: 0; }
 .nx-rail .sidebar-foot button.nav-item { width: 100%; background: none; border: 0; cursor: pointer; font: inherit; }
+
+/* Container squares under a map tile (one per Docker container; was Pulse's Map page) */
+.ctrs { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 5px; }
+.ctrs i { display: block; width: 7px; height: 7px; border-radius: 1px; background: var(--green); opacity: 0.75; }
+.ctrs i.warn { background: var(--amber); opacity: 1; }
+.ctrs i.bad { background: var(--red); opacity: 1; }
+.ctrs i:hover { opacity: 1; outline: 1px solid var(--text); }
+.host-ctrs { padding: 0 12px 8px; }

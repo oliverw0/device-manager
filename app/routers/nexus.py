@@ -1,6 +1,7 @@
 """NEXUS at /nexus/: the page and its API (the same calls NEXUS's own server answered, now answered by Pulse).
 
   GET  /nexus/api/overview           everything the page shows (every 30 s)
+  GET  /nexus/api/brief              {"issues": n}: the top bar's count on the other pages
   GET  /nexus/api/net                traffic per guest from Glances on pve (every 5 s)
   GET  /nexus/api/img/plex?thumb=…   a poster from Plex, through Tautulli
   GET  /nexus/api/img/jf/<id>        a poster from Jellyfin
@@ -12,6 +13,8 @@ Behind Pulse's own sign-in (auth_middleware). POSTs also need the header X-Nexus
 can't send without a CORS preflight. NEXUS_DEMO=true serves made-up data (for working on the look)."""
 import json
 import re
+import threading
+import time
 from pathlib import Path
 
 from fastapi import APIRouter, Request
@@ -39,10 +42,33 @@ def nexus_root():
     return RedirectResponse(url="/nexus/", status_code=302)
 
 
+_cache = {"at": 0.0, "v": None}
+_lock = threading.Lock()
+
+
+def _overview(max_age: float) -> dict:
+    """build() asks ten sources, so one result serves every open page for a few seconds."""
+    with _lock:
+        if _cache["v"] is None or time.time() - _cache["at"] > max_age:
+            _cache["v"] = core.build(core.demo_sources() if settings.nexus_demo else core.fetch_all())
+            _cache["at"] = time.time()
+        return _cache["v"]
+
+
 @router.get("/nexus/api/overview")
 def overview():
     try:
-        return _json(core.build(core.demo_sources() if settings.nexus_demo else core.fetch_all()))
+        return _json(_overview(10))
+    except Exception as e:  # noqa: BLE001
+        return _fail(e)
+
+
+@router.get("/nexus/api/brief")
+def brief():
+    """What the NEXUS top bar counts as issues (approvals and warnings), for the top bar on Pulse's other pages."""
+    try:
+        v = _overview(60)
+        return _json({"issues": len(v.get("needs") or []) + len(v.get("warnings") or [])})
     except Exception as e:  # noqa: BLE001
         return _fail(e)
 

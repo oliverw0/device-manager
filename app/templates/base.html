@@ -13,11 +13,13 @@
   <meta name="apple-mobile-web-app-title" content="NEXUS" />
   <link rel="apple-touch-icon" href="/static/icons/icon-180.png?v={{ static_version }}" />
   <link rel="stylesheet" href="/static/vendor/xterm.css" />
+  <link rel="stylesheet" href="/static/tokens.css?v={{ static_version }}" />
   <link rel="stylesheet" href="/static/style.css?v={{ static_version }}" />
+  <link rel="stylesheet" href="/static/skin.css?v={{ static_version }}" />
   <script>if (localStorage.getItem("navCollapsed") !== "0") document.documentElement.classList.add("nav-preload-collapsed");</script>
   <style>html.nav-preload-collapsed body { --nav-w: 58px; }</style>
 </head>
-<body class="{{ '' if request.session.get('is_admin') else 'no-nav' }}">
+<body class="np-pattern {{ '' if request.session.get('is_admin') else 'no-nav' }}">
   {% set p = request.url.path %}
   {% if request.session.get('is_admin') %}
   <nav class="sidebar">
@@ -32,6 +34,16 @@
         <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2.5"/><circle cx="4.5" cy="5" r="1.5"/><circle cx="19.5" cy="5" r="1.5"/><circle cx="4.5" cy="19" r="1.5"/><circle cx="19.5" cy="19" r="1.5"/><path d="M6 6.2l4.2 4.2M18 6.2l-4.2 4.2M6 17.8l4.2-4.2M18 17.8l-4.2-4.2"/></svg>
         <span class="nav-label">NEXUS</span>
       </a>
+      <div class="nav-slot">
+        <a class="nav-item {{ 'active' if p.startswith('/devices') }}" href="/devices" title="Devices">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="6" rx="1"/><rect x="2" y="15" width="20" height="6" rx="1"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+          <span class="nav-label">Devices</span>
+        </a>
+        <a id="apt-alert" class="apt-badge" href="/health" title="Devices needing updates"
+           {{ '' if (apt_alert_count | default(0)) else 'hidden' }}>
+          <span id="apt-alert-count">{{ apt_alert_count | default(0) }}</span>
+        </a>
+      </div>
       <a class="nav-item" href="/nexus/#apps" title="Apps &amp; media">
         <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
         <span class="nav-label">Apps &amp; media</span>
@@ -44,16 +56,6 @@
         </a>
         <a class="apt-badge pb-badge" href="/health" title="{{ open_problems }} open, not acknowledged" {{ '' if open_problems else 'hidden' }}><span>{{ open_problems }}</span></a>
       </div>
-      <div class="nav-slot">
-        <a class="nav-item {{ 'active' if p.startswith('/devices') }}" href="/devices" title="Devices">
-          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="6" rx="1"/><rect x="2" y="15" width="20" height="6" rx="1"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
-          <span class="nav-label">Devices</span>
-        </a>
-        <a id="apt-alert" class="apt-badge" href="/health" title="Devices needing updates"
-           {{ '' if (apt_alert_count | default(0)) else 'hidden' }}>
-          <span id="apt-alert-count">{{ apt_alert_count | default(0) }}</span>
-        </a>
-      </div>
       <a class="nav-item {{ 'active' if p.startswith('/containers') }}" href="/containers" title="Containers">
         <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v8a2 2 0 0 1-1 1.73l-7 4a2 2 0 0 1-2 0l-7-4A2 2 0 0 1 3 16V8a2 2 0 0 1 1-1.73l7-4a2 2 0 0 1 2 0l7 4A2 2 0 0 1 21 8z"/><polyline points="3.3 7 12 12 20.7 7"/><line x1="12" y1="22" x2="12" y2="12"/></svg>
         <span class="nav-label">Containers</span>
@@ -61,10 +63,6 @@
       <a class="nav-item {{ 'active' if p.startswith('/stacks') }}" href="/stacks" title="Stacks">
         <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
         <span class="nav-label">Stacks</span>
-      </a>
-      <a class="nav-item {{ 'active' if p.startswith('/map') }}" href="/map" title="Map">
-        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="5" rx="1"/><rect x="2" y="17" width="6" height="5" rx="1"/><rect x="16" y="17" width="6" height="5" rx="1"/><path d="M12 7v5M5 17v-5h14v5"/></svg>
-        <span class="nav-label">Map</span>
       </a>
       <a class="nav-item nav-bottom {{ 'active' if p.startswith('/users') }}" href="/users" title="Users">
         <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
@@ -82,6 +80,17 @@
       {% endif %}
     </div>
   </nav>
+  {# The same top bar as NEXUS: outside <main>, so boosted navigation keeps it (static/shell.js runs it) #}
+  <header class="hud">
+    <div class="hud-clock"><span class="hud-time" id="hud-time">--:--</span><span class="hud-date" id="hud-date"></span></div>
+    <div class="hud-wx" id="hud-wx" hidden><span class="wx-now" id="hud-wx-now"></span><span class="wx-day" id="hud-wx-day"></span></div>
+    <div class="hud-brief"><span class="live" id="hud-live"><span class="live-dot"></span>Live</span><a id="hud-brief" href="/nexus/#board">Loading…</a></div>
+    <a class="jump" href="/nexus/?jump=1" aria-label="Search the lab (/)">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+      <span class="jump-ph">Search the lab, or Google…</span>
+      <kbd>/</kbd>
+    </a>
+  </header>
   {% endif %}
   <main class="container">
     {% block content %}{% endblock %}
@@ -126,6 +135,7 @@
   <script src="/static/vendor/xterm.js"></script>
   <script src="/static/vendor/xterm-addon-fit.js"></script>
   <script src="/static/app.js?v={{ static_version }}"></script>
+  <script src="/static/shell.js?v={{ static_version }}"></script>
   <script>if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});</script>
   <div id="page-scripts">{% block scripts %}{% endblock %}</div>
 </body>

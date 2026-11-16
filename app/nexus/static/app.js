@@ -218,12 +218,12 @@ function watching(v) {
          <div class="bar ${s.state === "playing" ? "" : "warn"}"><i style="width:${Math.min(100, s.pct || 0)}%"></i></div>
        </div></div>`).join("")
     : `<p class="empty"><span class="led"></span>Nothing playing right now.</p>`;
-  const shown = more.history ? m.recent.slice(0, 12) : m.recent.slice(0, 3);
+  const shown = m.recent;
   $("history").innerHTML = m.recent.length ? shown.map((h) =>
     `<div class="mrow">${poster(h.img, h.title)}<div class="body">
        <div class="t ellipsis">${esc(h.title)}</div><div class="s ellipsis">${esc(h.sub)}</div>
        <div class="m">${srcTag(h.src)}${esc(h.user || "")} · ${ago(h.at)}${h.pct && h.pct < 90 ? ` · ${h.pct}%` : ""}</div>
-     </div></div>`).join("") + moreButton("history", m.recent.length, 3, Math.min(12, m.recent.length)) : `<p class="empty">No history yet.</p>`;
+     </div></div>`).join("") : `<p class="empty">No history yet.</p>`;
 }
 
 // ---------- requests (Seerr)
@@ -237,7 +237,7 @@ function requests(v) {
     : ["pending", "approved", "processing", "downloading"].includes(r.state)));
   const order = { pending: 0, downloading: 1, processing: 2, approved: 3, partial: 4 };
   list.sort((a, b) => (order[a.state] ?? 9) - (order[b.state] ?? 9) || (b.at || 0) - (a.at || 0));
-  $("reqs").innerHTML = list.length ? list.slice(0, more.requests ? 20 : 4).map((r) => {
+  $("reqs").innerHTML = list.length ? list.map((r) => {
     const [cls, label] = REQ[r.state] || ["", r.state];
     const kind = r.type === "tv" ? `TV${r.seasons?.length ? ` · S${r.seasons.join(", S")}` : ""}` : "MOVIE";
     return `<div class="mrow">${poster(r.poster, r.title)}<div class="body">
@@ -248,20 +248,8 @@ function requests(v) {
         <div class="m">${r.pct}%${r.eta ? ` · ${until(r.eta)}` : ""}</div>` : ""}
       ${r.state === "pending" ? `<div class="row-actions">${btn(["seerr-approve", r.id, "Approve"])}${btn(["seerr-decline", r.id, "Decline"])}</div>` : ""}
     </div></div>`;
-  }).join("") + moreButton("requests", list.length, 4, Math.min(20, list.length)) : `<p class="empty">${reqFilter === "all" ? "No requests yet." : "Nothing here."}</p>`;
+  }).join("") : `<p class="empty">${reqFilter === "all" ? "No requests yet." : "Nothing here."}</p>`;
 }
-// "Show 9 more" under a short list; it remembers being open until the page reloads
-const more = { history: false, requests: false };
-function moreButton(key, total, short, long) {
-  if (total <= short) return "";
-  return `<button type="button" class="show-more" data-more-key="${key}">${more[key] ? "Show fewer" : `Show ${long - short} more`}</button>`;
-}
-document.addEventListener("click", (e) => {
-  const b = e.target.closest("[data-more-key]");
-  if (!b || !view) return;
-  more[b.dataset.moreKey] = !more[b.dataset.moreKey];
-  b.dataset.moreKey === "history" ? watching(view) : requests(view);
-});
 $("req-filter").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-f]");
   if (!b) return;
@@ -312,7 +300,7 @@ function map(v) {
             `<span class="${g.state === "up" ? "on-again" : ""}">${g.id} ${esc(g.name)}${g.state === "up" ? " (running!)" : ""}</span>`).join(" · ")}</div>` : ""}
         </div></div>`;
     }
-    return `<div class="hostcard" data-wire="${esc(h.id)}">${head(h)}<div class="svcs">${(h.services || []).map(([n, u, ic]) =>
+    return `<div class="hostcard" data-wire="${esc(h.id)}">${head(h)}${h.ctrs?.length ? `<div class="host-ctrs">${ctrs(h)}</div>` : ""}<div class="svcs">${(h.services || []).map(([n, u, ic]) =>
       `<a class="chiplink" href="${esc(u)}" data-node="h:${esc(h.id)}" data-open="${esc(n)}">${icon(ic, n, true)}<span class="ellipsis">${esc(n)}</span></a>`).join("")}</div></div>`;
   };
   const main = m.hosts.filter((h) => h.guests?.length), side = m.hosts.filter((h) => !h.guests?.length);
@@ -328,7 +316,15 @@ function gnode(g) {
     <span class="top"><span class="led ${g.led || ""}"></span><span class="id">${g.kind === "VM" ? "VM " : ""}${g.id}</span>
       <span class="nm ellipsis">${esc(g.name)}</span></span>
     <span data-rates="${g.id}">${g.state === "up" ? rates(g.net, false, true) : `<span class="rates quiet"><span class="dn">${g.state === "down" ? "NOT RUNNING" : "—"}</span></span>`}</span>
-    <svg class="spark" data-spark="${g.id}" viewBox="0 0 100 18" preserveAspectRatio="none"></svg></div>`;
+    <svg class="spark" data-spark="${g.id}" viewBox="0 0 100 18" preserveAspectRatio="none"></svg>${ctrs(g)}</div>`;
+}
+// one square per Docker container the machine's client reports (what the old Map page showed): green running, amber
+// not running or unhealthy, red exited or the machine is offline. Hover for its name and state.
+const CTR_WORD = { ok: "running", warn: "needs a look", bad: "stopped" };
+function ctrs(n) {
+  if (!n.ctrs?.length) return "";
+  return `<span class="ctrs" aria-label="${n.ctrs.length} containers">${n.ctrs.map((c) =>
+    `<i class="${esc(c.state)}" title="${esc(c.name)}: ${esc(c.status || CTR_WORD[c.state] || "")}${c.health ? ` (${esc(c.health)})` : ""}"></i>`).join("")}</span>`;
 }
 function flowStyle(n) { // faster, brighter dashes for busier links; a slow faint trail when it's nearly idle
   const r = n ? n.down + n.up : 0;
@@ -806,7 +802,7 @@ function todo(v) {
   }).join("") : `<p class="empty"><span class="led on"></span>The list is empty.</p>`;
 }
 function foot(v) {
-  const names = { wan: "Public IP", status: "Health", devices: "Devices", willow: "Willow", log: "Log", usage: "Claude", net: "Glances", plex: "Tautulli", jellyfin: "Jellyfin", seerr: "Seerr" };
+  const names = { wan: "Public IP", status: "Health", devices: "Devices", ctrs: "Containers", willow: "Willow", log: "Log", usage: "Claude", net: "Glances", plex: "Tautulli", jellyfin: "Jellyfin", seerr: "Seerr" };
   const s = Object.entries(v.sources);
   $("foot").innerHTML = `<div class="srcs">${s.map(([k, ok]) => `<span><span class="led ${ok ? "on" : "off"}"></span>${esc(names[k] || k)}</span>`).join("")}</div>
     <div>${s.filter(([, ok]) => ok).length}/${s.length} SOURCES · UPDATED ${new Date(v.at * 1000).toLocaleTimeString("en-AU", { hour12: false })}</div>
@@ -905,6 +901,11 @@ function drawPalette() {
       ${it.led ? `<span class="led ${it.led}"></span>` : ""}<span class="kind">${it.kind === "app" ? "OPEN ↗" : "DETAILS"}</span></li>`).join("")
     || (q.trim() ? `<li class="pal-none"><span class="g">G</span>Nothing in the lab matches. <b>Enter</b> searches Google for “${esc(q.trim())}”.</li>` : "");
   $("pal-hint").innerHTML = pal.items.length ? "↑↓ CHOOSE · ↵ OPEN · ESC CLOSE" : "↵ SEARCH GOOGLE · ESC CLOSE";
+}
+// arriving from another page's search box (/nexus/?jump=1): open the search straight away
+if (new URLSearchParams(location.search).has("jump")) {
+  history.replaceState(null, "", location.pathname + location.hash);
+  setTimeout(() => openPalette(), 0);
 }
 function openPalette() {
   if (pal.open) return;
