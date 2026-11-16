@@ -1,0 +1,77 @@
+/* ===========================================================================
+   NEXUS skin for the older pages (Health, Devices, Containers, Stacks, Users…):
+   the same top bar as NEXUS, its section headings, slim tab switches and the
+   faint background pattern. Loaded after style.css; tokens.css (shared with
+   the NEXUS page) comes before it. Keep this in step with nexus/static/app.css.
+   =========================================================================== */
+
+/* the faint diagonal pattern NEXUS sits on */
+body.np-pattern::before {
+  content: ""; position: fixed; inset: -50%; z-index: -1; pointer-events: none; transform: rotate(45deg);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='48'%3E%3Cg fill='none' stroke='%23ffffff' stroke-opacity='0.045' stroke-width='1' stroke-dasharray='4 8 20 8'%3E%3Cpath d='M0 5.5h40'/%3E%3Cpath d='M0 17.5h40' stroke-dashoffset='20'/%3E%3Cpath d='M0 29.5h40' stroke-dashoffset='40'/%3E%3Cpath d='M0 41.5h40' stroke-dashoffset='60'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* ---------- the top bar: the time, the weather, the status line; search on the far right ---------- */
+:root { --hud-h: 60px; --hud-gap: 14px; }
+.hud {
+  position: sticky; top: 0; z-index: var(--z-topbar, 60);
+  display: flex; align-items: center; gap: 18px; min-height: var(--hud-h); padding: 8px var(--hud-gap);
+  background: var(--topbar-bg); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border-strong);
+}
+.hud-clock { display: flex; flex-direction: column; line-height: 1.1; flex: none; }
+.hud-time { font: 600 22px var(--font-mono); color: var(--text-strong); font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+.hud-date { font: 500 10.5px var(--font-mono); color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; }
+.hud-wx { display: flex; flex-direction: column; line-height: 1.15; padding-left: 18px; border-left: 1px solid var(--border); flex: none; }
+.hud-wx[hidden] { display: none; }
+.wx-now { font-size: 13px; color: var(--text); white-space: nowrap; }
+.wx-now b { font: 600 17px var(--font-mono); color: var(--text-strong); margin-right: 4px; }
+.wx-day { font: 500 10px var(--font-mono); color: var(--muted); letter-spacing: 0.1em; white-space: nowrap; }
+.hud-brief { display: flex; flex-direction: column; gap: 2px; min-width: 150px; flex: none; padding-left: 18px; border-left: 1px solid var(--border); }
+.hud-brief #brief, .hud-brief #hud-brief { font-size: 13px; color: var(--text); white-space: nowrap; }
+.hud-brief #hud-brief.has { color: var(--amber); }
+.hud-brief a#hud-brief:hover { color: var(--text-strong); text-decoration: none; }
+.hud .live { display: inline-flex; align-items: center; gap: 7px; font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
+.hud .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: var(--glow-green); animation: np-blink 2s infinite; }
+.hud .live.stale .live-dot { background: var(--amber); box-shadow: var(--glow-amber); animation: none; }
+@keyframes np-blink { 0% { box-shadow: 0 0 0 0 rgba(55, 224, 106, 0.5); } 70% { box-shadow: 0 0 0 6px rgba(55, 224, 106, 0); } 100% { box-shadow: 0 0 0 0 rgba(55, 224, 106, 0); } }
+.jump {
+  display: flex; align-items: center; gap: 8px; width: 260px; flex: none; height: var(--control-h, 38px); padding: 0 10px; margin-left: auto;
+  background: var(--well); border: 1px solid var(--widget-line); border-radius: var(--radius); color: var(--muted); text-decoration: none;
+}
+.jump:hover { border-color: var(--green-dim); color: var(--text); text-decoration: none; box-shadow: var(--glow-green); }
+.jump-ph { flex: 1; min-width: 0; font: 12px var(--font-mono); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.jump kbd { font: 11px var(--font-mono); border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 0 5px; color: var(--muted); }
+@media (max-width: 960px) {
+  .hud { position: static; flex-wrap: wrap; }
+  .jump { order: 4; flex: 1 1 200px; width: auto; margin-left: 0; }
+}
+@media (max-width: 640px) {
+  .hud { gap: 10px; }
+  .hud-time { font-size: 18px; }
+  .hud-wx { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .hud .live-dot { animation: none; } }
+
+/* ---------- page titles look like NEXUS's section heads: a green square, mono caps, a rule ---------- */
+.page-head h1 { display: inline-flex; align-items: center; gap: 10px; font-size: 14px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-strong); margin: 0; }
+.page-head h1::before { content: ""; width: 7px; height: 7px; flex: none; background: var(--green); box-shadow: var(--glow-green); }
+.section-head::before { content: ""; width: 7px; height: 7px; flex: none; background: var(--green); box-shadow: var(--glow-green); }
+.panel h2 { letter-spacing: 0.12em; }
+
+/* ---------- tabs: NEXUS's slim switches (20px, boxed, green tint when on) ---------- */
+.subtabs, .device-tabs {
+  display: inline-flex; gap: 1px; padding: 1px; background: var(--well); border: 1px solid var(--border); border-radius: var(--radius);
+  border-bottom: 1px solid var(--border); margin: 0 0 16px; overflow-x: auto; scrollbar-width: none; max-width: 100%;
+}
+.subtabs a, .device-tabs button {
+  display: inline-flex; align-items: center; gap: 6px; height: 20px; min-height: 0; padding: 0 8px; border: 0; border-radius: var(--radius);
+  background: transparent; color: var(--muted); font: 600 10px/1 var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase;
+  text-decoration: none; white-space: nowrap; box-shadow: none;
+}
+.subtabs a:hover, .device-tabs button:hover { color: var(--text); background: transparent; box-shadow: none; text-decoration: none; }
+.subtabs a.active, .device-tabs button.active { background: var(--green-tint); color: var(--green); border: 0; }
+.device-tabs .tab-count, .subtabs .tab-count { font-size: 10px; margin-left: 0; }
+
+/* ---------- full width, like NEXUS: the same 14px gutter under the top bar ---------- */
+main.container { max-width: none; margin: 0; padding: var(--hud-gap); }
+@media (min-width: 1800px) { main.container { max-width: 1760px; } }

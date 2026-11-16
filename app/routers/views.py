@@ -1,5 +1,5 @@
 """Read-only overview pages: Status (checks by group, and a public version),
-Timeline (what went wrong when), Sent (every push) and Map (what runs where)."""
+Timeline (what went wrong when) and Sent (every push). /map now goes to NEXUS's network map."""
 import json
 from datetime import datetime, timedelta, timezone
 
@@ -7,11 +7,11 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlmodel import Session, select
 
-from .. import monitor, problems, topology
+from .. import monitor, problems
 from ..config import settings
 from ..database import get_session
 from ..models import CheckDay, Device, NotificationLog, Problem, ServiceCheck
-from .dashboard import AEST, serialize_device, templates
+from .dashboard import AEST, templates
 
 router = APIRouter()
 
@@ -163,33 +163,7 @@ def _container_state(c: dict, online: bool) -> str:
     return "ok"
 
 
-@router.get("/map", response_class=HTMLResponse)
-def map_page(request: Request, session: Session = Depends(get_session)):
-    devices = sorted(session.exec(select(Device)).all(), key=lambda d: d.name.lower())
-    parent_of = topology.parents(devices)
-    open_ = session.exec(select(Problem).where(Problem.resolved_at == None, Problem.acked_at == None)).all()  # noqa: E711
-    checks = session.exec(select(ServiceCheck).where(ServiceCheck.enabled == True)).all()  # noqa: E712
-    nodes = {}
-    for d in devices:
-        s = serialize_device(d)
-        rep = s["report"] or {}
-        sys = rep.get("system") or {}
-        mine = [p for p in open_ if p.device_id == d.id]
-        dc = [c for c in checks if c.device_id == d.id]
-        nodes[d.id] = {
-            "d": s, "children": [],
-            "cpu": sys.get("cpu_percent"), "mem": sys.get("mem_percent"),
-            "problems": len(mine), "sev": "high" if any(p.severity == "high" for p in mine) else "warning" if mine else None,
-            "containers": [{"name": c.get("name"), "state": _container_state(c, d.is_online), "status": c.get("status"),
-                            "health": c.get("health"), "image": c.get("image"), "stack": c.get("stack"),
-                            "restarts": c.get("restart_count")} for c in sorted(rep.get("docker_containers") or [], key=lambda c: c.get("name") or "")],
-            "checks_up": sum(1 for c in dc if c.last_status == "up"), "checks": len(dc),
-            "auto": d.parent_id is None and d.id in parent_of,
-        }
-    roots = []
-    for d in devices:
-        parent = parent_of.get(d.id)
-        (nodes[parent]["children"] if parent in nodes else roots).append(nodes[d.id])
-    # hosts with guests first, then standalone machines
-    roots.sort(key=lambda n: (not n["children"], n["d"]["name"].lower()))
-    return templates.TemplateResponse("map.html", {"request": request, "roots": roots})
+@router.get("/map")
+def map_page():
+    """The map's container squares are on NEXUS's network map now (under each machine's tile)."""
+    return RedirectResponse(url="/nexus/#board", status_code=301)

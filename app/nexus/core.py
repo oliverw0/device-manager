@@ -304,6 +304,13 @@ def seerr():
     return out
 
 
+def containers():
+    """{device name: [{"name", "state" (ok/warn/bad), "status", "health"}]}: every Docker container each machine's
+    client reports, for the squares under the map's tiles. Inside Pulse this reads its own database (setup() patches
+    it in); standalone there's nothing to read, so the map has no squares."""
+    return {}
+
+
 def service_of(problem):
     """Which app on its machine a Pulse problem belongs to, so only that app's light changes: a stuck episode is
     Sonarr's, a stuck film Radarr's. Anything else belongs to the machine as a whole (None)."""
@@ -334,8 +341,9 @@ SOURCES = {
     "jellyfin": jellyfin,
     "seerr": seerr,
     "wan": wan,
+    "ctrs": lambda: containers(),
 }
-LABELS = {"wan": "the public IP lookup","status": "the health checks", "devices": "the device list", "willow": "Willow", "log": "Willow's log", "usage": "the Claude runner",
+LABELS = {"ctrs": "the container list", "wan": "the public IP lookup","status": "the health checks", "devices": "the device list", "willow": "Willow", "log": "Willow's log", "usage": "the Claude runner",
           "net": "Glances on pve", "plex": "Tautulli", "jellyfin": "Jellyfin", "seerr": "Seerr"}
 
 
@@ -522,7 +530,8 @@ def build(src, now=None):
     def node(n, rates=None, running=None, extra=()):
         iss = issues_for(n.get("device")) + list(extra)
         light, why = status(n, iss, running)
-        return {**n, "led": light, "why": why, "issues": iss, "readings": readings(n.get("device")), "net": rates}
+        ctrs = (src.get("ctrs") or {}).get(n.get("device")) if ok.get("ctrs") and n.get("device") else None
+        return {**n, "led": light, "why": why, "issues": iss, "readings": readings(n.get("device")), "net": rates, "ctrs": ctrs}
 
     def guest(g):
         run = str(g["id"]) in traffic if ok.get("net") else None
@@ -756,6 +765,13 @@ def demo_sources():
             {"at": now - 300, "device": "talk page", "heard": "Is anything broken?", "say": "One download's stuck: South Park S29E05 was a fake release. Everything else is fine.", "route": "lab", "ms": 4100}]},
         "usage": {"seven_day": {"used_percent": 23, "resets_at": "2026-11-14T09:00:00+11:00"}, "five_hour": {"used_percent": 4}},
         "wan": {"ip": "203.0.113.24", "isp": "Example ISP", "city": "Melbourne"},
+        "ctrs": {k: [{"name": n, "state": st, "status": "running" if st == "ok" else "exited", "health": None} for n, st in v] for k, v in {
+            "servarr": [("gluetun", "ok"), ("sonarr", "ok"), ("radarr", "ok"), ("lidarr", "ok"), ("prowlarr", "ok"), ("qbittorrent", "ok"),
+                        ("nzbget", "ok"), ("seerr", "ok"), ("slskd", "ok"), ("soularr", "warn"), ("byparr", "ok"), ("portainer", "ok")],
+            "services": [("adguard-adguardhome-1", "ok"), ("homepage", "ok"), ("tautulli", "ok"), ("tautulli-proxy", "ok")],
+            "frigate": [("frigate", "ok")], "proxy": [("nginx-proxy-manager-app-1", "ok"), ("devicemanager-client", "ok")],
+            "mac-deb": [("homeassistant", "ok"), ("mosquitto", "ok"), ("devicemanager-host", "ok"), ("galley", "ok"), ("adguard", "bad")],
+        }.items()},
         "net": {"uplink": {"down": rnd(400_000, 4_000_000), "up": rnd(50_000, 2_500_000)},
                 "guests": {"101": {"down": 230, "up": 550}, "102": {"down": 1600, "up": 1400}, "103": {"down": rnd(3000, 9000), "up": 3100},
                            "104": {"down": 4500, "up": 4800}, "106": {"down": 2800, "up": 2000}, "108": {"down": 140, "up": 570},
