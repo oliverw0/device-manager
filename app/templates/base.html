@@ -16,6 +16,7 @@
   <link rel="stylesheet" href="/static/tokens.css?v={{ static_version }}" />
   <link rel="stylesheet" href="/static/style.css?v={{ static_version }}" />
   <link rel="stylesheet" href="/static/skin.css?v={{ static_version }}" />
+  <link rel="stylesheet" href="/static/weather.css?v={{ static_version }}" />
   <script>if (localStorage.getItem("navCollapsed") !== "0") document.documentElement.classList.add("nav-preload-collapsed");</script>
   <style>html.nav-preload-collapsed body { --nav-w: 58px; }</style>
 </head>
@@ -134,6 +135,7 @@
 
   <script src="/static/app.js?v={{ static_version }}"></script>
   <script src="/static/shell.js?v={{ static_version }}"></script>
+  <script src="/static/weather.js?v={{ static_version }}"></script>
   <script>if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});</script>
   <div id="page-scripts">{% block scripts %}{% endblock %}</div>
 </body>

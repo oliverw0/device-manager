@@ -120,26 +120,7 @@ function hud(v) {
   document.title = n ? `(${n}) NEXUS` : "NEXUS";
 }
 
-// Melbourne's weather, straight from Open-Meteo (free, no key; the same rough coordinates Willow uses). Every 20 minutes.
-const WX = { lat: -37.81, lon: 144.96 };
-const SKY = { 0: "Clear", 1: "Mostly clear", 2: "Partly cloudy", 3: "Overcast", 45: "Fog", 48: "Fog", 51: "Drizzle", 53: "Drizzle", 55: "Drizzle",
-  56: "Icy drizzle", 57: "Icy drizzle", 61: "Light rain", 63: "Rain", 65: "Heavy rain", 66: "Icy rain", 67: "Icy rain", 71: "Light snow", 73: "Snow",
-  75: "Heavy snow", 77: "Snow", 80: "Showers", 81: "Showers", 82: "Heavy showers", 85: "Snow showers", 86: "Snow showers", 95: "Storms", 96: "Storms, hail", 99: "Storms, hail" };
-async function weather() {
-  try {
-    const q = new URLSearchParams({ latitude: WX.lat, longitude: WX.lon, timezone: "Australia/Melbourne", forecast_days: 1,
-      current: "temperature_2m,weather_code", daily: "temperature_2m_max,temperature_2m_min,precipitation_probability_max" });
-    const r = await fetch(`https://api.open-meteo.com/v1/forecast?${q}`);
-    if (!r.ok) return;
-    const d = await r.json(), c = d.current, day = d.daily;
-    $("wx-now").innerHTML = `<b>${Math.round(c.temperature_2m)}°</b> ${esc(SKY[c.weather_code] || "")}`;
-    const rain = day.precipitation_probability_max?.[0];
-    $("wx-day").textContent = `${Math.round(day.temperature_2m_min[0])}–${Math.round(day.temperature_2m_max[0])}°${rain ? ` · RAIN ${rain}%` : ""} · MELBOURNE`;
-    $("wx").hidden = false;
-  } catch { /* no weather is fine */ }
-}
-weather();
-setInterval(weather, 20 * 60 * 1000);
+// The weather in the top bar, and its card, are /static/weather.js (shared with the other pages).
 
 // ---------- two screens: the board, and apps & media (the switch beside NEXUS in the top bar)
 function route() {
