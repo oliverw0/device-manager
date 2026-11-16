@@ -48,7 +48,8 @@ body.np-pattern::before {
 @media (max-width: 640px) {
   .hud { gap: 10px; }
   .hud-time { font-size: 18px; }
-  .hud-wx { display: none; }
+  .hud-wx { padding-left: 10px; }
+  .wx-day { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .hud .live-dot { animation: none; } }
 

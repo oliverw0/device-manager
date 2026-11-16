@@ -11,7 +11,7 @@ from pathlib import Path
 def _compute() -> str:
     digest = hashlib.md5()
     base = Path("app/static")
-    for name in ("app.js", "style.css", "tokens.css", "skin.css", "shell.js", "favicon.svg", "icons/icon-180.png"):
+    for name in ("app.js", "style.css", "tokens.css", "skin.css", "shell.js", "weather.js", "weather.css", "favicon.svg", "icons/icon-180.png"):
         try:
             digest.update((base / name).read_bytes())
         except OSError:
