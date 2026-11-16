@@ -274,6 +274,8 @@ a.node:hover, a.hostcard-head:hover, a.gnode:hover { text-decoration: none; bord
 .quick { display: flex; gap: 5px; flex-wrap: wrap; max-height: 22px; overflow: hidden; }
 .qchip { height: 22px; background: var(--panel-2); border: 1px solid var(--border); color: var(--muted); border-radius: var(--radius); padding: 0 8px; font: 11.5px/1 var(--font-sans); cursor: pointer; white-space: nowrap; }
 .qchip:hover { color: var(--text-strong); border-color: var(--green-line); }
+/* .nexus button { font: inherit } outranks .qchip, which left the chips in 14px body text inside a 22px box */
+.nexus .qchip { font: 11.5px/1 var(--font-sans); }
 .ask { display: flex; gap: 6px; }
 .ask .icon-btn { width: 32px; height: 32px; }
 .ask input { flex: 1; min-width: 0; height: 32px; background: var(--well); border: 1px solid var(--border-strong); border-radius: var(--radius); color: var(--text); padding: 0 10px; font: 13px var(--font-sans); outline: none; }

@@ -44,7 +44,7 @@
       const q = new URLSearchParams({
         latitude: PLACE.lat, longitude: PLACE.lon, timezone: PLACE.tz, forecast_days: 7,
         current: "temperature_2m,apparent_temperature,relative_humidity_2m,is_day,weather_code,wind_speed_10m,wind_direction_10m,precipitation",
-        hourly: "temperature_2m,weather_code,precipitation_probability,is_day",
+        hourly: "temperature_2m,weather_code,precipitation_probability,precipitation,is_day",
         daily: "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,sunrise,sunset,uv_index_max,wind_speed_10m_max",
       });
       const r = await fetch(`https://api.open-meteo.com/v1/forecast?${q}`);
@@ -52,7 +52,7 @@
       data = await r.json();
       data.at = new Date();
       drawBar();
-      if (!pop.hidden) drawCard();
+      if (!ov.hidden) drawCard();
     } catch { /* no weather is fine */ }
   }
 
@@ -69,13 +69,19 @@
   bar.setAttribute("aria-haspopup", "dialog");
   bar.setAttribute("aria-expanded", "false");
   bar.title = "Weather: today and the week";
+  // the card opens in the middle of the page over a darkened, blurred backdrop; clicking the backdrop or × closes it
+  const ov = document.createElement("div");
+  ov.className = "wx-overlay";
+  ov.hidden = true;
   const pop = document.createElement("div");
   pop.className = "wx-pop";
   pop.id = "wx-pop";
-  pop.hidden = true;
   pop.setAttribute("role", "dialog");
+  pop.setAttribute("aria-modal", "true");
+  pop.tabIndex = -1;   // focus goes to the card itself on open, so Esc and Tab work without lighting up a button
   pop.setAttribute("aria-label", `Weather in ${PLACE.name}`);
-  document.body.appendChild(pop);
+  ov.appendChild(pop);
+  document.body.appendChild(ov);
   bar.setAttribute("aria-controls", pop.id);
   let tab = "today";
 
@@ -110,25 +116,69 @@
     const h = data.hourly, d = data.daily, c = data.current;
     const start = h.time.findIndex((t) => local(t) > new Date(now.getTime() - 3600000));
     const hours = [...Array(24)].map((_, i) => start + i).filter((i) => i >= 0 && i < h.time.length).map((i) => ({
-      t: local(h.time[i]), temp: h.temperature_2m[i], code: h.weather_code[i], rain: h.precipitation_probability[i], day: h.is_day[i] === 1 }));
+      t: local(h.time[i]), temp: h.temperature_2m[i], code: h.weather_code[i], rain: h.precipitation_probability[i],
+      mm: h.precipitation?.[i] ?? 0, day: h.is_day[i] === 1 }));
+    chartHours = hours;
     const strip = hours.map((x, i) => `<div class="wx-hr"><span class="t">${i === 0 ? "Now" : hour12(x.t)}</span>${icon(x.code, x.day)}
       <b>${round(x.temp)}°</b><span class="r">${x.rain >= 10 ? `${x.rain}%` : ""}</span></div>`).join("");
-    // the temperature over those hours, as a curve
-    const temps = hours.map((x) => x.temp), lo = Math.min(...temps), hi = Math.max(...temps), span = Math.max(1, hi - lo);
-    const W = 100, H = 30, pts = temps.map((t, i) => [i / Math.max(1, temps.length - 1) * W, H - 3 - (t - lo) / span * (H - 8)]);
+    // the next 24 hours as a chart: the temperature as a line, the chance of rain as bars under it (darker where more
+    // rain is expected). Hover it for the hour's reading.
+    const n = hours.length, temps = hours.map((x) => x.temp), lo = Math.min(...temps), hi = Math.max(...temps), span = Math.max(1, hi - lo);
+    const W = 240, H = 100, TOP = 8, TEMP_H = 46, RAIN_TOP = 62, RAIN_H = 36, step = W / n;
+    const x = (i) => (i + 0.5) * step;
+    const pts = temps.map((t, i) => [x(i), TOP + (1 - (t - lo) / span) * TEMP_H]);
     const line = pts.map((p, i) => `${i ? "L" : "M"}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(" ");
+    const bars = hours.map((hr, i) => {
+      const bh = Math.max(hr.rain > 0 ? 1.5 : 0, hr.rain / 100 * RAIN_H);
+      const op = hr.mm >= 2 ? 0.95 : hr.mm >= 0.5 ? 0.75 : hr.mm > 0 ? 0.55 : 0.35;
+      return bh ? `<rect x="${(i * step + step * 0.18).toFixed(1)}" y="${(RAIN_TOP + RAIN_H - bh).toFixed(1)}" width="${(step * 0.64).toFixed(1)}" height="${bh.toFixed(1)}" rx="1" fill="#5aa0ff" fill-opacity="${op}"/>` : "";
+    }).join("");
+    const ticks = hours.map((hr, i) => i % 6 === 0 ? `<span style="left:${(x(i) / W * 100).toFixed(2)}%">${i === 0 ? "Now" : hour12(hr.t)}</span>` : "").join("");
+    const totalMm = hours.reduce((a, hr) => a + hr.mm, 0);
     const rise = local(d.sunrise[0]), set = local(d.sunset[0]);
     const kv = [["Feels like", `${round(c.apparent_temperature)}°`], ["Humidity", `${round(c.relative_humidity_2m)}%`],
       ["Wind", `${round(c.wind_speed_10m)} km/h ${compass(c.wind_direction_10m)}`], ["UV today", d.uv_index_max?.[0] != null ? `${round(d.uv_index_max[0])}${d.uv_index_max[0] >= 8 ? " · very high" : d.uv_index_max[0] >= 6 ? " · high" : d.uv_index_max[0] >= 3 ? " · moderate" : " · low"}` : "–"],
       ["Sunrise", hm(rise)], ["Sunset", hm(set)],
       ["Rain chance", `${d.precipitation_probability_max?.[0] ?? 0}%`], ["Rain today", `${(d.precipitation_sum?.[0] ?? 0).toFixed(1)} mm`]];
     return `<div class="wx-hours" tabindex="0" aria-label="The next 24 hours">${strip}</div>
-      <div class="wx-curve"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
-        <defs><linearGradient id="wx-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="currentColor" stop-opacity=".28"/><stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs>
-        <path d="${line} L${W} ${H} L0 ${H} Z" fill="url(#wx-fill)"/><path d="${line}" fill="none" stroke="currentColor" stroke-width="1.4" vector-effect="non-scaling-stroke"/></svg>
-        <span class="lo">${round(lo)}°</span><span class="hi">${round(hi)}°</span></div>
+      <div class="wx-chart-head"><span><i class="k-temp"></i>Temperature ${round(lo)}–${round(hi)}°</span>
+        <span><i class="k-rain"></i>Rain ${totalMm >= 0.1 ? `${totalMm.toFixed(1)} mm expected` : "none expected"}</span></div>
+      <div class="wx-chart" data-n="${n}">
+        <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
+          <defs><linearGradient id="wx-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffb038" stop-opacity=".26"/><stop offset="1" stop-color="#ffb038" stop-opacity="0"/></linearGradient></defs>
+          <line x1="0" x2="${W}" y1="${RAIN_TOP + RAIN_H}" y2="${RAIN_TOP + RAIN_H}" class="base"/>
+          <line x1="0" x2="${W}" y1="${RAIN_TOP}" y2="${RAIN_TOP}" class="grid"/>
+          ${bars}
+          <path d="${line} L${x(n - 1)} ${TOP + TEMP_H + 4} L${x(0)} ${TOP + TEMP_H + 4} Z" fill="url(#wx-fill)"/>
+          <path d="${line}" fill="none" stroke="#ffb038" stroke-width="1.6" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>
+        </svg>
+        <i class="wx-guide" hidden></i><i class="wx-dot" hidden></i>
+        <div class="wx-tip" hidden></div>
+        <div class="wx-ticks">${ticks}</div>
+      </div>
       <dl class="wx-kv">${kv.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>`;
   }
+
+  // hovering (or touching) the chart: a guide on the nearest hour and its reading
+  let chartHours = [];
+  function chartAt(chart, clientX) {
+    const r = chart.getBoundingClientRect(), n = chartHours.length;
+    if (!n) return;
+    const i = Math.max(0, Math.min(n - 1, Math.floor((clientX - r.left) / r.width * n)));
+    const hr = chartHours[i], pct = (i + 0.5) / n * 100;
+    const temps = chartHours.map((h) => h.temp), lo = Math.min(...temps), span = Math.max(1, Math.max(...temps) - lo);
+    const guide = chart.querySelector(".wx-guide"), dot = chart.querySelector(".wx-dot"), tip = chart.querySelector(".wx-tip");
+    guide.style.left = dot.style.left = `${pct}%`;
+    dot.style.top = `${(8 + (1 - (hr.temp - lo) / span) * 46) / 100 * 100}%`;
+    tip.innerHTML = `<b>${i === 0 ? "Now" : hour12(hr.t)}</b> ${icon(hr.code, hr.day, 14)} ${round(hr.temp)}°
+      <span class="rain">${hr.rain}% rain${hr.mm > 0 ? ` · ${hr.mm.toFixed(1)} mm` : ""}</span>`;
+    tip.style.left = `${Math.min(Math.max(pct, 18), 82)}%`;
+    guide.hidden = dot.hidden = tip.hidden = false;
+  }
+  function chartOff(chart) { chart.querySelectorAll(".wx-guide, .wx-dot, .wx-tip").forEach((e) => (e.hidden = true)); }
+  pop.addEventListener("pointermove", (e) => { const c = e.target.closest(".wx-chart"); if (c) chartAt(c, e.clientX); });
+  pop.addEventListener("pointerdown", (e) => { const c = e.target.closest(".wx-chart"); if (c) chartAt(c, e.clientX); });
+  pop.addEventListener("pointerout", (e) => { const c = e.target.closest(".wx-chart"); if (c && !c.contains(e.relatedTarget)) chartOff(c); });
 
   function week() {
     const d = data.daily, lo = Math.min(...d.temperature_2m_min), hi = Math.max(...d.temperature_2m_max), span = Math.max(1, hi - lo);
@@ -164,38 +214,33 @@
       <div class="wx-body">${tab === "today" ? today(now) : week()}</div>`;
   }
 
-  function place() {
-    const r = bar.getBoundingClientRect(), w = Math.min(400, window.innerWidth - 24);
-    pop.style.width = `${w}px`;
-    pop.style.top = `${Math.round(r.bottom + 8)}px`;
-    pop.style.left = `${Math.round(Math.max(12, Math.min(r.left - 12, window.innerWidth - w - 12)))}px`;
-  }
+  let lastFocus = null;
   function open() {
-    drawCard(); place();
-    pop.hidden = false;
+    drawCard();
+    lastFocus = document.activeElement;
+    ov.hidden = false;
+    document.documentElement.classList.add("wx-lock");
     bar.setAttribute("aria-expanded", "true");
     bar.classList.add("open");
-    requestAnimationFrame(() => pop.classList.add("in"));
+    requestAnimationFrame(() => { ov.classList.add("in"); pop.focus({ preventScroll: true }); });
   }
   function close() {
-    pop.classList.remove("in");
-    pop.hidden = true;
+    ov.classList.remove("in");
+    ov.hidden = true;
+    document.documentElement.classList.remove("wx-lock");
     bar.setAttribute("aria-expanded", "false");
     bar.classList.remove("open");
+    (lastFocus && lastFocus.focus ? lastFocus : bar).focus({ preventScroll: true });
   }
-  bar.addEventListener("click", () => (pop.hidden ? open() : close()));
-  bar.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pop.hidden ? open() : close(); } });
+  bar.addEventListener("click", () => (ov.hidden ? open() : close()));
+  bar.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); ov.hidden ? open() : close(); } });
+  ov.addEventListener("click", (e) => { if (e.target === ov) close(); });   // the backdrop, not the card
   pop.addEventListener("click", (e) => {
     const t = e.target.closest("[data-wx-tab]");
     if (t) { tab = t.dataset.wxTab; drawCard(); return; }
     if (e.target.closest(".wx-x")) close();
   });
-  // outside the card closes it. The click's path is fixed when it starts, so a tab that redraws the card (and so
-  // leaves the page) still counts as inside
-  document.addEventListener("click", (e) => { const path = e.composedPath(); if (!pop.hidden && !path.includes(pop) && !path.includes(bar)) close(); });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !pop.hidden) { close(); bar.focus(); } });
-  window.addEventListener("resize", () => { if (!pop.hidden) place(); });
-  window.addEventListener("scroll", () => { if (!pop.hidden) place(); }, { passive: true });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !ov.hidden) close(); });
 
   load();
   setInterval(load, 20 * 60 * 1000);
