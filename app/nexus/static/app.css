@@ -161,6 +161,16 @@ a.node:hover, a.hostcard-head:hover, a.gnode:hover { text-decoration: none; bord
 .node .ad { font: 10.5px var(--font-mono); color: var(--muted); }
 .node .led, .gnode .led, .hostcard .led { width: 8px; height: 8px; flex: none; }
 .node-inet .glyph { color: var(--green); }
+.door { margin-top: 3px; font: 600 9.5px var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+.door.ok { color: var(--green); }
+.door.warn { color: var(--amber); }
+.door.bad { color: var(--red); }
+/* PUBLIC / DOOR: a notch on the tile's top edge, so it never takes room from the name */
+.gtag { font: 600 8.5px var(--font-mono); letter-spacing: 0.1em; padding: 0 4px; line-height: 13px; border-radius: var(--radius);
+  color: var(--green); border: 1px solid var(--green-line); background: var(--panel-2); }
+.gnode .gtag { position: absolute; top: -7px; right: 8px; }
+.gnode:has(.gtag) { position: relative; }
+.tip-sub { display: flex; align-items: center; gap: 8px; font: 600 10.5px var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-strong); border-top: 1px solid var(--border); padding-top: 6px; }
 .rates { display: flex; gap: 10px; font: 500 11px var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .rates .dn { color: var(--green); }
 .rates .up { color: var(--text); }

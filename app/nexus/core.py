@@ -24,6 +24,8 @@ Secrets in ./secrets (700): pulse-mcp-token, runner-token, tautulli-key, seerr-k
 import json
 import os
 import re
+import socket
+import ssl
 import sys
 import time
 import urllib.parse
@@ -72,13 +74,13 @@ LAB = {
               "services": [["Backup Server", "https://pbs.wiles.au", "proxmox"]]},
              {"id": 103, "name": "services", "sub": ".146", "device": "services",
               "services": [["AdGuard Home", "http://192.168.50.146", "adguard-home"], ["Tautulli", "http://192.168.50.146:8181", "tautulli"]]},
-             {"id": 104, "name": "proxy", "sub": ".172", "device": "proxy",
+             {"id": 104, "name": "proxy", "sub": ".172", "device": "proxy", "tag": "DOOR",
               "services": [["Proxy Manager", "http://192.168.50.172:81", "nginx-proxy-manager"]]},
              {"id": 106, "name": "willow", "sub": ".194",
               "services": [["Willow", "https://willow.wiles.au", "icons/willow.png"]]},
              {"id": 108, "name": "games", "sub": ".83",
               "services": [["Lobby", "https://lobby.wiles.au", "icons/lobby.svg"]]},
-             {"id": 109, "name": "plex", "sub": ".50", "device": "plex-server",
+             {"id": 109, "name": "plex", "sub": ".50", "device": "plex-server", "tag": "PUBLIC",
               "services": [["Plex", "https://plex.wiles.au/web", "plex"], ["Jellyfin", "https://jellyfin.wiles.au", "jellyfin"]]},
              {"id": 110, "name": "frigate", "sub": ".22", "device": "frigate",
               "services": [["Frigate", "https://frigate.wiles.au", "frigate"]]},
@@ -102,6 +104,10 @@ LAB = {
          "device": "bazzite", "icon": "steam", "services": []},
     ],
 }
+
+# What the internet can reach: the router forwards only WAN 443, to the edge nginx on LXC 104 (:8443), which serves these
+# names and refuses every other one in the TLS handshake. NPM (:443) is for the LAN and Tailscale only.
+DOOR = {"port": 443, "to": "LXC 104 edge :8443", "addr": "192.168.50.172:8443", "names": ["jellyfin.wiles.au", "plex.wiles.au"], "probe": "pbs.wiles.au"}
 
 
 # ---- sources
@@ -164,6 +170,40 @@ def wan():
         _wan["v"] = {"ip": d.get("ip"), "isp": isp, "city": d.get("loc")}
         _wan["at"] = time.time()
     return _wan["v"]
+
+
+_door = {"at": 0, "v": None}
+
+
+def door_probe(ip, name):
+    """One HTTPS request to the public IP with this name: ["open", status], ["refused", None] (no TLS for that name, as
+    the edge does for anything not public) or ["silent", None] (no answer at all)."""
+    try:
+        with socket.create_connection((ip, DOOR["port"]), timeout=6) as raw, \
+                ssl.create_default_context().wrap_socket(raw, server_hostname=name) as s:
+            s.sendall(f"HEAD / HTTP/1.1\r\nHost: {name}\r\nUser-Agent: nexus-door\r\nConnection: close\r\n\r\n".encode())
+            line = s.recv(64).decode("latin-1").split("\r\n")[0].split()
+            return ["open", int(line[1]) if len(line) > 1 and line[1].isdigit() else 0]
+    except (ssl.SSLError, ConnectionResetError):
+        return ["refused", None]
+    except OSError:
+        return ["silent", None]
+
+
+def door():
+    """Checks the internet door from inside (the router loops the public IP back): the public names must answer, and an
+    internal one must be refused. If the internal one answers, the router is forwarding to NPM again and every host is
+    on the internet. Kept 10 minutes."""
+    if time.time() - _door["at"] > 600:
+        ip = (wan() or {}).get("ip")
+        if not ip:
+            raise OSError("public IP unknown")
+        names = [*DOOR["names"], DOOR["probe"]]
+        with ThreadPoolExecutor(len(names)) as ex:
+            res = dict(zip(names, ex.map(lambda n: door_probe(ip, n), names)))
+        _door["v"] = {"ip": ip, "names": {n: res[n] for n in DOOR["names"]}, "probe": res[DOOR["probe"]], "at": time.time()}
+        _door["at"] = time.time()
+    return _door["v"]
 
 
 def net():
@@ -354,9 +394,10 @@ SOURCES = {
     "jellyfin": jellyfin,
     "seerr": seerr,
     "wan": wan,
+    "door": door,
     "ctrs": lambda: containers(),
 }
-LABELS = {"ctrs": "the container list", "wan": "the public IP lookup","status": "the health checks", "devices": "the device list", "willow": "Willow", "log": "Willow's log", "usage": "the Claude runner",
+LABELS = {"ctrs": "the container list", "wan": "the public IP lookup", "door": "the internet door check","status": "the health checks", "devices": "the device list", "willow": "Willow", "log": "Willow's log", "usage": "the Claude runner",
           "net": "Glances on pve", "plex": "Tautulli", "jellyfin": "Jellyfin", "seerr": "Seerr"}
 
 
@@ -594,10 +635,24 @@ def build(src, now=None):
             else:
                 x["actions"] = x.get("actions", []) + [["pass", willow_brief(x), "Pass to Willow"]]
 
+    # The internet door: only the public names may answer on the public IP
+    dr = src.get("door") if ok.get("door") else None
+    if dr:
+        if dr["probe"][0] == "open":
+            warns.append({"level": "bad", "title": f"The internet can reach {DOOR['probe']}",
+                          "detail": f"An internal name answered on the public IP ({dr['ip']}:443), so every NPM host probably can. "
+                                    f"Point the router's 443 forward back at the edge, {DOOR['addr']}.",
+                          "src": "EDGE"})
+        for n, (state, _code) in dr["names"].items():
+            if state != "open":
+                warns.append({"level": "warn", "title": f"{n} isn't answering from the internet",
+                              "detail": "Nothing came back on the public IP for it. Check the edge container on LXC 104 and the router's 443 forward.",
+                              "src": "EDGE"})
+
     order = {"bad": 0, "warn": 1}
     warns.sort(key=lambda w: order.get(w["level"], 2))
     return {"at": now, "lamps": lamps, "needs": needs, "warnings": warns, "todo": todo,
-            "map": {"router": LAB["router"], "wan": src.get("wan") if ok.get("wan") else None, "uplink": (nw or {}).get("uplink") if ok.get("net") else None, "hosts": hosts},
+            "map": {"router": LAB["router"], "wan": src.get("wan") if ok.get("wan") else None, "door": {**DOOR, "check": dr}, "uplink": (nw or {}).get("uplink") if ok.get("net") else None, "hosts": hosts},
             "media": media, "requests": reqs,
             "willow": {"running": [{"title": t.get("title"), "steps": len(t["steps"]) if isinstance(t.get("steps"), list) else None,
                                     "at": t.get("created")} for t in running],
@@ -783,6 +838,7 @@ def demo_sources():
             {"at": now - 300, "device": "talk page", "heard": "Is anything broken?", "say": "One download's stuck: South Park S29E05 was a fake release. Everything else is fine.", "route": "lab", "ms": 4100}]},
         "usage": {"seven_day": {"used_percent": 23, "resets_at": "2026-11-14T09:00:00+11:00"}, "five_hour": {"used_percent": 4}},
         "wan": {"ip": "203.0.113.24", "isp": "Example ISP", "city": "Melbourne"},
+        "door": {"ip": "203.0.113.24", "names": {"jellyfin.wiles.au": ["open", 302], "plex.wiles.au": ["open", 401]}, "probe": ["refused", None], "at": now},
         "ctrs": {k: [{"name": n, "state": st, "status": "running" if st == "ok" else "exited", "health": None} for n, st in v] for k, v in {
             "servarr": [("gluetun", "ok"), ("sonarr", "ok"), ("radarr", "ok"), ("lidarr", "ok"), ("prowlarr", "ok"), ("qbittorrent", "ok"),
                         ("nzbget", "ok"), ("seerr", "ok"), ("slskd", "ok"), ("soularr", "warn"), ("byparr", "ok"), ("portainer", "ok")],
@@ -846,6 +902,14 @@ def test():
     assert g["games"]["why"].startswith("Running (no monitoring") and g["crafty"]["why"].startswith("Retired")
     assert {l["name"]: l for l in v["lamps"]}["Downloads"]["items"][0].startswith("South Park")
     assert v["map"]["wan"]["ip"] == "203.0.113.24"
+    # the internet door: quiet when only the public names answer; red if an internal name answers on the public IP
+    assert v["map"]["door"]["check"]["probe"][0] == "refused" and not any(w["src"] == "EDGE" for w in v["warnings"])
+    s = demo_sources()
+    s["door"] = {**s["door"], "probe": ["open", 200], "names": {**s["door"]["names"], "plex.wiles.au": ["silent", None]}}
+    ew = [w for w in build(s)["warnings"] if w["src"] == "EDGE"]
+    assert ew[0]["level"] == "bad" and "pbs.wiles.au" in ew[0]["title"] and "192.168.50.172:8443" in ew[0]["detail"]
+    assert ew[1]["level"] == "warn" and ew[1]["title"].startswith("plex.wiles.au")
+    g = {g["name"]: g for h in v["map"]["hosts"] for g in h["guests"]}
     assert v["media"]["recent"][0]["title"] == "Severance" and v["media"]["now"][0]["pct"] == 38
     assert len(v["willow"]["turns"]) == 3 and v["willow"]["recent"][0]["state"] == "done"
     # a guest that should run but has no interface is a warning
