@@ -249,6 +249,26 @@ const NODES = new Map(); // "h:pve" / "g:114" -> the node from /api/overview, fo
 const ledWord = (l) => ({ on: "UP", warn: "HAS A PROBLEM", off: "DOWN" })[l] || "NO MONITOR";
 const ledChip = (l) => ({ on: "ok", warn: "warn", off: "bad" })[l] || "neutral";
 const bare = (html) => html.replace(/^<span class="rates[^"]*">|<\/span>$/g, "");
+// The internet door, under the public IP: what the internet can reach (only through the edge on LXC 104), and whether
+// the last check from inside agreed. Red when an internal name answered on the public IP.
+const doorState = (d) => !d?.check ? "" : d.check.probe[0] === "open" ? "bad" : Object.values(d.check.names).some((x) => x[0] !== "open") ? "warn" : "ok";
+const DOOR_WORD = { open: "answers", refused: "refused", silent: "no answer" };
+function doorTip(d) {
+  if (!d) return "";
+  const c = d.check, st = doorState(d);
+  const li = (n, r, good) => `<li class="${r ? (good ? "" : r[0] === "open" ? "bad" : "warn") : ""}">${esc(n)}${r ? ` · ${DOOR_WORD[r[0]] || r[0]}${r[1] ? ` (${r[1]})` : ""}` : ""}</li>`;
+  return `<div class="tip-sub">Open to the internet <span class="chip chip-sm ${st ? ledChip({ ok: "on", warn: "warn", bad: "off" }[st]) : "neutral"}">${
+      { ok: "ONLY THESE", warn: "CHECK", bad: "LEAKING" }[st] || "NOT CHECKED"}</span></div>
+    <div class="tip-why">Router forwards :${d.port} to the ${esc(d.to)}. It serves only:</div>
+    <ul class="tip-list">${d.names.map((n) => li(n, c?.names[n], c?.names[n]?.[0] === "open")).join("")}${
+      li(`${d.probe} (internal, must be refused)`, c?.probe, c?.probe?.[0] !== "open")}</ul>
+    ${c ? `<div class="tip-read">Checked ${ago(c.at)} from inside, through the public IP</div>` : ""}`;
+}
+function doorLine(d) {
+  if (!d) return "";
+  const st = doorState(d), short = d.names.map((n) => n.split(".")[0]).join(" · ");
+  return `<div class="door ${st}" title="Open to the internet">${st === "bad" ? "OPEN TO EVERY HOST" : `:${d.port} → EDGE → ${esc(short)}`}</div>`;
+}
 function map(v) {
   const m = v.map, up = m.uplink;
   NODES.clear();
@@ -261,7 +281,7 @@ function map(v) {
   $("tier-top").innerHTML =
     `<div class="node node-inet" data-wire="inet" data-tip="inet">${GLOBE}<div style="min-width:0"><div class="nm">Internet</div>
        ${m.wan ? `<div class="ip-pub">${esc(m.wan.ip)}</div><div class="ad">${esc([m.wan.isp, m.wan.city].filter(Boolean).join(" · "))}</div>`
-               : `<div class="ad">Public IP unknown</div>`}</div>
+               : `<div class="ad">Public IP unknown</div>`}${doorLine(m.door)}</div>
        ${m.wan?.ip ? `<button type="button" class="copy-ip" data-copy="${esc(m.wan.ip)}" aria-label="Copy public IP" title="Copy">
          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="1"/><path d="M5 15V5a1 1 0 0 1 1-1h10"/></svg></button>` : ""}</div>
      <a class="node" data-wire="router" data-tip="router" href="${esc(m.router.url)}">${icon(m.router.icon, "Router")}
@@ -295,7 +315,7 @@ function gnode(g) {
   const cls = g.state === "down" || g.led === "off" ? "down" : g.led === "warn" ? "warn" : "";
   return `<div class="gnode ${cls}" role="button" tabindex="0" data-g="${g.id}" data-node="g:${g.id}" aria-label="${esc(g.kind || "LXC")} ${g.id} ${esc(g.name)}: details">
     <span class="top"><span class="led ${g.led || ""}"></span><span class="id">${g.kind === "VM" ? "VM " : ""}${g.id}</span>
-      <span class="nm ellipsis">${esc(g.name)}</span></span>
+      <span class="nm ellipsis">${esc(g.name)}</span>${g.tag ? `<span class="gtag" title="${g.tag === "DOOR" ? "The internet comes in here (edge)" : "Reachable from the internet"}">${esc(g.tag)}</span>` : ""}</span>
     <span data-rates="${g.id}">${g.state === "up" ? rates(g.net, false, true) : `<span class="rates quiet"><span class="dn">${g.state === "down" ? "NOT RUNNING" : "—"}</span></span>`}</span>
     <svg class="spark" data-spark="${g.id}" viewBox="0 0 100 18" preserveAspectRatio="none"></svg>${ctrs(g)}</div>`;
 }
@@ -483,7 +503,7 @@ function tipHtml(el) {
     const w = view.map.wan, u = view.map.uplink;
     return `<div class="tip-head"><span class="led on"></span><b>Internet</b></div>
       <div class="tip-why">${w ? `Public IP ${esc(w.ip)}${w.isp ? ` · ${esc(w.isp)}` : ""}` : "Public IP unknown"}</div>
-      ${u ? `<div class="tip-read">${rates(u)}</div>` : ""}<div class="tip-foot">Traffic on this link is pve's uplink, the only port measured.</div>`;
+      ${u ? `<div class="tip-read">${rates(u)}</div>` : ""}${doorTip(view.map.door)}<div class="tip-foot">Traffic on this link is pve's uplink, the only port measured.</div>`;
   }
   if (tipKey === "router") {
     return `<div class="tip-head"><b>Router</b><span class="chip chip-sm neutral">NO MONITOR</span></div>
