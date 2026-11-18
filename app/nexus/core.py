@@ -97,6 +97,9 @@ LAB = {
                       ["Galley", "https://galley.wiles.au", "icons/galley.svg"]]},
         {"id": "nas", "name": "nas", "sub": "192.168.50.4 · Synology DSM", "model": "Synology DS916+ · 16 TB", "device": "Wiles-NAS", "url": "https://nas.wiles.au",
          "icon": "synology-dsm", "services": [["DSM", "https://nas.wiles.au", "synology-dsm"]]},
+        # the gaming PC: switched on and off often ("Often switched off" in Pulse), so off is grey, not red
+        {"id": "bazzite", "name": "bazzite", "sub": "192.168.50.85 · Bazzite 45 (Wi-Fi)", "model": "Acer Veriton N4680GT · i5-11400 · 16 GB · 256 GB NVMe",
+         "device": "bazzite", "icon": "steam", "services": []},
     ],
 }
 
