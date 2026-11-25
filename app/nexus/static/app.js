@@ -192,12 +192,12 @@ function group(cat, list) {
        ${s.led ? `<span class="led ${s.led}"></span>` : ""}</a>`).join("")}</div></div>`;
 }
 
-// ---------- resources: pve itself (the metal). Rings for CPU, memory and each drive, then CPU and memory over time
-// on one 0-100% axis and power at the wall on its own chart below (never two scales on one chart). From Pulse's
-// own records for proxmox-host (api/pve, every 60 s). Rings are grey, CPU blue and memory magenta link the rings to
-// their lines; anything at 80% turns amber and 90% red (the Disks lamp's rule). Gaps over 3 minutes break the lines.
+// ---------- resources: pve. Three rows, each a dial beside its own graph: CPU, memory, power. From Pulse's records
+// for proxmox-host (api/pve, every 60 s). CPU and memory dials are grey until 80% (amber) and 90% (red), the Disks
+// lamp's rule; the power dial is green, full at pve's highest draw in the last 24 h. Graph lines are green and break
+// at gaps (more than 3 times the usual spacing between readings), so outages show.
 const PVE = { v: null, hours: 6, plot: null };
-const SERIES = [["cpu", "CPU", 1], ["mem", "Memory", 2]]; // key, label, column in history rows
+const METRICS = [["cpu", "CPU", 1], ["mem", "Memory", 2], ["w", "Power", 3]]; // key, label, column in history rows
 const level = (p) => p >= 90 ? "bad" : p >= 80 ? "warn" : "";
 function bytes(n) {
   if (n == null) return "";
@@ -209,91 +209,89 @@ async function pollPve() {
   try { const r = await fetch("api/pve", { cache: "no-store" }); if (r.ok) { PVE.v = await r.json(); metal(); } }
   catch { /* keeps the last good one */ }
 }
-function ring(key, label, p, sub, cls) {
-  const C = 2 * Math.PI * 42, lv = level(Math.round(p ?? 0)); // the colour matches the number shown
-  return `<div class="ring-g ${cls || ""} ${lv}" data-tip="metal" data-open="${esc(label)}">
-    <svg viewBox="0 0 100 100" aria-hidden="true"><circle class="g-track" cx="50" cy="50" r="42"/>
-      ${p == null ? "" : `<circle class="g-arc" cx="50" cy="50" r="42" stroke-dasharray="${(Math.max(0.5, Math.min(100, p)) / 100 * C).toFixed(1)} ${C.toFixed(1)}"/>`}</svg>
-    <div class="g-val"><b>${p == null ? "–" : Math.round(p)}</b>${p == null ? "" : "<i>%</i>"}</div>
-    <div class="g-lbl">${esc(label)}</div><div class="g-sub">${esc(sub || "")}</div></div>`;
+const peakW = (v) => Math.max(v.watts || 0, ...v.history.map((r) => r[3] || 0));
+function dial(key, label, frac, shown, unit, sub, cls) {
+  const C = 2 * Math.PI * 42;
+  return `<div class="d-ring ${cls}" data-tip="pve-dial" data-open="${esc(label)}" data-k="${key}">
+      <svg viewBox="0 0 100 100" aria-hidden="true"><circle class="g-track" cx="50" cy="50" r="42"/>
+        ${frac == null ? "" : `<circle class="g-arc" cx="50" cy="50" r="42" stroke-dasharray="${(Math.max(0.005, Math.min(1, frac)) * C).toFixed(1)} ${C.toFixed(1)}"/>`}</svg>
+      <div class="g-val"><b>${shown}</b><i>${unit}</i></div></div>
+    <div class="d-txt"><div class="g-lbl">${esc(label)}</div><div class="g-sub">${esc(sub)}</div></div>`;
 }
 function metal() {
   const v = PVE.v;
   if (!v) return;
-  const drive = (d) => d.mount === "/" ? "System" : d.mount.split("/").pop();
-  $("gauges").innerHTML = ring("cpu", "CPU", v.cpu, v.cores ? `${v.cores} threads` : "", "s-cpu")
-    + ring("mem", "Memory", v.mem.pct, v.mem.total ? `${bytes(v.mem.used)} of ${bytes(v.mem.total)}` : "", "s-mem")
-    + v.drives.map((d) => ring("disk", drive(d), d.pct, d.total ? `${bytes(d.used)} of ${bytes(d.total)}` : d.mount)).join("");
+  const pct = (p) => p == null ? "–" : Math.round(p);
+  $("d-cpu").innerHTML = dial("cpu", "CPU", v.cpu == null ? null : v.cpu / 100, pct(v.cpu), "%", v.cores ? `${v.cores} threads` : "", level(Math.round(v.cpu ?? 0)));
+  $("d-mem").innerHTML = dial("mem", "Memory", v.mem.pct == null ? null : v.mem.pct / 100, pct(v.mem.pct), "%",
+    v.mem.total ? `${bytes(v.mem.used)} of ${bytes(v.mem.total)}` : "", level(Math.round(v.mem.pct ?? 0)));
+  const peak = peakW(v);
+  $("d-w").innerHTML = dial("w", "Power", v.watts == null || !peak ? null : v.watts / peak, v.watts == null ? "–" : Math.round(v.watts), "W",
+    peak ? `peak ${Math.round(peak)} W · 24 h` : "not measured", "on");
   $("res-meta").textContent = [v.online ? "" : "OFFLINE", v.uptime ? `UP ${Math.floor(v.uptime / 86400)} D` : ""].filter(Boolean).join(" · ");
   drawCharts();
 }
-// a line through rows[col], broken wherever a reading is missing or comes over 3 times the usual spacing after the
-// last (pve reports every minute, so a gap is an outage)
-function line(rows, col, x, y) {
+// the runs of readings to draw: split wherever a reading is missing or comes over 3x the usual spacing after the last
+function runs(rows, col) {
   const steps = rows.slice(1).map((r, i) => r[0] - rows[i][0]).sort((a, b) => a - b);
-  const gap = 3 * Math.max(60, steps[steps.length >> 1] || 60);
-  let d = "", prev = null;
+  const gap = 3 * Math.max(60, steps[steps.length >> 1] || 60), out = [];
+  let cur = null, prev = null;
   for (const r of rows) {
-    if (r[col] == null) { prev = null; continue; }
-    d += `${prev && r[0] - prev <= gap ? "L" : "M"}${x(r[0]).toFixed(1)} ${y(r[col]).toFixed(1)}`;
+    if (r[col] == null) { cur = prev = null; continue; }
+    if (!cur || r[0] - prev > gap) out.push(cur = []);
+    cur.push([r[0], r[col]]);
     prev = r[0];
   }
-  return d;
+  return out;
 }
 function drawCharts() {
-  const v = PVE.v, use = $("ch-use"), w = $("ch-w");
-  if (!v || !use.clientWidth) return;
+  const v = PVE.v, first = $("ch-cpu");
+  if (!v || !first.clientWidth) return;
   const hist = v.history, end = hist.length ? hist[hist.length - 1][0] : Date.now() / 1000, start = end - PVE.hours * 3600;
-  const rows = hist.filter((r) => r[0] >= start), W = use.clientWidth, L = 34, R = 10;
+  const rows = hist.filter((r) => r[0] >= start), W = first.clientWidth, L = 40, R = 10;
   const x = (t) => L + (t - start) / (end - start) * (W - L - R);
-  const ticks = [0, 1, 2, 3].map((i) => start + (i / 3) * (end - start));
-  const frame = (svg, H, max, fmt) => {
-    const y = (val) => 8 + (1 - val / max) * (H - 8 - 20);
-    const grid = [0, max / 2, max].map((g) => `<line class="c-grid" x1="${L}" x2="${W - R}" y1="${y(g)}" y2="${y(g)}"/><text class="c-ax" x="${L - 6}" y="${y(g) + 3.5}" text-anchor="end">${fmt(g)}</text>`).join("");
-    const xs = ticks.map((t, i) => `<text class="c-ax" x="${x(t)}" y="${H - 4}" text-anchor="${i === 0 ? "start" : i === 3 ? "end" : "middle"}">${hhmm(t)}</text>`).join("");
+  const topW = Math.max(20, Math.ceil(peakW(v) * 1.15 / 10) * 10), ys = {};
+  for (const [k, , col] of METRICS) {
+    const svg = $(`ch-${k}`), H = svg.clientHeight, last = k === "w", B = last ? 18 : 4, max = k === "w" ? topW : 100;
+    const y = (val) => 6 + (1 - val / max) * (H - 6 - B);
+    ys[k] = y;
+    const grid = [0, max / 2, max].map((g) => `<line class="c-grid" x1="${L}" x2="${W - R}" y1="${y(g)}" y2="${y(g)}"/>
+      <text class="c-ax" x="${L - 6}" y="${y(g) + 3.5}" text-anchor="end">${Math.round(g)}${k === "w" ? " W" : "%"}</text>`).join("");
+    const xs = !last ? "" : [0, 1, 2, 3].map((i) => { const t = start + (i / 3) * (end - start);
+      return `<text class="c-ax" x="${x(t)}" y="${H - 3}" text-anchor="${i === 0 ? "start" : i === 3 ? "end" : "middle"}">${hhmm(t)}</text>`; }).join("");
+    const segs = runs(rows, col);
+    const ln = segs.map((s) => s.map(([t, val], i) => `${i ? "L" : "M"}${x(t).toFixed(1)} ${y(val).toFixed(1)}`).join("")).join("");
+    const area = segs.map((s) => `M${x(s[0][0]).toFixed(1)} ${y(0)}` + s.map(([t, val]) => `L${x(t).toFixed(1)} ${y(val).toFixed(1)}`).join("")
+      + `L${x(s[s.length - 1][0]).toFixed(1)} ${y(0)}Z`).join("");
     svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-    return { y, base: grid + xs };
-  };
-  const last = (col) => { for (let i = rows.length - 1; i >= 0; i--) if (rows[i][col] != null) return rows[i][col]; return null; };
-  // CPU + memory, one % axis
-  const HU = use.clientHeight, fu = frame(use, HU, 100, (g) => `${g}%`);
-  const cpu = line(rows, 1, x, fu.y);
-  use.innerHTML = `${fu.base}<path class="c-area s-cpu" d="${cpu ? `${cpu}` : ""}"/>`
-    + SERIES.map(([k, , col]) => `<path class="c-line s-${k}" d="${line(rows, col, x, fu.y)}"/>`).join("")
-    + `<g class="c-hair" hidden><line y1="8" y2="${HU - 20}"/>${SERIES.map(([k]) => `<circle class="s-${k}" r="4"/>`).join("")}</g>`;
-  $("ch-legend").innerHTML = SERIES.map(([k, label, col]) => { const n = last(col);
-    return `<span class="lg-item s-${k}"><i></i>${label}<b>${n == null ? "–" : `${Math.round(n)}%`}</b></span>`; }).join("")
-    + `<span class="lg-note">${rows.length ? `last ${PVE.hours} h, a reading a minute` : "no readings in this range"}</span>`;
-  // power at the wall, its own chart and scale
-  const watts = rows.some((r) => r[3] != null);
-  $("charts").classList.toggle("no-power", !watts);
-  if (watts) {
-    const top = Math.max(20, Math.ceil(Math.max(...rows.map((r) => r[3] ?? 0)) * 1.25 / 10) * 10);
-    const HW = w.clientHeight, fw = frame(w, HW, top, (g) => `${Math.round(g)}`);
-    w.innerHTML = `${fw.base}<path class="c-line s-w" d="${line(rows, 3, x, fw.y)}"/><g class="c-hair" hidden><line y1="8" y2="${HW - 20}"/><circle class="s-w" r="4"/></g>`;
-    $("ch-wlegend").innerHTML = `<span class="lg-item s-w">Power at the wall<b>${v.watts == null ? "–" : `${Math.round(v.watts)} W`}</b></span><span class="lg-note">watts</span>`;
-    PVE.plot = { rows, x, start, end, L, R, W, yu: fu.y, yw: fw.y };
-  } else PVE.plot = { rows, x, start, end, L, R, W, yu: fu.y };
+    svg.innerHTML = `${grid}${xs}<path class="c-area" d="${area}"/><path class="c-line" d="${ln}"/>`
+      + `<g class="c-hair" hidden><line y1="6" y2="${H - B}"/><circle r="4"/></g>`;
+  }
+  PVE.plot = { rows, x, start, end, L, R, W, ys };
 }
-// one crosshair across both charts: the nearest reading to the pointer, with its time and values
+// one crosshair down all three graphs: the nearest reading to the pointer, with its time and values
 function hair(e) {
   const p = PVE.plot, tip = $("ch-tip");
   const hide = () => { tip.hidden = true; document.querySelectorAll(".c-hair").forEach((g) => g.setAttribute("hidden", "")); };
   if (!p || !p.rows.length) return hide();
-  const box = $("ch-use").getBoundingClientRect(), px = e.clientX - box.left;
+  const box = $("ch-cpu").getBoundingClientRect(), px = e.clientX - box.left;
   if (px < p.L || px > p.W - p.R) return hide();
   const t = p.start + (px - p.L) / (p.W - p.L - p.R) * (p.end - p.start);
   let lo = 0, hi = p.rows.length - 1;
   while (lo < hi) { const mid = (lo + hi) >> 1; if (p.rows[mid][0] < t) lo = mid + 1; else hi = mid; }
   if (lo > 0 && t - p.rows[lo - 1][0] < p.rows[lo][0] - t) lo--;
   const r = p.rows[lo], cx = p.x(r[0]);
-  const place = (svg, pts) => { const g = svg.querySelector(".c-hair"); if (!g) return; g.removeAttribute("hidden");
-    const ln = g.querySelector("line"); ln.setAttribute("x1", cx); ln.setAttribute("x2", cx);
-    g.querySelectorAll("circle").forEach((c, i) => { const val = pts[i]; c.style.display = val == null ? "none" : ""; if (val != null) { c.setAttribute("cx", cx); c.setAttribute("cy", val); } }); };
-  place($("ch-use"), [p.yu(r[1]), p.yu(r[2])]);
-  if (p.yw) place($("ch-w"), [r[3] == null ? null : p.yw(r[3])]);
-  tip.innerHTML = `<div class="t-time">${hhmm(r[0])}</div>${SERIES.map(([k, label, col]) => `<div class="s-${k}"><i></i>${label}<b>${Math.round(r[col])}%</b></div>`).join("")}`
-    + (p.yw ? `<div class="s-w"><i></i>Power<b>${r[3] == null ? "–" : `${Math.round(r[3])} W`}</b></div>` : "");
+  for (const [k, , col] of METRICS) {
+    const g = $(`ch-${k}`).querySelector(".c-hair");
+    if (!g) continue;
+    g.removeAttribute("hidden");
+    const ln = g.querySelector("line"), c = g.querySelector("circle");
+    ln.setAttribute("x1", cx); ln.setAttribute("x2", cx);
+    c.style.display = r[col] == null ? "none" : "";
+    if (r[col] != null) { c.setAttribute("cx", cx); c.setAttribute("cy", p.ys[k](r[col])); }
+  }
+  const val = (col, unit) => r[col] == null ? "–" : `${Math.round(r[col])}${unit}`;
+  tip.innerHTML = `<div class="t-time">${hhmm(r[0])}</div><div>CPU<b>${val(1, "%")}</b></div><div>Memory<b>${val(2, "%")}</b></div><div>Power<b>${val(3, " W")}</b></div>`;
   tip.hidden = false;
   const host = $("charts").getBoundingClientRect(), tw = tip.offsetWidth;
   tip.style.left = `${Math.min(host.width - tw - 4, Math.max(4, e.clientX - host.left + 14))}px`;
@@ -635,11 +633,13 @@ function tipHtml(el) {
       <div class="tip-why">${w ? `Public IP ${esc(w.ip)}${w.isp ? ` · ${esc(w.isp)}` : ""}` : "Public IP unknown"}</div>
       ${u ? `<div class="tip-read">${rates(u)}</div>` : ""}${doorTip(view.map.door)}<div class="tip-foot">Traffic on this link is pve's uplink, the only port measured.</div>`;
   }
-  if (tipKey === "metal") {
-    const name = el.dataset.open, lv = el.classList.contains("bad") ? "off" : el.classList.contains("warn") ? "warn" : "";
-    return `<div class="tip-head">${lv ? `<span class="led ${lv}"></span>` : ""}<b>${esc(name)} on pve</b>${lv ? `<span class="chip chip-sm ${ledChip(lv)}">${ledWord(lv)}</span>` : ""}</div>
-      <div class="tip-why">${lv ? "Over 80% turns amber, over 90% red (the same rule as the Disks lamp)." : "Under 80%: nothing to do."}</div>
-      <div class="tip-foot">From Pulse's client on pve, every minute.</div>`;
+  if (tipKey === "pve-dial") {
+    const k = el.dataset.k, name = el.dataset.open, v = PVE.v;
+    if (k === "w") return `<div class="tip-head"><b>Power</b></div>
+      <div class="tip-why">What pve draws now. The dial is full at its highest in the last 24 h${v ? ` (${Math.round(peakW(v))} W)` : ""}.</div>`;
+    const lv = el.classList.contains("bad") ? "off" : el.classList.contains("warn") ? "warn" : "";
+    return `<div class="tip-head">${lv ? `<span class="led ${lv}"></span>` : ""}<b>${esc(name)}</b>${lv ? `<span class="chip chip-sm ${ledChip(lv)}">${ledWord(lv)}</span>` : ""}</div>
+      <div class="tip-why">pve's ${k === "cpu" ? "CPU" : "memory"} use now. Amber from 80%, red from 90%.</div>`;
   }
   if (tipKey === "router") {
     return `<div class="tip-head"><b>Router</b><span class="chip chip-sm neutral">NO MONITOR</span></div>
