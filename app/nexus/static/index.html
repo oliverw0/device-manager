@@ -6,17 +6,17 @@
   <meta name="theme-color" content="#101216">
   <base target="_blank">
   <title>NEXUS</title>
-  <link rel="icon" href="logo.svg?v=51">
-  <link rel="stylesheet" href="/static/tokens.css?v=51">
-  <link rel="stylesheet" href="bundle.css?v=51">
-  <link rel="stylesheet" href="app.css?v=51">
-  <link rel="stylesheet" href="/static/weather.css?v=51">
-  <script src="app.js?v=51" defer></script>
-  <script src="/static/weather.js?v=51" defer></script>
+  <link rel="icon" href="logo.svg?v=52">
+  <link rel="stylesheet" href="/static/tokens.css?v=52">
+  <link rel="stylesheet" href="bundle.css?v=52">
+  <link rel="stylesheet" href="app.css?v=52">
+  <link rel="stylesheet" href="/static/weather.css?v=52">
+  <script src="app.js?v=52" defer></script>
+  <script src="/static/weather.js?v=52" defer></script>
 </head>
 <body class="np-app nav-collapsed np-pattern nexus" data-view="board">
 <aside class="sidebar fixed collapsed nx-rail" aria-label="NEXUS">
-  <div class="sidebar-head"><a class="brand" href="#board" target="_self" title="NEXUS" aria-label="NEXUS"><img src="logo.svg?v=51" width="22" height="22" alt=""></a></div>
+  <div class="sidebar-head"><a class="brand" href="#board" target="_self" title="NEXUS" aria-label="NEXUS"><img src="logo.svg?v=52" width="22" height="22" alt=""></a></div>
   <nav class="sidebar-nav">
     <a class="nav-item active" href="#board" target="_self" title="NEXUS" data-view="board">
       <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2.5"/><circle cx="4.5" cy="5" r="1.5"/><circle cx="19.5" cy="5" r="1.5"/><circle cx="4.5" cy="19" r="1.5"/><circle cx="19.5" cy="19" r="1.5"/><path d="M6 6.2l4.2 4.2M18 6.2l-4.2 4.2M6 17.8l4.2-4.2M18 17.8l-4.2-4.2"/></svg>
@@ -91,6 +91,11 @@
 
 
   <main class="core">
+    <section class="sec sec-links" id="links" aria-labelledby="links-h">
+      <div class="sec-head"><span class="sec-dot"></span><h2 id="links-h">Links</h2><span class="sec-rule"></span><a class="sec-meta link" href="#apps" target="_self">All services &amp; map →</a></div>
+      <div class="qlinks" id="qlinks"></div>
+    </section>
+
     <section class="sec sec-willow" id="willow" aria-labelledby="willow-h">
       <div class="sec-head"><span class="sec-dot"></span><h2 id="willow-h">Willow</h2>
         <div class="head-tabs" id="w-tabs" role="tablist" aria-label="Willow">
@@ -137,6 +142,10 @@
         </div>
       </div>
     </section>
+
+  </main>
+
+  <aside class="rail rail-left" id="apps" aria-label="Apps and media">
     <section class="sec sec-map" id="map" aria-labelledby="map-h">
       <div class="sec-head"><span class="sec-dot"></span><h2 id="map-h">Network</h2><span class="sec-rule"></span><span class="sec-meta" id="map-meta"></span></div>
       <div class="topo-fit" id="topo-fit"><div class="topo" id="topo">
@@ -151,10 +160,6 @@
         <span class="lg-units">↓ to the machine · ↑ from it</span>
       </div>
     </section>
-
-  </main>
-
-  <aside class="rail rail-left" id="apps" aria-label="Apps and media">
     <section class="sec sec-services" id="services" aria-labelledby="svc-h">
       <div class="sec-head"><span class="sec-dot"></span><h2 id="svc-h">Services</h2><span class="sec-rule"></span><span class="sec-meta" id="svc-meta"></span></div>
       <div id="svc"></div>
