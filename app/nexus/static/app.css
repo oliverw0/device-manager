@@ -638,19 +638,54 @@ button.jump:hover { border-color: var(--green-dim); }
 
 /* ---------- the board's Links: the everyday apps as icons, grouped; name, address and light in the hover card ---------- */
 .sec-links { flex: none; padding-bottom: 14px; }
-.qlinks { display: flex; flex-wrap: wrap; gap: 12px 28px; }
-.qgroup .svc-group-head { margin-bottom: 6px; }
-.qrow { display: flex; flex-wrap: wrap; gap: 6px; }
-.qlink { position: relative; display: grid; place-items: center; width: 42px; height: 42px; border-radius: var(--radius);
-  background: var(--panel-2); border: 1px solid var(--border); transition: border-color 0.12s, background 0.12s; }
+/* each group is its own well, the three side by side across the whole width */
+.qlinks { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+.qgroup { background: var(--well); border: 1px solid var(--border); border-radius: var(--radius); padding: 9px 10px 10px; }
+.qgroup .svc-group-head { margin-bottom: 8px; }
+.qrow { display: flex; flex-wrap: wrap; gap: 7px; }
+.qlink { position: relative; display: grid; place-items: center; width: 44px; height: 44px; border-radius: var(--radius);
+  background: var(--panel-2); border: 1px solid var(--border); transition: border-color 0.12s, background 0.12s, transform 0.12s; }
 .qlink .ico { border: 0; background: transparent; }
-.qlink .ico img { width: 22px; height: 22px; }
-.qlink:hover { border-color: var(--green-line); background: var(--panel-hover); text-decoration: none; }
+.qlink .ico img { width: 24px; height: 24px; }
+.qlink:hover { border-color: var(--green-line); background: var(--panel-hover); text-decoration: none; transform: translateY(-1px); }
 .qlink:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .qlink .led { position: absolute; top: 4px; right: 4px; width: 6px; height: 6px; }
-/* with the map gone from the board, Willow takes the rest of the centre */
-.nexus[data-view="board"] .sec-willow { flex: 1 1 0; height: auto; min-height: 260px; }
-@media (max-width: 1360px) { .nexus[data-view="board"] .sec-willow { flex: none; } }
+
+/* ---------- the board's Resources: one row per machine; takes the room Links and Willow leave and scrolls inside ---------- */
+.sec-res { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; padding-bottom: 10px; }
+.res { flex: 1 1 0; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
+.res-row { display: grid; grid-template-columns: minmax(150px, 1.1fr) repeat(3, minmax(90px, 1fr)) minmax(150px, auto); gap: 14px; align-items: center;
+  width: 100%; padding: 5px 8px; background: none; border: 0; border-top: 1px solid var(--border); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.res-row:hover { background: var(--panel-hover); }
+.res-row:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.res-head { position: sticky; top: 0; z-index: 1; background: var(--panel); border-top: 0; cursor: default; padding-top: 0;
+  font: 600 10px var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.res-head:hover { background: var(--panel); }
+.res-nm { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.res-nm b { font-size: 13px; font-weight: 500; color: var(--text-strong); }
+.res-nm .led, .res-nm .led-gap { width: 7px; height: 7px; flex: none; }
+.res-id { font: 10px var(--font-mono); color: var(--faint); white-space: nowrap; }
+.res-m { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.res-m .bar { flex: 1; margin: 0; height: 5px; }
+.res-m .bar.bad > i { background: var(--red); box-shadow: var(--glow-red); }
+.res-m b { font: 500 11px var(--font-mono); color: var(--text); width: 34px; text-align: right; flex: none; }
+.res-m.none { font: 11px var(--font-mono); color: var(--faint); }
+.res-m.warn b { color: var(--amber); }
+.res-m.bad b { color: var(--red); }
+.res-span { grid-column: span 3; }
+.res-net { font: 11px var(--font-mono); color: var(--muted); white-space: nowrap; }
+.res-net .rates { display: inline-flex; gap: 10px; }
+/* Willow back to a compact, fixed height under them */
+@media (min-width: 1361px) { .nexus[data-view="board"] .sec-willow { height: clamp(250px, 30vh, 340px); } }
+@media (max-width: 1360px) {
+  .sec-res, .res { flex: none; overflow: visible; }
+}
+@media (max-width: 640px) {
+  .res-row { grid-template-columns: minmax(0, 1fr) repeat(3, 44px); gap: 8px; }
+  .res-net { display: none; }
+  .res-head span:last-child { display: none; }
+  .res-m .bar { display: none; }
+}
 
 /* ---------- apps & media: the map on top, every service under it, media down the right ---------- */
 .nexus[data-view="apps"] .rail-left { grid-template-rows: minmax(0, 1.5fr) minmax(0, 1fr); grid-template-areas: "map media" "svc media"; }

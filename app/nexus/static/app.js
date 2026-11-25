@@ -192,6 +192,29 @@ function group(cat, list) {
        ${s.led ? `<span class="led ${s.led}"></span>` : ""}</a>`).join("")}</div></div>`;
 }
 
+// ---------- resources: every running machine's CPU, memory, fullest disk and traffic, from Pulse and pve.
+// Bars are grey until they need you: amber from 80%, red from 90% (the Disks lamp's rule). Click a row for its dialog.
+function resources(v) {
+  const rows = [];
+  for (const h of v.map.hosts) {
+    rows.push({ key: `h:${h.id}`, n: h, name: h.name, id: "" });
+    for (const g of h.guests || []) if (!g.off) rows.push({ key: `g:${g.id}`, n: g, name: g.name, id: `${g.kind || "LXC"} ${g.id}` });
+  }
+  const bar = (p) => { if (p == null) return `<span class="res-m none">–</span>`;
+    const c = p >= 90 ? "bad" : p >= 80 ? "warn" : "idle";
+    return `<span class="res-m ${c}"><span class="bar ${c}"><i style="width:${Math.min(100, p)}%"></i></span><b>${Math.round(p)}%</b></span>`; };
+  const down = (n) => n.led === "off" || n.state === "down";
+  $("res").innerHTML = `<div class="res-row res-head" aria-hidden="true"><span>Machine</span><span>CPU</span><span>Memory</span><span>Fullest disk</span><span>Traffic</span></div>` +
+    rows.map(({ key, n, name, id }) => { const r = n.readings || {};
+      return `<button type="button" class="res-row" role="listitem" data-node="${esc(key)}" aria-label="${esc(name)}: details">
+        <span class="res-nm">${n.led === "warn" || n.led === "off" ? `<span class="led ${n.led}"></span>` : `<span class="led-gap"></span>`}<b class="ellipsis">${esc(name)}</b>${id ? `<span class="res-id">${esc(id)}</span>` : ""}</span>
+        ${down(n) ? `<span class="res-m none res-span">${n.state === "down" ? "Not running" : "Offline"}</span>`
+          : n.readings ? `${bar(r.cpu)}${bar(r.mem)}${bar(r.disk?.percent)}` : `<span class="res-m none res-span">No monitoring client</span>`}
+        <span class="res-net">${n.net ? rates(n.net, false, true) : "–"}</span></button>`; }).join("");
+  const read = rows.filter((x) => x.n.readings && !down(x.n)).length;
+  $("res-meta").textContent = `${read}/${rows.length} REPORTING`;
+}
+
 // ---------- watching
 function watching(v) {
   const m = v.media, src = m.sources;
@@ -485,6 +508,7 @@ function applyNet(n) {
     }
   }
   if ($("dlg").open) dialogTraffic();
+  resources(view);
   wires();
 }
 async function pollNet() {
@@ -619,7 +643,7 @@ function showMachine(key) {
 }
 document.addEventListener("click", (e) => {
   if (e.target.closest("[data-close]") || e.target === $("dlg")) { $("dlg").close(); return; }
-  const n = e.target.closest(".gnode[data-node], .hostcard-head[data-node]");
+  const n = e.target.closest(".gnode[data-node], .hostcard-head[data-node], .res-row[data-node]");
   if (n) showMachine(n.dataset.node);
 });
 document.addEventListener("keydown", (e) => {
@@ -1049,7 +1073,7 @@ async function load() {
     view = await r.json();
     lastOk = Date.now();
     for (const h of view.map.hosts) for (const g of h.guests || []) if (!g.off && !hist.has(String(g.id))) remember(String(g.id), g.net);
-    for (const [name, fn] of [["hud", hud], ["services", services], ["watching", watching], ["requests", requests], ["map", map],
+    for (const [name, fn] of [["hud", hud], ["services", services], ["watching", watching], ["requests", requests], ["map", map], ["resources", resources],
                               ["willow", willow], ["needs", needs], ["warnings", warnings], ["todo", todo], ["foot", foot], ["tabs", pickTabs]]) {
       try { fn(view); } catch (err) { console.error(name, err); }
     }
