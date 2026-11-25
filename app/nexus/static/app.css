@@ -635,3 +635,31 @@ button.jump:hover { border-color: var(--green-dim); }
 .ctrs i.bad { background: var(--red); opacity: 1; }
 .ctrs i:hover { opacity: 1; outline: 1px solid var(--text); }
 .host-ctrs { padding: 0 12px 8px; }
+
+/* ---------- the board's Links: the everyday apps as icons, grouped; name, address and light in the hover card ---------- */
+.sec-links { flex: none; padding-bottom: 14px; }
+.qlinks { display: flex; flex-wrap: wrap; gap: 12px 28px; }
+.qgroup .svc-group-head { margin-bottom: 6px; }
+.qrow { display: flex; flex-wrap: wrap; gap: 6px; }
+.qlink { position: relative; display: grid; place-items: center; width: 42px; height: 42px; border-radius: var(--radius);
+  background: var(--panel-2); border: 1px solid var(--border); transition: border-color 0.12s, background 0.12s; }
+.qlink .ico { border: 0; background: transparent; }
+.qlink .ico img { width: 22px; height: 22px; }
+.qlink:hover { border-color: var(--green-line); background: var(--panel-hover); text-decoration: none; }
+.qlink:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.qlink .led { position: absolute; top: 4px; right: 4px; width: 6px; height: 6px; }
+/* with the map gone from the board, Willow takes the rest of the centre */
+.nexus[data-view="board"] .sec-willow { flex: 1 1 0; height: auto; min-height: 260px; }
+@media (max-width: 1360px) { .nexus[data-view="board"] .sec-willow { flex: none; } }
+
+/* ---------- apps & media: the map on top, every service under it, media down the right ---------- */
+.nexus[data-view="apps"] .rail-left { grid-template-rows: minmax(0, 1.5fr) minmax(0, 1fr); grid-template-areas: "map media" "svc media"; }
+.nexus[data-view="apps"] .sec-map { grid-area: map; }
+.nexus[data-view="apps"] .sec-services { grid-area: svc; }
+.nexus[data-view="apps"] .tabbed.media { grid-area: media; }
+@media (max-width: 1360px) {
+  .nexus[data-view="apps"] .rail-left { grid-template-rows: none; grid-template-areas: "map map" "svc media"; }
+}
+@media (max-width: 960px) {
+  .nexus[data-view="apps"] .rail-left { grid-template-areas: "map" "svc" "media"; }
+}

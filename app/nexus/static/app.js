@@ -127,7 +127,7 @@ function route() {
   const view = location.hash === "#apps" ? "apps" : "board";
   document.body.dataset.view = view;
   document.querySelectorAll("a[data-view]").forEach((a) => { a.classList.toggle("active", a.dataset.view === view); a.setAttribute("aria-current", a.dataset.view === view ? "page" : "false"); });
-  if (view === "board") requestAnimationFrame(() => { mapFitKey = ""; wires(); fitJobs(); });
+  requestAnimationFrame(() => { if (view === "apps") { mapFitKey = ""; wires(); } else fitJobs(); });
   scrollTo(0, 0);
 }
 addEventListener("hashchange", route);
@@ -139,6 +139,9 @@ const CATS = [
   ["Home & apps", ["Home Assistant", "Frigate", "Willow", "Galley", "Lobby"]],
   ["Infrastructure", ["Proxmox", "Backup Server", "DSM", "Router", "AdGuard Home", "Proxy Manager", "Authentik", "Portainer"]],
 ];
+// the ones on the board's Links; every app stays on Apps & media
+const PINNED = new Set(["Plex", "Jellyfin", "Seerr", "Sonarr", "Radarr", "qBittorrent", "Home Assistant", "Frigate", "Willow", "Galley",
+  "Lobby", "Proxmox", "DSM", "Router", "AdGuard Home", "Proxy Manager", "Authentik"]);
 // An app's own light: its own problems (a stuck episode is Sonarr's) plus anything machine-wide (offline, a full disk),
 // not every problem on the machine it shares (so Seerr isn't amber because Sonarr has a stuck download).
 function svcIssues(node, name) { return (node.issues || []).filter((i) => !i.service || i.service === name); }
@@ -173,6 +176,13 @@ function services(v) {
   if (rest.length) html += group("Other", rest);
   $("svc").innerHTML = html;
   $("svc-meta").textContent = `${all.length} LINKS`;
+  // the board's Links: the everyday apps as icons, grouped the same way; the name and light are in the hover card
+  $("qlinks").innerHTML = CATS.map(([cat, names]) => {
+    const list = names.filter((n) => PINNED.has(n)).map((n) => byName.get(n)).filter(Boolean);
+    return list.length ? `<div class="qgroup"><div class="svc-group-head">${esc(cat)}</div><div class="qrow">${list.map((s) =>
+      `<a class="qlink" href="${esc(s.url)}" aria-label="${esc(s.name)}" ${s.node ? `data-node="${s.node}"` : `data-tip="${s.tip}"`} data-open="${esc(s.name)}" data-where="${esc(s.where)}">
+         ${icon(s.icon, s.name)}${s.led && s.led !== "on" ? `<span class="led ${s.led}"></span>` : ""}</a>`).join("")}</div></div>` : "";
+  }).join("");
   filterServices();
 }
 function group(cat, list) {
