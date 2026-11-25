@@ -6,17 +6,17 @@
   <meta name="theme-color" content="#101216">
   <base target="_blank">
   <title>NEXUS</title>
-  <link rel="icon" href="logo.svg?v=54">
-  <link rel="stylesheet" href="/static/tokens.css?v=54">
-  <link rel="stylesheet" href="bundle.css?v=54">
-  <link rel="stylesheet" href="app.css?v=54">
-  <link rel="stylesheet" href="/static/weather.css?v=54">
-  <script src="app.js?v=54" defer></script>
-  <script src="/static/weather.js?v=54" defer></script>
+  <link rel="icon" href="logo.svg?v=59">
+  <link rel="stylesheet" href="/static/tokens.css?v=59">
+  <link rel="stylesheet" href="bundle.css?v=59">
+  <link rel="stylesheet" href="app.css?v=59">
+  <link rel="stylesheet" href="/static/weather.css?v=59">
+  <script src="app.js?v=59" defer></script>
+  <script src="/static/weather.js?v=59" defer></script>
 </head>
 <body class="np-app nav-collapsed np-pattern nexus" data-view="board">
 <aside class="sidebar fixed collapsed nx-rail" aria-label="NEXUS">
-  <div class="sidebar-head"><a class="brand" href="#board" target="_self" title="NEXUS" aria-label="NEXUS"><img src="logo.svg?v=54" width="22" height="22" alt=""></a></div>
+  <div class="sidebar-head"><a class="brand" href="#board" target="_self" title="NEXUS" aria-label="NEXUS"><img src="logo.svg?v=59" width="22" height="22" alt=""></a></div>
   <nav class="sidebar-nav">
     <a class="nav-item active" href="#board" target="_self" title="NEXUS" data-view="board">
       <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2.5"/><circle cx="4.5" cy="5" r="1.5"/><circle cx="19.5" cy="5" r="1.5"/><circle cx="4.5" cy="19" r="1.5"/><circle cx="19.5" cy="19" r="1.5"/><path d="M6 6.2l4.2 4.2M18 6.2l-4.2 4.2M6 17.8l4.2-4.2M18 17.8l-4.2-4.2"/></svg>
@@ -97,8 +97,23 @@
     </section>
 
     <section class="sec sec-res" id="resources" aria-labelledby="res-h">
-      <div class="sec-head"><span class="sec-dot"></span><h2 id="res-h">Resources</h2><span class="sec-rule"></span><span class="sec-meta" id="res-meta"></span></div>
-      <div class="res" id="res" role="list"></div>
+      <div class="sec-head"><span class="sec-dot"></span><h2 id="res-h">Resources</h2><span class="res-host">PVE · THE METAL</span>
+        <div class="head-tabs" id="res-range" role="tablist" aria-label="Time range">
+          <button type="button" data-h="1" role="tab" aria-selected="false">1H</button>
+          <button type="button" class="active" data-h="6" role="tab" aria-selected="true">6H</button>
+          <button type="button" data-h="24" role="tab" aria-selected="false">24H</button>
+        </div>
+        <span class="sec-rule"></span><span class="sec-meta" id="res-meta"></span></div>
+      <div class="metal">
+        <div class="gauges" id="gauges"><div class="skeleton"></div></div>
+        <div class="charts" id="charts">
+          <div class="ch-legend" id="ch-legend"></div>
+          <div class="ch ch-use"><svg id="ch-use" role="img" aria-label="CPU and memory use over time"></svg></div>
+          <div class="ch-legend" id="ch-wlegend"></div>
+          <div class="ch ch-w"><svg id="ch-w" role="img" aria-label="Power at the wall over time"></svg></div>
+          <div class="ch-tip" id="ch-tip" hidden></div>
+        </div>
+      </div>
     </section>
 
     <section class="sec sec-willow" id="willow" aria-labelledby="willow-h">
