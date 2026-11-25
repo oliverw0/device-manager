@@ -656,74 +656,53 @@ button.jump:hover { border-color: var(--green-dim); }
 .qlink:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .qlink .led { position: absolute; top: 4px; right: 4px; width: 6px; height: 6px; }
 
-/* ---------- the board's Resources: pve, the metal. Rings on the left, usage over time on the right ---------- */
-.nexus { --s-cpu: #3987e5; --s-mem: #d55181; --s-w: var(--text); } /* validated pair on --panel (dataviz validator) */
+/* ---------- the board's Resources: pve. Three rows, a dial beside its own graph ---------- */
 .sec-res { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; padding-bottom: 12px; }
 .res-host { font: 600 10px var(--font-mono); letter-spacing: 0.12em; color: var(--muted); white-space: nowrap; }
-.metal { flex: 1 1 0; min-height: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 22px; }
-.gauges { --rs: clamp(96px, 10.5vh, 150px); display: grid; grid-template-columns: repeat(2, calc(var(--rs) + 22px)); grid-auto-rows: min-content; gap: 14px 16px; align-content: center; }
-.ring-g { position: relative; display: grid; justify-items: center; text-align: center; cursor: default; }
-.ring-g svg { width: var(--rs); height: var(--rs); transform: rotate(-90deg); }
+.metal { position: relative; flex: 1 1 0; min-height: 0; display: grid; grid-template-rows: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.mrow { display: grid; grid-template-columns: 250px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); align-items: stretch; gap: 14px; min-height: 0; }
+.mrow + .mrow { border-top: 1px solid var(--border); padding-top: 10px; }
+.dial { display: flex; align-items: center; gap: 14px; min-height: 0; }
+/* the ring is as tall as its row (up to 130px) and square; its number scales with it */
+.d-ring { position: relative; height: 100%; max-height: 130px; aspect-ratio: 1; flex: none; container-type: size; cursor: default; }
+.d-ring svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
 .g-track { fill: none; stroke: var(--well); stroke-width: 9; }
-.g-arc { fill: none; stroke: var(--text); stroke-width: 9; stroke-linecap: round; opacity: 0.8; transition: stroke-dasharray 0.6s; }
-.ring-g.s-cpu .g-arc { stroke: var(--s-cpu); opacity: 1; }
-.ring-g.s-mem .g-arc { stroke: var(--s-mem); opacity: 1; }
-.ring-g.warn .g-arc { stroke: var(--amber); opacity: 1; }
-.ring-g.bad .g-arc { stroke: var(--red); opacity: 1; }
-.g-val { position: absolute; top: 0; height: var(--rs); display: flex; align-items: center; justify-content: center; }
-.g-val b { font: 600 calc(var(--rs) / 4) var(--font-mono); color: var(--text-strong); letter-spacing: -0.02em; }
-.g-val i { font: 500 11px var(--font-mono); color: var(--muted); font-style: normal; margin: 7px 0 0 1px; }
-.ring-g.warn .g-val b { color: var(--amber); }
-.ring-g.bad .g-val b { color: var(--red); }
-.g-lbl { margin-top: 6px; font: 600 10.5px var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--text); }
-.g-sub { font: 10.5px var(--font-mono); color: var(--muted); white-space: nowrap; }
-.charts { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.g-arc { fill: none; stroke: var(--text); stroke-width: 9; stroke-linecap: round; opacity: 0.7; transition: stroke-dasharray 0.6s; }
+.d-ring.on .g-arc { stroke: var(--green); opacity: 1; filter: drop-shadow(0 0 4px rgba(55, 224, 106, 0.45)); }
+.d-ring.warn .g-arc { stroke: var(--amber); opacity: 1; }
+.d-ring.bad .g-arc { stroke: var(--red); opacity: 1; }
+.g-val { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.g-val b { font: 600 24cqh var(--font-mono); color: var(--text-strong); letter-spacing: -0.03em; }
+.g-val i { font: 500 11cqh var(--font-mono); color: var(--muted); font-style: normal; margin: 6cqh 0 0 1px; }
+.d-ring.on .g-val b { color: var(--green); }
+.d-ring.warn .g-val b { color: var(--amber); }
+.d-ring.bad .g-val b { color: var(--red); }
+.d-txt { min-width: 0; }
+.g-lbl { font: 600 11px var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-strong); }
+.g-sub { margin-top: 3px; font: 11px var(--font-mono); color: var(--muted); }
 .ch { position: relative; min-height: 0; }
-.ch-use { flex: 2 1 0; }
-.ch-w { flex: 1 1 0; }
-.charts.no-power .ch-w, .charts.no-power #ch-wlegend { display: none; }
 .ch svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-.ch-legend { display: flex; align-items: center; gap: 16px; margin: 0 0 4px 34px; font: 10.5px var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
-#ch-wlegend { margin-top: 10px; }
-.lg-item { display: inline-flex; align-items: center; gap: 6px; color: var(--text); }
-.lg-item i { width: 14px; height: 3px; border-radius: 2px; background: currentColor; }
-.lg-item b { color: var(--text-strong); font-weight: 600; margin-left: 2px; }
-.lg-item.s-cpu i { background: var(--s-cpu); }
-.lg-item.s-mem i { background: var(--s-mem); }
-.lg-item.s-w i { display: none; }
-.lg-note { margin-left: auto; color: var(--faint); text-transform: none; letter-spacing: 0; }
 .c-grid { stroke: var(--border); stroke-width: 1; }
 .c-ax { fill: var(--faint); font: 10px var(--font-mono); }
-.c-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
-.c-line.s-cpu { stroke: var(--s-cpu); }
-.c-line.s-mem { stroke: var(--s-mem); }
-.c-line.s-w { stroke: var(--s-w); opacity: 0.75; }
-.c-area { display: none; }
+.c-line { fill: none; stroke: var(--green); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.c-area { fill: var(--green-tint); stroke: none; }
 .c-hair line { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
-.c-hair circle { stroke: var(--panel); stroke-width: 2; }
-.c-hair circle.s-cpu { fill: var(--s-cpu); }
-.c-hair circle.s-mem { fill: var(--s-mem); }
-.c-hair circle.s-w { fill: var(--s-w); }
-.ch-tip { position: absolute; z-index: 2; pointer-events: none; min-width: 140px; padding: 7px 9px; background: var(--panel-2); border: 1px solid var(--border-strong);
+.c-hair circle { fill: var(--green); stroke: var(--panel); stroke-width: 2; }
+.ch-tip { position: absolute; z-index: 2; pointer-events: none; min-width: 130px; padding: 7px 9px; background: var(--panel-2); border: 1px solid var(--border-strong);
   border-radius: var(--radius); box-shadow: var(--shadow-overlay); font: 11px var(--font-mono); color: var(--text); }
 .ch-tip .t-time { color: var(--muted); margin-bottom: 3px; }
-.ch-tip div:not(.t-time) { display: flex; align-items: center; gap: 6px; }
-.ch-tip i { width: 8px; height: 8px; border-radius: 50%; background: var(--s-w); }
-.ch-tip .s-cpu i { background: var(--s-cpu); }
-.ch-tip .s-mem i { background: var(--s-mem); }
-.ch-tip b { margin-left: auto; padding-left: 12px; color: var(--text-strong); font-weight: 600; }
+.ch-tip div:not(.t-time) { display: flex; }
+.ch-tip b { margin-left: auto; padding-left: 14px; color: var(--text-strong); font-weight: 600; }
 /* Willow back to a compact, fixed height under them */
 @media (min-width: 1361px) { .nexus[data-view="board"] .sec-willow { height: clamp(250px, 30vh, 340px); } }
 @media (max-width: 1360px) {
   .sec-res, .metal { flex: none; }
-  .ch-use { flex: none; height: 190px; }
-  .ch-w { flex: none; height: 100px; }
+  .mrow { height: 120px; }
 }
 @media (max-width: 760px) {
-  .metal { grid-template-columns: minmax(0, 1fr); }
-  .gauges { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
-  .ch-legend { flex-wrap: wrap; row-gap: 4px; }
-  .lg-note { display: none; }
+  .mrow { grid-template-columns: minmax(0, 1fr); height: auto; }
+  .dial { height: 96px; }
+  .mrow .ch { height: 110px; }
 }
 
 /* ---------- apps & media: the map on top, every service under it, media down the right ---------- */
