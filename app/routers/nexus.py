@@ -4,6 +4,7 @@
   GET  /nexus/api/brief              {"issues": n}: the top bar's count on the other pages
   GET  /nexus/api/search             devices, containers and stacks, for the search box
   GET  /nexus/api/net                traffic per guest from Glances on pve (every 5 s)
+  GET  /nexus/api/pve                pve's own CPU, memory, drives and power, and 24 h of it a minute at a time (every 60 s)
   GET  /nexus/api/img/plex?thumb=…   a poster from Plex, through Tautulli
   GET  /nexus/api/img/jf/<id>        a poster from Jellyfin
   GET  /nexus/api/pending/<id>       follow a slow Willow answer
@@ -18,10 +19,15 @@ import threading
 import time
 from pathlib import Path
 
-from fastapi import APIRouter, Request
+from datetime import datetime, timedelta
+
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
+from sqlmodel import Session, select
 
 from ..config import settings
+from ..database import get_session
+from ..models import Device, ReportHistory
 from ..nexus import core
 
 router = APIRouter()
@@ -111,6 +117,42 @@ def brief():
 def net():
     try:
         return _json(core.demo_sources()["net"] if settings.nexus_demo else core.net())
+    except Exception as e:  # noqa: BLE001
+        return _fail(e)
+
+
+PVE_DEVICE = "proxmox-host"  # pve's name in Pulse
+MIN_DRIVE = 5 * 10**9  # drives smaller than this (the EFI partition) aren't worth a gauge
+
+
+def pve_metal(session: Session, now: datetime | None = None) -> dict | None:
+    """The board's Resources: pve's latest report (CPU, memory, every real drive, wall power) and its last 24 h of
+    per-minute history as [unix seconds, cpu %, memory %, watts or None]. None when Pulse has no pve."""
+    d = session.exec(select(Device).where(Device.name == PVE_DEVICE)).first()
+    if not d:
+        return None
+    rep = json.loads(d.last_report_json) if d.last_report_json else {}
+    sysi, power = rep.get("system") or {}, rep.get("power") or {}
+    since = (now or datetime.utcnow()) - timedelta(hours=24)
+    rows = session.exec(select(ReportHistory.timestamp, ReportHistory.cpu_percent, ReportHistory.mem_percent, ReportHistory.power_w)
+                        .where(ReportHistory.device_id == d.id, ReportHistory.timestamp >= since).order_by(ReportHistory.timestamp)).all()
+    epoch = lambda t: int((t - datetime(1970, 1, 1)).total_seconds())  # noqa: E731  stored as naive UTC
+    return {
+        "online": d.is_online, "seen": epoch(d.last_seen_at) if d.last_seen_at else None,
+        "cpu": sysi.get("cpu_percent"), "cores": sysi.get("cpu_cores"), "uptime": sysi.get("uptime_seconds"),
+        "mem": {"pct": sysi.get("mem_percent"), "used": sysi.get("mem_used_bytes"), "total": sysi.get("mem_total_bytes")},
+        "drives": [{"mount": x["mount"], "pct": x["percent"], "used": x.get("used_bytes"), "total": x.get("total_bytes")}
+                   for x in sysi.get("disks") or [] if (x.get("total_bytes") or 0) >= MIN_DRIVE],
+        "watts": power.get("wall_w"),
+        "history": [[epoch(t), round(c, 1), round(m, 1), None if w is None else round(w, 1)] for t, c, m, w in rows],
+    }
+
+
+@router.get("/nexus/api/pve")
+def pve(session: Session = Depends(get_session)):
+    try:
+        v = pve_metal(session)
+        return _json(v) if v else _fail(RuntimeError(f"Pulse has no {PVE_DEVICE}"), 404)
     except Exception as e:  # noqa: BLE001
         return _fail(e)
 
