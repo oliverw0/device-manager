@@ -244,10 +244,10 @@ body.nav-collapsed .sidebar .brand:hover img { filter: drop-shadow(0 0 4px rgba(
     background: rgba(16, 18, 22, 0.98); backdrop-filter: blur(8px);
   }
   .sidebar-head { display: none; }
-  /* flex-grow matches item count so every tab (4 nav + 1 logout) is equal width */
-  .sidebar-nav { flex-direction: row; flex: 4; gap: 0; padding: 0; }
-  .sidebar-foot { flex-direction: row; flex: 1; gap: 0; padding: 0; border-top: none; }
-  .sidebar-foot form, .sidebar-foot .nav-item { flex: 1; }
+  /* every tab the same width however many there are: the groups step aside so each item shares the bar
+     (the same bar as NEXUS's, which copies this menu) */
+  .sidebar-nav, .sidebar-foot { display: contents; }
+  .sidebar-foot form, .sidebar-foot .nav-item { flex: 1; display: flex; }
   .nav-slot { flex: 1; display: flex; }
   .apt-badge { top: 7px; right: calc(50% - 18px); }  /* over the icon's upper-right */
   .nav-item {

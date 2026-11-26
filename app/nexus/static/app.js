@@ -122,6 +122,28 @@ function hud(v) {
 
 // The weather in the top bar, and its card, are /static/weather.js (shared with the other pages).
 
+// ---------- the phone's bottom bar is the side menu, item for item (the same as on Pulse's other pages), so it never
+// shows a different set from one page to the next
+$("tabbar").append(...[...document.querySelectorAll(".nx-rail .sidebar-nav > .nav-item, .nx-rail .sidebar-foot > *")].map((el) => el.cloneNode(true)));
+// the menu's badges, the same counts Pulse's pages show: devices needing updates on Devices, open problems on Health
+function navBadge(href, n, title) {
+  document.querySelectorAll(`.nx-rail .nav-item[href="${href}"], #tabbar .nav-item[href="${href}"]`).forEach((a) => {
+    const b = a.querySelector(".nx-badge") || a.appendChild(Object.assign(document.createElement("span"), { className: "nx-badge" }));
+    b.textContent = n; b.hidden = !n; b.title = title;
+  });
+}
+async function pollNav() {
+  try {
+    const r = await fetch("api/nav", { cache: "no-store" });
+    if (!r.ok) return;
+    const c = await r.json();
+    navBadge("/devices", c.updates, `${c.updates} device${c.updates === 1 ? "" : "s"} needing updates`);
+    navBadge("/health", c.problems, `${c.problems} open, not acknowledged`);
+  } catch { /* keeps the last counts */ }
+}
+pollNav();
+setInterval(pollNav, 60000);
+
 // ---------- two screens: the board, and apps & media (the switch beside NEXUS in the top bar)
 function route() {
   const view = location.hash === "#apps" ? "apps" : "board";
