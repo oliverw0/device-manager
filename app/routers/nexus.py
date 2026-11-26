@@ -4,6 +4,7 @@
   GET  /nexus/api/brief              {"issues": n}: the top bar's count on the other pages
   GET  /nexus/api/search             devices, containers and stacks, for the search box
   GET  /nexus/api/net                traffic per guest from Glances on pve (every 5 s)
+  GET  /nexus/api/nav                the menu's badges, as on Pulse's pages: devices needing updates, open problems (every 60 s)
   GET  /nexus/api/pve                pve's own CPU, memory, drives and power, and 24 h of it a minute at a time (every 60 s)
   GET  /nexus/api/img/plex?thumb=…   a poster from Plex, through Tautulli
   GET  /nexus/api/img/jf/<id>        a poster from Jellyfin
@@ -155,6 +156,13 @@ def pve(session: Session = Depends(get_session)):
         return _json(v) if v else _fail(RuntimeError(f"Pulse has no {PVE_DEVICE}"), 404)
     except Exception as e:  # noqa: BLE001
         return _fail(e)
+
+
+@router.get("/nexus/api/nav")
+def nav(session: Session = Depends(get_session)):
+    from .problems import open_count  # here, not at the top: problems imports the shared templates at load
+    updates = len(session.exec(select(Device.id).where(Device.apt_needs_update == True)).all())  # noqa: E712
+    return _json({"updates": updates, "problems": open_count()})
 
 
 def _image(kind: str, ident: str) -> Response:

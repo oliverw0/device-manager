@@ -627,6 +627,16 @@ button.jump:hover { border-color: var(--green-dim); }
 .nx-rail .sidebar-head { height: var(--hud-h, 56px); }
 .nx-rail .sidebar-foot form { margin: 0; }
 .nx-rail .sidebar-foot button.nav-item { width: 100%; background: none; border: 0; cursor: pointer; font: inherit; }
+.nx-tabbar { height: calc(var(--tabbar-h) + 1px); } /* the same height as the bar on Pulse's pages (its border sits outside) */
+.nx-tabbar form { flex: 1; display: flex; margin: 0; }
+.nx-tabbar button.nav-item { width: 100%; background: none; border: 0; cursor: pointer; font: inherit; color: inherit; }
+.nx-tabbar .nav-item.active { background: var(--green-tint); }
+/* the amber count badges, as on Pulse's pages */
+.nx-rail .nav-item, .nx-tabbar .nav-item { position: relative; }
+.nx-badge { position: absolute; top: 4px; right: 6px; z-index: 2; min-width: 16px; height: 16px; padding: 0 4px; display: inline-flex; align-items: center;
+  justify-content: center; color: var(--amber-ink); background: var(--amber); font: 700 11px/1 var(--font-mono); border-radius: 9px; box-shadow: var(--glow-amber); }
+.nx-badge[hidden] { display: none; }
+.nx-tabbar .nx-badge { top: 7px; right: calc(50% - 18px); }
 
 /* Container squares under a map tile (one per Docker container; was Pulse's Map page) */
 .ctrs { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 5px; }
