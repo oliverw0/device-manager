@@ -256,9 +256,10 @@ def check_heartbeats(session: Session) -> None:
         if c.last_checked_at is None:
             continue  # waiting for its first ping
         late = now > c.last_checked_at + timedelta(seconds=c.interval_seconds + c.grace_seconds)
-        c.last_status = "down" if late else "up"
+        failed = bool(c.last_error)   # /ping/<token>/fail: down until the next good ping
+        c.last_status = "down" if late or failed else "up"
         session.add(c)
-        problems.record_check(session, c.id, not late, now)
+        problems.record_check(session, c.id, not (late or failed), now)
     session.commit()
 
 

@@ -114,3 +114,17 @@ def ping(token: str, session: Session = Depends(get_session)):
     session.add(c)
     session.commit()
     return "ok\n"
+
+
+@router.post("/ping/{token}/fail", response_class=PlainTextResponse)
+async def ping_fail(token: str, request: Request, session: Session = Depends(get_session)):
+    """Heartbeat: the job ran but something needs Oliver (the body says what, plain text, first 300 characters).
+    The check stays down with that reason until the next plain ping."""
+    c = session.exec(select(ServiceCheck).where(ServiceCheck.token == token, ServiceCheck.kind == "heartbeat")).first() if token else None
+    if not c:
+        return PlainTextResponse("unknown check\n", status_code=404)
+    why = " ".join((await request.body())[:1200].decode("utf-8", "replace").split())[:300] or "the job reported a failure"
+    c.last_checked_at, c.last_status, c.last_error = datetime.utcnow(), "down", why
+    session.add(c)
+    session.commit()
+    return "ok\n"

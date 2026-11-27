@@ -64,7 +64,11 @@ def check_problems(c: ServiceCheck, now: datetime) -> list[dict]:
         return []
     out = []
     if c.kind == "heartbeat":
-        if c.last_status == "down":
+        late = c.last_checked_at and now > c.last_checked_at + timedelta(seconds=c.interval_seconds + c.grace_seconds)
+        if c.last_status == "down" and c.last_error and not late:
+            out.append(_p(f"check:{c.id}", "warning", "Heartbeat", f"{c.name}: {c.last_error}"[:200],
+                          f"Reported {ago((now - c.last_checked_at).total_seconds())} ago.", push=True))
+        elif c.last_status == "down":
             last = f"Last ping {ago((now - c.last_checked_at).total_seconds())} ago." if c.last_checked_at else "No ping yet."
             out.append(_p(f"check:{c.id}", "warning", "Heartbeat", f"{c.name} missed",
                           f"Expected every {ago(c.interval_seconds)} (+{ago(c.grace_seconds)} grace). {last}", push=True))
